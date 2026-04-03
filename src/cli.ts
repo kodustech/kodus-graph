@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { executeParse } from './commands/parse';
+import { executeAnalyze } from './commands/analyze';
+import { executeContext } from './commands/context';
 
 const program = new Command();
 
@@ -16,8 +19,12 @@ program
   .option('--repo-dir <path>', 'Repository root directory', '.')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-parse.json')
   .action(async (opts) => {
-    console.log('parse command — not yet implemented');
-    process.exit(1);
+    await executeParse({
+      repoDir: opts.repoDir,
+      files: opts.files,
+      all: opts.all ?? false,
+      out: opts.out,
+    });
   });
 
 program
@@ -28,8 +35,12 @@ program
   .option('--graph <path>', 'Path to main graph JSON')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-analysis.json')
   .action(async (opts) => {
-    console.log('analyze command — not yet implemented');
-    process.exit(1);
+    await executeAnalyze({
+      repoDir: opts.repoDir,
+      files: opts.files,
+      graph: opts.graph,
+      out: opts.out,
+    });
   });
 
 program
@@ -40,8 +51,12 @@ program
   .option('--graph <path>', 'Path to main graph JSON')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-context.json')
   .action(async (opts) => {
-    console.log('context command — not yet implemented');
-    process.exit(1);
+    await executeContext({
+      repoDir: opts.repoDir,
+      files: opts.files,
+      graph: opts.graph,
+      out: opts.out,
+    });
   });
 
 program.parse();
