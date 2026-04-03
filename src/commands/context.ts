@@ -6,6 +6,7 @@ import { buildReviewContext } from '../analysis/review-context';
 import type { MainGraphInput, ContextOutput } from '../graph/types';
 import { log } from '../shared/logger';
 import { createSecureTempFile } from '../shared/temp';
+import { GraphInputSchema } from '../shared/schemas';
 
 interface ContextOptions {
   repoDir: string;
@@ -31,12 +32,23 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
     // Load and merge with main graph if provided
     let mergedGraph;
     if (opts.graph) {
-      const raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+      } catch (err) {
+        process.stderr.write(`Error: Failed to read --graph file: ${opts.graph}\n`);
+        process.exit(1);
+      }
+      const validated = GraphInputSchema.safeParse(raw);
+      if (!validated.success) {
+        process.stderr.write(`Error: Invalid graph JSON: ${validated.error.message}\n`);
+        process.exit(1);
+      }
       const mainGraph: MainGraphInput = {
         repo_id: '',
         sha: '',
-        nodes: raw.nodes,
-        edges: raw.edges,
+        nodes: validated.data.nodes,
+        edges: validated.data.edges,
       };
       mergedGraph = mergeGraphs(mainGraph, parseResult, opts.files);
     } else {

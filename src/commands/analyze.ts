@@ -8,6 +8,7 @@ import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { buildGraphData } from '../graph/builder';
 import type { AnalysisOutput, MainGraphInput } from '../graph/types';
+import { GraphInputSchema } from '../shared/schemas';
 
 interface AnalyzeOptions {
   repoDir: string;
@@ -22,13 +23,23 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
   // Load main graph if provided
   let mainGraph: MainGraphInput | null = null;
   if (opts.graph) {
-    const raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
-    // The parse output has {metadata, nodes, edges} — adapt to MainGraphInput
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+    } catch (err) {
+      process.stderr.write(`Error: Failed to read --graph file: ${opts.graph}\n`);
+      process.exit(1);
+    }
+    const validated = GraphInputSchema.safeParse(raw);
+    if (!validated.success) {
+      process.stderr.write(`Error: Invalid graph JSON: ${validated.error.message}\n`);
+      process.exit(1);
+    }
     mainGraph = {
       repo_id: '',
       sha: '',
-      nodes: raw.nodes,
-      edges: raw.edges,
+      nodes: validated.data.nodes,
+      edges: validated.data.edges,
     };
   }
 
