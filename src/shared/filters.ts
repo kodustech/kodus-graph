@@ -1,0 +1,49 @@
+export const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', 'coverage',
+  'vendor', '__pycache__', '.venv', 'venv', 'target', '.turbo',
+  '.cache', '.output', 'out', '.nuxt', '.svelte-kit', '.idea',
+  '.mypy_cache', '.tox', '.pytest_cache', '.eggs', 'bower_components',
+]);
+
+export const NOISE = new Set([
+  // JS/TS builtins
+  'log','error','warn','info','debug','trace','push','pop','shift',
+  'unshift','splice','slice','map','filter','reduce','forEach','find',
+  'findIndex','some','every','flat','flatMap','sort','reverse','join',
+  'split','trim','replace','match','test','includes','indexOf',
+  'lastIndexOf','startsWith','endsWith','keys','values','entries',
+  'assign','freeze','create','stringify','parse','toString',
+  'toLowerCase','toUpperCase','concat','charAt','substring',
+  'parseInt','parseFloat','isNaN','isFinite','isArray',
+  'resolve','reject','all','allSettled','race','any','then','catch',
+  'finally','get','set','has','delete','clear','add','next','return',
+  'throw','setTimeout','clearTimeout','setInterval','clearInterval',
+  'require','length','call','apply','bind',
+  'createElement','useState','useEffect','useRef','useCallback',
+  'useMemo','useContext','useReducer','render',
+  // Test helpers
+  'expect','toBe','toEqual','toBeDefined','toBeNull','toBeUndefined',
+  'toBeTruthy','toBeFalsy','toContain','toHaveLength','toThrow',
+  'toHaveBeenCalled','toHaveBeenCalledWith','toMatchObject',
+  'toHaveBeenCalledTimes','toHaveProperty','describe','it','test',
+  'beforeEach','afterEach','beforeAll','afterAll','fn','spyOn','mock',
+  'mockResolvedValue','mockReturnValue','mockImplementation',
+  'mockReturnThis','now','toISOString','getTime',
+  // Globals
+  'console','Math','Date','JSON','Object','Array','String','Number',
+  'Boolean','Promise','Error','Map','Set','RegExp','Buffer','process',
+  // Python builtins
+  'print','len','range','enumerate','zip','isinstance','type',
+  'super','self','cls','None','True','False','append','extend',
+  'insert','remove','update','items','format','strip','upper','lower',
+  // Ruby builtins
+  'puts','raise','yield','each','do','end','attr_accessor',
+  'attr_reader','attr_writer','respond_to','render','redirect_to',
+  'before_action','after_action','validates','has_many','belongs_to',
+  'has_one','new','initialize',
+  // Go builtins
+  'fmt','Println','Printf','Sprintf','Errorf','make','panic',
+  'recover','defer',
+  // Java builtins
+  'System','println','equals','hashCode','getClass',
+]);
