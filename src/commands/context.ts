@@ -4,6 +4,7 @@ import { executeParse } from './parse';
 import { mergeGraphs } from '../graph/merger';
 import { buildReviewContext } from '../analysis/review-context';
 import type { MainGraphInput, ContextOutput } from '../graph/types';
+import { log } from '../shared/logger';
 
 interface ContextOptions {
   repoDir: string;
@@ -46,5 +47,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
   writeFileSync(opts.out, JSON.stringify(contextOutput, null, 2));
 
   // Cleanup temp file
-  try { rmSync(parseTmpPath, { force: true }); } catch {}
+  try { rmSync(parseTmpPath, { force: true }); } catch (err) {
+    log.debug('Failed to clean up temp file', { file: parseTmpPath, error: String(err) });
+  }
 }

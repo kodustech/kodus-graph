@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
 import type { RawGraph } from '../../graph/types';
+import { log } from '../../shared/logger';
 
 export function extractGeneric(
   root: SgRoot,
@@ -30,8 +31,8 @@ export function extractGeneric(
           qualified: `${fp}::${name}`,
         });
       }
-    } catch {
-      /* kind may not exist for this grammar */
+    } catch (err) {
+      log.debug('Generic extraction failed', { file: fp, error: String(err) });
     }
   }
 
@@ -65,8 +66,8 @@ export function extractGeneric(
             : `${fp}::${name}`,
         });
       }
-    } catch {
-      /* kind may not exist */
+    } catch (err) {
+      log.debug('Generic extraction failed', { file: fp, error: String(err) });
     }
   }
 }

@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve as resolvePath } from 'path';
+import { log } from '../../shared/logger';
 
 const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
@@ -129,8 +130,8 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
           aliases.set(prefix, resolvedTargets);
         }
       }
-    } catch {
-      // Skip unparseable tsconfig
+    } catch (err) {
+      log.warn('Failed to parse tsconfig', { file: tsconfigPath, error: String(err) });
     }
   }
 

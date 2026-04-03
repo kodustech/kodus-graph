@@ -10,6 +10,7 @@ import { createImportMap } from '../resolver/import-map';
 import { buildGraphData } from '../graph/builder';
 import { computeFileHash } from '../shared/file-hash';
 import type { ParseOutput, ImportEdge } from '../graph/types';
+import { log } from '../shared/logger';
 
 interface ParseOptions {
   repoDir: string;
@@ -67,7 +68,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
   // Phase 5: Build output
   const fileHashes = new Map<string, string>();
   for (const f of files) {
-    try { fileHashes.set(relative(repoDir, f), computeFileHash(f)); } catch {}
+    try {
+      fileHashes.set(relative(repoDir, f), computeFileHash(f));
+    } catch (err) {
+      log.warn('Failed to compute file hash', { file: f, error: String(err) });
+    }
   }
 
   const graphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);

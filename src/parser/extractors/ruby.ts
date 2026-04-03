@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
 import type { RawGraph } from '../../graph/types';
+import { log } from '../../shared/logger';
 
 export function extractRuby(
   root: SgRoot,
@@ -95,8 +96,8 @@ export function extractRuby(
           qualified: `${fp}::test:${name}`,
         });
       }
-    } catch {
-      // Some Ruby patterns may not match -- that's fine
+    } catch (err) {
+      log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
     }
   }
 
@@ -120,8 +121,8 @@ export function extractRuby(
           });
         }
       }
-    } catch {
-      /* Ruby pattern may fail */
+    } catch (err) {
+      log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
     }
   }
 }

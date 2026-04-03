@@ -4,6 +4,7 @@ import { extname, relative } from 'path';
 import { getLanguage } from './languages';
 import { extractFromFile } from './extractor';
 import type { RawGraph } from '../graph/types';
+import { log } from '../shared/logger';
 
 const BATCH_SIZE = 50;
 
@@ -26,13 +27,21 @@ export async function parseBatch(
       if (!lang) return;
 
       let source: string;
-      try { source = readFileSync(filePath, 'utf-8'); } catch { return; }
+      try { source = readFileSync(filePath, 'utf-8'); } catch (err) {
+        log.warn('Failed to read file', { file: filePath, error: String(err) });
+        return;
+      }
 
       let root;
-      try { root = await parseAsync(lang, source); } catch { return; }
+      try { root = await parseAsync(lang, source); } catch (err) {
+        log.warn('Failed to parse file', { file: filePath, error: String(err) });
+        return;
+      }
 
       const fp = relative(repoRoot, filePath);
-      try { extractFromFile(root, fp, lang, seen, graph); } catch { /* skip */ }
+      try { extractFromFile(root, fp, lang, seen, graph); } catch (err) {
+        log.error('Extraction crashed', { file: fp, error: String(err) });
+      }
     });
 
     await Promise.all(promises);
