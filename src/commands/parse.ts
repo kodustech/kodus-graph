@@ -80,6 +80,8 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
       total_nodes: graphData.nodes.length,
       total_edges: graphData.edges.length,
       duration_ms: Math.round(performance.now() - t0),
+      parse_errors: 0,
+      extract_errors: 0,
     },
     nodes: graphData.nodes,
     edges: graphData.edges,

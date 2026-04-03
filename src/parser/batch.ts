@@ -13,7 +13,7 @@ export async function parseBatch(
 ): Promise<RawGraph> {
   const graph: RawGraph = {
     functions: [], classes: [], interfaces: [], enums: [],
-    tests: [], imports: [], reExports: [],
+    tests: [], imports: [], reExports: [], rawCalls: [],
     diMaps: new Map(),
   };
   const seen = new Set<string>();

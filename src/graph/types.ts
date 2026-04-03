@@ -57,6 +57,8 @@ export interface ParseMetadata {
   total_nodes: number;
   total_edges: number;
   duration_ms: number;
+  parse_errors: number;
+  extract_errors: number;
 }
 
 export interface ParseOutput {
@@ -187,6 +189,13 @@ export interface RawReExport {
   line: number;
 }
 
+export interface RawCallSite {
+  source: string;     // relative file path
+  callName: string;   // function or method name being called
+  line: number;       // line number of the call
+  diField?: string;   // if DI pattern (this.field.method), the field name
+}
+
 export interface RawCallEdge {
   source: string; // file path of the caller
   target: string; // qualified name of the callee
@@ -210,5 +219,6 @@ export interface RawGraph {
   tests: RawTest[];
   imports: RawImport[];
   reExports: RawReExport[];
+  rawCalls: RawCallSite[];
   diMaps: Map<string, Map<string, string>>; // file -> Map<fieldName, typeName>
 }
