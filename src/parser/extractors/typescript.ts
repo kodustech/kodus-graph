@@ -1,5 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
+import { NOISE } from '../../shared/filters';
 import type {
   RawGraph,
   RawFunction,
@@ -9,6 +10,7 @@ import type {
   RawTest,
   RawImport,
   RawReExport,
+  RawCallSite,
 } from '../../graph/types';
 
 export function extractTypeScript(
@@ -299,5 +301,44 @@ export function extractTypeScript(
         qualified: `${fp}::test:${name}`,
       });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a TypeScript/JavaScript AST.
+ * Finds DI calls (this.field.method) and direct calls ($CALLEE($$$ARGS)).
+ * Filters NOISE. Does NOT resolve — just collects raw sites.
+ */
+export function extractCallsFromTypeScript(
+  root: SgRoot,
+  fp: string,
+  calls: RawCallSite[],
+): void {
+  const rootNode = root.root();
+
+  // DI pattern: this.$FIELD.$METHOD($$$ARGS)
+  for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
+    const field = m.getMatch('FIELD')?.text();
+    const method = m.getMatch('METHOD')?.text();
+    if (!method || NOISE.has(method)) continue;
+    calls.push({
+      source: fp,
+      callName: method,
+      line: m.range().start.line,
+      diField: field,
+    });
+  }
+
+  // Direct calls: $CALLEE($$$ARGS)
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee || callee.startsWith('this.')) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }
