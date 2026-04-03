@@ -1,0 +1,28 @@
+{
+  "name": "kodus-graph",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "kodus-graph": "./src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "build": "bun build src/cli.ts --compile --outfile kodus-graph"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.42.0",
+    "@ast-grep/lang-python": "^0.0.6",
+    "@ast-grep/lang-ruby": "^0.0.7",
+    "@ast-grep/lang-go": "^0.0.6",
+    "@ast-grep/lang-java": "^0.0.7",
+    "@ast-grep/lang-rust": "^0.0.7",
+    "@ast-grep/lang-csharp": "^0.0.6",
+    "@ast-grep/lang-php": "^0.0.7",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
+  }
+}
