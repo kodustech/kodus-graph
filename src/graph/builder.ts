@@ -1,0 +1,145 @@
+import type { GraphData, GraphNode, GraphEdge, RawGraph, RawCallEdge, ImportEdge } from './types';
+import { deriveEdges } from './edges';
+
+export function buildGraphData(
+  raw: RawGraph,
+  callEdges: RawCallEdge[],
+  importEdges: ImportEdge[],
+  repoDir: string,
+  fileHashes: Map<string, string>,
+): GraphData {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  // Functions -> nodes
+  for (const f of raw.functions) {
+    nodes.push({
+      kind: f.kind,
+      name: f.name,
+      qualified_name: f.qualified,
+      file_path: f.file,
+      line_start: f.line_start,
+      line_end: f.line_end,
+      language: detectLang(f.file),
+      parent_name: f.className || undefined,
+      params: f.params || undefined,
+      return_type: f.returnType || undefined,
+      is_test: false,
+      file_hash: fileHashes.get(f.file) || '',
+    });
+  }
+
+  // Classes -> nodes
+  for (const c of raw.classes) {
+    nodes.push({
+      kind: 'Class',
+      name: c.name,
+      qualified_name: c.qualified,
+      file_path: c.file,
+      line_start: c.line_start,
+      line_end: c.line_end,
+      language: detectLang(c.file),
+      is_test: false,
+      file_hash: fileHashes.get(c.file) || '',
+    });
+  }
+
+  // Interfaces -> nodes
+  for (const i of raw.interfaces) {
+    nodes.push({
+      kind: 'Interface',
+      name: i.name,
+      qualified_name: i.qualified,
+      file_path: i.file,
+      line_start: i.line_start,
+      line_end: i.line_end,
+      language: detectLang(i.file),
+      is_test: false,
+      file_hash: fileHashes.get(i.file) || '',
+    });
+  }
+
+  // Enums -> nodes
+  for (const e of raw.enums) {
+    nodes.push({
+      kind: 'Enum',
+      name: e.name,
+      qualified_name: e.qualified,
+      file_path: e.file,
+      line_start: e.line_start,
+      line_end: e.line_end,
+      language: detectLang(e.file),
+      is_test: false,
+      file_hash: fileHashes.get(e.file) || '',
+    });
+  }
+
+  // Tests -> nodes
+  for (const t of raw.tests) {
+    nodes.push({
+      kind: 'Test',
+      name: t.name,
+      qualified_name: t.qualified,
+      file_path: t.file,
+      line_start: t.line_start,
+      line_end: t.line_end,
+      language: detectLang(t.file),
+      is_test: true,
+      file_hash: fileHashes.get(t.file) || '',
+    });
+  }
+
+  // CALLS edges
+  for (const ce of callEdges) {
+    edges.push({
+      kind: 'CALLS',
+      source_qualified: ce.source.includes('::') ? ce.source : `${ce.source}::unknown`,
+      target_qualified: ce.target,
+      file_path: ce.source.includes('::') ? ce.source.split('::')[0] : ce.source,
+      line: ce.line,
+      confidence: ce.confidence,
+    });
+  }
+
+  // IMPORTS edges
+  for (const ie of importEdges) {
+    edges.push({
+      kind: 'IMPORTS',
+      source_qualified: ie.source,
+      target_qualified: ie.target,
+      file_path: ie.source,
+      line: ie.line,
+    });
+  }
+
+  // Derived edges
+  const derived = deriveEdges(raw, importEdges);
+
+  for (const e of derived.inherits) {
+    edges.push({ kind: 'INHERITS', source_qualified: e.source, target_qualified: e.target, file_path: e.file || '', line: 0 });
+  }
+  for (const e of derived.implements) {
+    edges.push({ kind: 'IMPLEMENTS', source_qualified: e.source, target_qualified: e.target, file_path: e.file || '', line: 0 });
+  }
+  for (const e of derived.testedBy) {
+    edges.push({ kind: 'TESTED_BY', source_qualified: e.source, target_qualified: e.target, file_path: e.target || '', line: 0 });
+  }
+  for (const e of derived.contains) {
+    edges.push({ kind: 'CONTAINS', source_qualified: e.source, target_qualified: e.target, file_path: e.source, line: 0 });
+  }
+
+  return { nodes, edges };
+}
+
+function detectLang(file: string): string {
+  if (file.endsWith('.ts') || file.endsWith('.tsx')) return 'typescript';
+  if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.mjs') || file.endsWith('.cjs')) return 'javascript';
+  if (file.endsWith('.py')) return 'python';
+  if (file.endsWith('.rb')) return 'ruby';
+  if (file.endsWith('.go')) return 'go';
+  if (file.endsWith('.java')) return 'java';
+  if (file.endsWith('.rs')) return 'rust';
+  if (file.endsWith('.cs')) return 'csharp';
+  if (file.endsWith('.php')) return 'php';
+  return 'unknown';
+}
