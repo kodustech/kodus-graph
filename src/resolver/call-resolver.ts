@@ -4,15 +4,12 @@
  * Cascade: DI (0.90-0.95) → same-file (0.85) → import-resolved (0.70-0.90)
  *        → unique-name (0.50) → ambiguous (0.30)
  *
- * Direct port of poc/src/call-resolver.mjs with TypeScript types.
+ * Pure resolution logic — no file I/O, no parsing.
+ * Raw call sites are provided by the batch parser.
  */
 
-import { parseAsync } from '@ast-grep/napi';
-import { readFileSync } from 'fs';
-import { extname, relative } from 'path';
-import { getLanguage, isTypeScriptLike } from '../parser/languages';
 import { NOISE } from '../shared/filters';
-import type { RawCallEdge } from '../graph/types';
+import type { RawCallEdge, RawCallSite } from '../graph/types';
 import type { SymbolTable } from './symbol-table';
 import type { ImportMap } from './import-map';
 
@@ -38,102 +35,60 @@ interface ResolveAllResult {
   stats: CallResolverStats;
 }
 
-// ── Batch resolution ──
+// ── Batch resolution (pure, no I/O) ──
 
 /**
- * Extract and resolve all function calls from files.
+ * Resolve all raw call sites via the 5-tier cascade.
  *
- * Re-parses each file to find call expressions, then resolves each call
- * via the 5-tier cascade: DI → same-file → import → unique → ambiguous.
+ * Accepts pre-extracted RawCallSite[] from the batch parser.
+ * No file reads, no parseAsync — pure iteration + lookup.
  */
-export async function resolveAllCalls(
-  files: string[],
-  repoRoot: string,
+export function resolveAllCalls(
+  rawCalls: RawCallSite[],
   diMaps: Map<string, Map<string, string>>,
   symbolTable: SymbolTable,
   importMap: ImportMap,
-): Promise<ResolveAllResult> {
+): ResolveAllResult {
   const callEdges: RawCallEdge[] = [];
   const stats: CallResolverStats = { di: 0, same: 0, import: 0, unique: 0, ambiguous: 0, noise: 0 };
-  const BATCH = 50;
 
-  for (let i = 0; i < files.length; i += BATCH) {
-    const batch = files.slice(i, i + BATCH);
+  for (const call of rawCalls) {
+    if (NOISE.has(call.callName)) {
+      stats.noise++;
+      continue;
+    }
 
-    const promises = batch.map(async (filePath) => {
-      const lang = getLanguage(extname(filePath));
-      if (!lang) return [];
+    const fp = call.source;
+    const diMap = diMaps.get(fp);
 
-      let source: string;
-      try { source = readFileSync(filePath, 'utf-8'); } catch { return []; }
-
-      let root;
-      try { root = (await parseAsync(lang, source)).root(); } catch { return []; }
-
-      const fp = relative(repoRoot, filePath);
-      const diMap = diMaps.get(fp);
-      const isTSLike = isTypeScriptLike(lang);
-      const localCalls: RawCallEdge[] = [];
-
-      // this.field.method() — TS DI pattern
-      if (isTSLike) {
-        for (const m of root.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
-          const field = m.getMatch('FIELD')?.text();
-          const method = m.getMatch('METHOD')?.text();
-          if (!method || NOISE.has(method)) { stats.noise++; continue; }
-
-          const resolved = resolveDICall(field, method, fp, diMap, symbolTable);
-          if (resolved) {
-            localCalls.push({
-              source: fp,
-              target: resolved.target,
-              callName: method,
-              line: m.range().start.line,
-              confidence: resolved.confidence,
-            });
-            stats.di++;
-          } else {
-            const fallback = resolveByName(method, fp, symbolTable, importMap);
-            if (fallback) {
-              localCalls.push({
-                source: fp,
-                target: fallback.target,
-                callName: method,
-                line: m.range().start.line,
-                confidence: fallback.confidence,
-              });
-              stats[fallback.strategy]++;
-            }
-          }
-        }
+    // Try DI resolution first if diField is present
+    if (call.diField) {
+      const resolved = resolveDICall(call.diField, call.callName, fp, diMap, symbolTable);
+      if (resolved) {
+        callEdges.push({
+          source: fp,
+          target: resolved.target,
+          callName: call.callName,
+          line: call.line,
+          confidence: resolved.confidence,
+        });
+        stats.di++;
+        continue;
       }
+    }
 
-      // Direct calls: $CALLEE($$$ARGS)
-      for (const m of root.findAll('$CALLEE($$$ARGS)')) {
-        const callee = m.getMatch('CALLEE')?.text();
-        if (!callee || callee.startsWith('this.')) continue;
-
-        const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-        if (NOISE.has(callName)) { stats.noise++; continue; }
-
-        const resolved = resolveByName(callName, fp, symbolTable, importMap);
-        if (resolved) {
-          localCalls.push({
-            source: fp,
-            target: resolved.target,
-            callName,
-            line: m.range().start.line,
-            confidence: resolved.confidence,
-          });
-          stats[resolved.strategy]++;
-        }
-      }
-
-      return localCalls;
-    });
-
-    const results = await Promise.all(promises);
-    for (const calls of results) callEdges.push(...calls);
+    // Name-based cascade fallback
+    const resolved = resolveByName(call.callName, fp, symbolTable, importMap);
+    if (resolved) {
+      callEdges.push({
+        source: fp,
+        target: resolved.target,
+        callName: call.callName,
+        line: call.line,
+        confidence: resolved.confidence,
+      });
+      stats[resolved.strategy]++;
+    }
   }
 
   return { callEdges, stats };
@@ -141,21 +96,14 @@ export async function resolveAllCalls(
 
 // ── DI resolution ──
 
-/**
- * Resolve a DI call: this.fieldName.methodName → ClassName.methodName
- *
- * Uses the diMap to find the type of the injected field,
- * then looks up that type in the symbol table.
- * Falls back to ISomething → Something heuristic for interfaces.
- */
 function resolveDICall(
-  fieldName: string | undefined,
+  fieldName: string,
   methodName: string,
   currentFile: string,
   diMap: Map<string, string> | undefined,
   symbolTable: SymbolTable,
 ): ResolveResult | null {
-  if (!fieldName || !diMap?.has(fieldName)) return null;
+  if (!diMap?.has(fieldName)) return null;
 
   const typeName = diMap.get(fieldName)!;
 
@@ -181,10 +129,6 @@ function resolveDICall(
 
 // ── Name-based resolution (4-tier cascade) ──
 
-/**
- * Resolve a call by name using the cascade:
- * same-file (0.85) → import-resolved (0.70-0.90) → unique-name (0.50) → ambiguous (0.30)
- */
 function resolveByName(
   callName: string,
   currentFile: string,
@@ -220,12 +164,6 @@ function resolveByName(
 
 // ── Public wrapper for unit testing ──
 
-/**
- * Resolve a single call by name with noise filtering.
- *
- * This is a simplified wrapper around resolveByName that adds NOISE filtering,
- * intended for unit testing and external consumers.
- */
 export function resolveCall(
   callName: string,
   currentFile: string,

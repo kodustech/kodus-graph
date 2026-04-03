@@ -62,7 +62,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
   process.stderr.write(`[3/5] Resolved ${importEdges.filter(e => e.resolved).length}/${importEdges.length} imports\n`);
 
   // Phase 4: Resolve calls
-  const { callEdges } = await resolveAllCalls(files, repoDir, rawGraph.diMaps, symbolTable, importMap);
+  const { callEdges } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
   process.stderr.write(`[4/5] Resolved ${callEdges.length} calls\n`);
 
   // Phase 5: Build output
