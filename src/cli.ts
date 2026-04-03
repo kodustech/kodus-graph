@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { resolve } from 'path';
+import { existsSync } from 'fs';
 import { executeParse } from './commands/parse';
 import { executeAnalyze } from './commands/analyze';
 import { executeContext } from './commands/context';
@@ -19,6 +21,11 @@ program
   .option('--repo-dir <path>', 'Repository root directory', '.')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-parse.json')
   .action(async (opts) => {
+    const repoDir = resolve(opts.repoDir);
+    if (!existsSync(repoDir)) {
+      process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
     await executeParse({
       repoDir: opts.repoDir,
       files: opts.files,
@@ -35,6 +42,11 @@ program
   .option('--graph <path>', 'Path to main graph JSON')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-analysis.json')
   .action(async (opts) => {
+    const repoDir = resolve(opts.repoDir);
+    if (!existsSync(repoDir)) {
+      process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
     await executeAnalyze({
       repoDir: opts.repoDir,
       files: opts.files,
@@ -51,6 +63,11 @@ program
   .option('--graph <path>', 'Path to main graph JSON')
   .option('--out <path>', 'Output JSON file path', '/tmp/kodus-graph-context.json')
   .action(async (opts) => {
+    const repoDir = resolve(opts.repoDir);
+    if (!existsSync(repoDir)) {
+      process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
     await executeContext({
       repoDir: opts.repoDir,
       files: opts.files,

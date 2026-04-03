@@ -7,7 +7,13 @@ import { realpathSync } from 'fs';
  * Throws if the path escapes the root.
  */
 export function ensureWithinRoot(filePath: string, repoRoot: string): string {
-  const absRoot = resolve(repoRoot);
+  let absRoot: string;
+  try {
+    absRoot = realpathSync(resolve(repoRoot));
+  } catch {
+    absRoot = resolve(repoRoot);
+  }
+
   let absPath: string;
   try {
     absPath = realpathSync(resolve(absRoot, filePath));

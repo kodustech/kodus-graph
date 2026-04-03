@@ -2,6 +2,8 @@ import { readdirSync } from 'fs';
 import { join, extname, resolve } from 'path';
 import { SKIP_DIRS } from '../shared/filters';
 import { getLanguage } from './languages';
+import { ensureWithinRoot } from '../shared/safe-path';
+import { log } from '../shared/logger';
 
 /**
  * Walk the filesystem and find all supported source files.
@@ -13,7 +15,15 @@ export function discoverFiles(repoDir: string, filterFiles?: string[]): string[]
   if (filterFiles) {
     return filterFiles
       .map(f => f.startsWith('/') ? f : join(absRepoDir, f))
-      .filter(f => getLanguage(extname(f)) !== null);
+      .filter(f => {
+        try {
+          ensureWithinRoot(f, absRepoDir);
+          return getLanguage(extname(f)) !== null;
+        } catch (err) {
+          log.warn('Skipping file outside repository root', { file: f, error: String(err) });
+          return false;
+        }
+      });
   }
 
   const files: string[] = [];

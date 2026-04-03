@@ -13,6 +13,8 @@ import { resolve as resolveJavaImport } from './languages/java';
 import { resolve as resolveRustImport } from './languages/rust';
 import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolvePhpImport } from './languages/php';
+import { ensureWithinRoot } from '../shared/safe-path';
+import { log } from '../shared/logger';
 
 const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
   ts: resolveTsImport,
@@ -52,6 +54,16 @@ export function resolveImport(
   // Fallback: tsconfig aliases for TS/JS
   if (!result && (lang === 'ts' || lang === 'javascript' || lang === 'typescript') && tsconfigAliases?.size) {
     result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
+  }
+
+  // Validate resolved path is within repo root
+  if (result) {
+    try {
+      ensureWithinRoot(result, repoRoot);
+    } catch {
+      log.warn('Import resolves outside repository root', { from: fromAbsFile, module: modulePath, resolved: result });
+      return null;
+    }
   }
 
   return result;
