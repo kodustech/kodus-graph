@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
-import type { RawGraph } from '../../graph/types';
+import type { RawGraph, RawCallSite } from '../../graph/types';
+import { NOISE } from '../../shared/filters';
 
 export function extractPython(
   root: SgRoot,
@@ -104,5 +105,29 @@ export function extractPython(
         lang: 'python',
       });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a Python AST.
+ * Direct calls only — Python has no DI pattern.
+ */
+export function extractCallsFromPython(
+  root: SgRoot,
+  fp: string,
+  calls: RawCallSite[],
+): void {
+  const rootNode = root.root();
+
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }

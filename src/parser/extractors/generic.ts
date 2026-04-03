@@ -1,7 +1,8 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
-import type { RawGraph } from '../../graph/types';
+import type { RawGraph, RawCallSite } from '../../graph/types';
 import { log } from '../../shared/logger';
+import { NOISE } from '../../shared/filters';
 
 export function extractGeneric(
   root: SgRoot,
@@ -69,5 +70,29 @@ export function extractGeneric(
     } catch (err) {
       log.debug('Generic extraction failed', { file: fp, error: String(err) });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a generic language AST.
+ * Direct calls only.
+ */
+export function extractCallsFromGeneric(
+  root: SgRoot,
+  fp: string,
+  calls: RawCallSite[],
+): void {
+  const rootNode = root.root();
+
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }

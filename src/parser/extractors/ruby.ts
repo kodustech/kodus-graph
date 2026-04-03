@@ -1,7 +1,8 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
-import type { RawGraph } from '../../graph/types';
+import type { RawGraph, RawCallSite } from '../../graph/types';
 import { log } from '../../shared/logger';
+import { NOISE } from '../../shared/filters';
 
 export function extractRuby(
   root: SgRoot,
@@ -124,5 +125,29 @@ export function extractRuby(
     } catch (err) {
       log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a Ruby AST.
+ * Direct calls only — Ruby has no DI pattern.
+ */
+export function extractCallsFromRuby(
+  root: SgRoot,
+  fp: string,
+  calls: RawCallSite[],
+): void {
+  const rootNode = root.root();
+
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }
