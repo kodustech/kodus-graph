@@ -24,9 +24,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
   // Phase 1: Discover files
   const files = discoverFiles(repoDir, opts.all ? undefined : opts.files);
+  process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
   // Phase 2: Parse + extract
   const rawGraph = await parseBatch(files, repoDir);
+  process.stderr.write(`[2/5] Parsed ${rawGraph.functions.length} functions, ${rawGraph.classes.length} classes\n`);
 
   // Phase 3: Resolve imports
   const tsconfigAliases = loadTsconfigAliases(repoDir);
@@ -56,8 +58,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     for (const name of imp.names) importMap.add(imp.file, name, target);
   }
 
+  process.stderr.write(`[3/5] Resolved ${importEdges.filter(e => e.resolved).length}/${importEdges.length} imports\n`);
+
   // Phase 4: Resolve calls
   const { callEdges } = await resolveAllCalls(files, repoDir, rawGraph.diMaps, symbolTable, importMap);
+  process.stderr.write(`[4/5] Resolved ${callEdges.length} calls\n`);
 
   // Phase 5: Build output
   const fileHashes = new Map<string, string>();
@@ -66,6 +71,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
   }
 
   const graphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);
+  process.stderr.write(`[5/5] Built graph: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges\n`);
 
   const output: ParseOutput = {
     metadata: {
