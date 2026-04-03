@@ -222,3 +222,8 @@ export interface RawGraph {
   rawCalls: RawCallSite[];
   diMaps: Map<string, Map<string, string>>; // file -> Map<fieldName, typeName>
 }
+
+export interface ParseBatchResult extends RawGraph {
+  parseErrors: number;
+  extractErrors: number;
+}

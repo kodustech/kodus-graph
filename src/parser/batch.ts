@@ -4,7 +4,7 @@ import { extname, relative } from 'path';
 import { getLanguage } from './languages';
 import { extractFromFile } from './extractor';
 import { extractCallsFromFile } from './extractor';
-import type { RawGraph } from '../graph/types';
+import type { RawGraph, ParseBatchResult } from '../graph/types';
 import { log } from '../shared/logger';
 
 const BATCH_SIZE = 50;
@@ -12,7 +12,7 @@ const BATCH_SIZE = 50;
 export async function parseBatch(
   files: string[],
   repoRoot: string,
-): Promise<RawGraph & { parseErrors: number; extractErrors: number }> {
+): Promise<ParseBatchResult> {
   const graph: RawGraph = {
     functions: [], classes: [], interfaces: [], enums: [],
     tests: [], imports: [], reExports: [], rawCalls: [],
@@ -63,5 +63,5 @@ export async function parseBatch(
     await Promise.all(promises);
   }
 
-  return Object.assign(graph, { parseErrors, extractErrors });
+  return { ...graph, parseErrors, extractErrors };
 }
