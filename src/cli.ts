@@ -3,8 +3,13 @@ import { Command } from 'commander';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { executeAnalyze } from './commands/analyze';
+import { executeCommunities } from './commands/communities';
 import { executeContext } from './commands/context';
+import { executeDiff } from './commands/diff';
+import { executeFlows } from './commands/flows';
 import { executeParse } from './commands/parse';
+import { executeSearch } from './commands/search';
+import { executeUpdate } from './commands/update';
 
 const program = new Command();
 
@@ -69,6 +74,117 @@ program
       repoDir: opts.repoDir,
       files: opts.files,
       graph: opts.graph,
+      out: opts.out,
+    });
+  });
+
+program
+  .command('diff')
+  .description('Compare changed files against an existing graph')
+  .option('--base <ref>', 'Git ref to diff against')
+  .option('--files <paths...>', 'Explicit list of changed files')
+  .option('--repo-dir <path>', 'Repository root directory', '.')
+  .option('--graph <path>', 'Previous graph JSON', '.kodus-graph/graph.json')
+  .requiredOption('--out <path>', 'Output JSON file path')
+  .action(async (opts) => {
+    if (!opts.base && !opts.files) {
+      process.stderr.write('Error: one of --base or --files is required\n');
+      process.exit(1);
+    }
+    const repoDir = resolve(opts.repoDir);
+    if (!existsSync(repoDir)) {
+      process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
+    await executeDiff({
+      repoDir: opts.repoDir,
+      base: opts.base,
+      files: opts.files,
+      graph: opts.graph,
+      out: opts.out,
+    });
+  });
+
+program
+  .command('update')
+  .description('Incrementally update graph (only re-parse changed files)')
+  .option('--repo-dir <path>', 'Repository root directory', '.')
+  .option('--graph <path>', 'Previous graph JSON (default: .kodus-graph/graph.json)')
+  .option('--out <path>', 'Output path (default: same as --graph)')
+  .action(async (opts) => {
+    const repoDir = resolve(opts.repoDir);
+    if (!existsSync(repoDir)) {
+      process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
+    await executeUpdate({
+      repoDir: opts.repoDir,
+      graph: opts.graph,
+      out: opts.out,
+    });
+  });
+
+program
+  .command('communities')
+  .description('Detect module clusters and coupling between them')
+  .requiredOption('--graph <path>', 'Path to graph JSON')
+  .requiredOption('--out <path>', 'Output JSON file path')
+  .option('--min-size <n>', 'Minimum nodes per community', '2')
+  .option('--depth <n>', 'Directory grouping depth', '2')
+  .action((opts) => {
+    executeCommunities({
+      graph: opts.graph,
+      out: opts.out,
+      minSize: parseInt(opts.minSize, 10),
+      depth: parseInt(opts.depth, 10),
+    });
+  });
+
+program
+  .command('flows')
+  .description('Detect entry points and trace execution paths')
+  .requiredOption('--graph <path>', 'Path to graph JSON')
+  .requiredOption('--out <path>', 'Output JSON file path')
+  .option('--max-depth <n>', 'Max BFS trace depth', '10')
+  .option('--type <kind>', 'Filter: test, http, all', 'all')
+  .action((opts) => {
+    executeFlows({
+      graph: opts.graph,
+      out: opts.out,
+      maxDepth: parseInt(opts.maxDepth, 10),
+      type: opts.type as 'test' | 'http' | 'all',
+    });
+  });
+
+program
+  .command('search')
+  .description('Search the graph by name, kind, file, or relations')
+  .requiredOption('--graph <path>', 'Path to graph JSON')
+  .option('--query <pattern>', 'Search by name/qualified_name (glob or /regex/)')
+  .option('--kind <type>', 'Filter by kind: Function, Method, Class, Interface, Enum, Test')
+  .option('--file <pattern>', 'Filter by file path (glob)')
+  .option('--callers-of <qualified>', 'Find callers of this node')
+  .option('--callees-of <qualified>', 'Find callees of this node')
+  .option('--limit <n>', 'Max results', '50')
+  .option('--out <path>', 'Output file (default: stdout)')
+  .action((opts) => {
+    const modes = [opts.query, opts.callersOf, opts.calleesOf].filter(Boolean).length;
+    if (modes === 0) {
+      process.stderr.write('Error: one of --query, --callers-of, or --callees-of is required\n');
+      process.exit(1);
+    }
+    if (modes > 1) {
+      process.stderr.write('Error: --query, --callers-of, and --callees-of are mutually exclusive\n');
+      process.exit(1);
+    }
+    executeSearch({
+      graph: opts.graph,
+      query: opts.query,
+      kind: opts.kind,
+      file: opts.file,
+      callersOf: opts.callersOf,
+      calleesOf: opts.calleesOf,
+      limit: parseInt(opts.limit, 10),
       out: opts.out,
     });
   });
