@@ -1,14 +1,11 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
+import type { RawCallSite, RawGraph } from '../../graph/types';
+import { NOISE } from '../../shared/filters';
+import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
-import type { RawGraph } from '../../graph/types';
 
-export function extractRuby(
-  root: SgRoot,
-  fp: string,
-  seen: Set<string>,
-  graph: RawGraph,
-): void {
-  const kinds = LANG_KINDS['ruby'];
+export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
+  const kinds = LANG_KINDS.ruby;
   const rootNode = root.root();
 
   // ── Classes ──
@@ -53,9 +50,7 @@ export function extractRuby(
     if (seen.has(`m:${fp}:${name}:${line}`)) continue;
     seen.add(`m:${fp}:${name}:${line}`);
 
-    const classAncestor = node
-      .ancestors()
-      .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
+    const classAncestor = node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
     const className = classAncestor?.field('name')?.text() || '';
 
     graph.functions.push({
@@ -95,8 +90,8 @@ export function extractRuby(
           qualified: `${fp}::test:${name}`,
         });
       }
-    } catch {
-      // Some Ruby patterns may not match -- that's fine
+    } catch (err) {
+      log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
     }
   }
 
@@ -120,8 +115,28 @@ export function extractRuby(
           });
         }
       }
-    } catch {
-      /* Ruby pattern may fail */
+    } catch (err) {
+      log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a Ruby AST.
+ * Direct calls only — Ruby has no DI pattern.
+ */
+export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
+  const rootNode = root.root();
+
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }

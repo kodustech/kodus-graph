@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'bun:test';
-import { computeFileHash } from '../../src/shared/file-hash';
-import { writeFileSync, mkdirSync, rmSync } from 'fs';
+import { describe, expect, it } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { computeFileHash } from '../../src/shared/file-hash';
 
 describe('computeFileHash', () => {
   const tmpDir = '/tmp/kodus-graph-test-hash';

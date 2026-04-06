@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { qualifiedName } from '../../src/shared/qualified-name';
 
 describe('qualifiedName', () => {
@@ -15,6 +15,8 @@ describe('qualifiedName', () => {
   });
 
   it('should handle test qualified name', () => {
-    expect(qualifiedName('tests/auth.test.ts', 'should authenticate', undefined, true)).toBe('tests/auth.test.ts::test:should authenticate');
+    expect(qualifiedName('tests/auth.test.ts', 'should authenticate', undefined, true)).toBe(
+      'tests/auth.test.ts::test:should authenticate',
+    );
   });
 });

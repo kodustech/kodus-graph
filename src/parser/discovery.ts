@@ -1,6 +1,8 @@
 import { readdirSync } from 'fs';
-import { join, extname, resolve } from 'path';
-import { SKIP_DIRS } from '../shared/filters';
+import { extname, join, resolve } from 'path';
+import { isSkippableFile, SKIP_DIRS } from '../shared/filters';
+import { log } from '../shared/logger';
+import { ensureWithinRoot } from '../shared/safe-path';
 import { getLanguage } from './languages';
 
 /**
@@ -12,8 +14,16 @@ export function discoverFiles(repoDir: string, filterFiles?: string[]): string[]
 
   if (filterFiles) {
     return filterFiles
-      .map(f => f.startsWith('/') ? f : join(absRepoDir, f))
-      .filter(f => getLanguage(extname(f)) !== null);
+      .map((f) => (f.startsWith('/') ? f : join(absRepoDir, f)))
+      .filter((f) => {
+        try {
+          ensureWithinRoot(f, absRepoDir);
+          return getLanguage(extname(f)) !== null;
+        } catch (err) {
+          log.warn('Skipping file outside repository root', { file: f, error: String(err) });
+          return false;
+        }
+      });
   }
 
   const files: string[] = [];
@@ -25,7 +35,7 @@ function walkFiles(dir: string, files: string[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory() && !SKIP_DIRS.has(entry.name)) {
       walkFiles(join(dir, entry.name), files);
-    } else if (entry.isFile() && getLanguage(extname(entry.name)) !== null) {
+    } else if (entry.isFile() && getLanguage(extname(entry.name)) !== null && !isSkippableFile(entry.name)) {
       files.push(join(dir, entry.name));
     }
   }

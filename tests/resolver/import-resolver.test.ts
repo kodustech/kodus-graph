@@ -1,79 +1,43 @@
-import { describe, it, expect } from 'bun:test';
-import { resolveImport, loadTsconfigAliases } from '../../src/resolver/import-resolver';
-import { resolve, join } from 'path';
+import { describe, expect, it } from 'bun:test';
+import { join, resolve } from 'path';
+import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
 
 const fixtureDir = resolve('tests/fixtures/sample-repo');
 
 describe('resolveImport', () => {
   it('should resolve relative TS import', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      './auth',
-      'ts',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), './auth', 'ts', fixtureDir);
     expect(result).toContain('auth.ts');
   });
 
   it('should resolve relative TS import with .service suffix', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      './user.service',
-      'ts',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), './user.service', 'ts', fixtureDir);
     expect(result).toContain('user.service.ts');
   });
 
   it('should return null for external package', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      'express',
-      'ts',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), 'express', 'ts', fixtureDir);
     expect(result).toBeNull();
   });
 
   it('should return null for unknown language', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      './auth',
-      'unknown-lang',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), './auth', 'unknown-lang', fixtureDir);
     expect(result).toBeNull();
   });
 
   it('should resolve with tsconfig aliases', () => {
     const aliases = loadTsconfigAliases(fixtureDir);
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      '@/auth',
-      'ts',
-      fixtureDir,
-      aliases,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), '@/auth', 'ts', fixtureDir, aliases);
     expect(result).toContain('auth.ts');
   });
 
   it('should work with javascript lang key', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      './auth',
-      'javascript',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), './auth', 'javascript', fixtureDir);
     expect(result).toContain('auth.ts');
   });
 
   it('should work with typescript lang key', () => {
-    const result = resolveImport(
-      join(fixtureDir, 'src/controller.ts'),
-      './auth',
-      'typescript',
-      fixtureDir,
-    );
+    const result = resolveImport(join(fixtureDir, 'src/controller.ts'), './auth', 'typescript', fixtureDir);
     expect(result).toContain('auth.ts');
   });
 });

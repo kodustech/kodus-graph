@@ -15,8 +15,8 @@ export function mergeGraphs(
   const changedSet = new Set(changedFiles);
 
   // Keep main graph nodes/edges NOT in changed files
-  const mainNodes = mainGraph.nodes.filter(n => !changedSet.has(n.file_path));
-  const mainEdges = mainGraph.edges.filter(e => !changedSet.has(e.file_path));
+  const mainNodes = mainGraph.nodes.filter((n) => !changedSet.has(n.file_path));
+  const mainEdges = mainGraph.edges.filter((e) => !changedSet.has(e.file_path));
 
   return {
     nodes: [...mainNodes, ...localParse.nodes],

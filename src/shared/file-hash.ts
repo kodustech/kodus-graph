@@ -1,5 +1,5 @@
-import { readFileSync } from 'fs';
 import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 
 export function computeFileHash(filePath: string): string {
   const content = readFileSync(filePath);

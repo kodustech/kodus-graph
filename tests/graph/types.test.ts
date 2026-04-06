@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'bun:test';
-import type { GraphNode, GraphEdge, GraphData, ParseOutput, AnalysisOutput, ContextOutput } from '../../src/graph/types';
+import { describe, expect, it } from 'bun:test';
+import type { GraphEdge, GraphNode, ParseOutput, RawCallSite } from '../../src/graph/types';
 
 describe('GraphNode', () => {
   it('should accept a valid Function node', () => {
@@ -72,10 +72,34 @@ describe('ParseOutput', () => {
         total_nodes: 10,
         total_edges: 20,
         duration_ms: 100,
+        parse_errors: 0,
+        extract_errors: 0,
       },
       nodes: [],
       edges: [],
     };
     expect(output.metadata.files_parsed).toBe(2);
+  });
+});
+
+describe('RawCallSite type', () => {
+  it('should be assignable with required fields', () => {
+    const site: RawCallSite = {
+      source: 'src/auth.ts',
+      callName: 'validate',
+      line: 10,
+    };
+    expect(site.source).toBe('src/auth.ts');
+    expect(site.diField).toBeUndefined();
+  });
+
+  it('should accept optional diField', () => {
+    const site: RawCallSite = {
+      source: 'src/controller.ts',
+      callName: 'findUser',
+      line: 20,
+      diField: 'userService',
+    };
+    expect(site.diField).toBe('userService');
   });
 });

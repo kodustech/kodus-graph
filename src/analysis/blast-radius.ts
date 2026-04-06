@@ -1,10 +1,6 @@
-import type { GraphData, BlastRadiusResult } from '../graph/types';
+import type { BlastRadiusResult, GraphData } from '../graph/types';
 
-export function computeBlastRadius(
-  graph: GraphData,
-  changedFiles: string[],
-  maxDepth: number = 2,
-): BlastRadiusResult {
+export function computeBlastRadius(graph: GraphData, changedFiles: string[], maxDepth: number = 2): BlastRadiusResult {
   // Build adjacency list from CALLS edges (callers of changed nodes)
   const adj = new Map<string, Set<string>>();
   for (const edge of graph.edges) {
@@ -21,9 +17,7 @@ export function computeBlastRadius(
 
   // Seed: all nodes in changed files
   const changedSet = new Set(changedFiles);
-  const seeds = graph.nodes
-    .filter(n => changedSet.has(n.file_path))
-    .map(n => n.qualified_name);
+  const seeds = graph.nodes.filter((n) => changedSet.has(n.file_path)).map((n) => n.qualified_name);
 
   // BFS
   const visited = new Set<string>(seeds);
@@ -45,7 +39,7 @@ export function computeBlastRadius(
   }
 
   // Count unique files
-  const nodeIndex = new Map(graph.nodes.map(n => [n.qualified_name, n]));
+  const nodeIndex = new Map(graph.nodes.map((n) => [n.qualified_name, n]));
   const impactedFiles = new Set<string>();
   for (const q of visited) {
     const node = nodeIndex.get(q);

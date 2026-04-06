@@ -1,11 +1,11 @@
-import type { GraphData, GraphNode, GraphEdge, RawGraph, RawCallEdge, ImportEdge } from './types';
 import { deriveEdges } from './edges';
+import type { GraphData, GraphEdge, GraphNode, ImportEdge, RawCallEdge, RawGraph } from './types';
 
 export function buildGraphData(
   raw: RawGraph,
   callEdges: RawCallEdge[],
   importEdges: ImportEdge[],
-  repoDir: string,
+  _repoDir: string,
   fileHashes: Map<string, string>,
 ): GraphData {
   const nodes: GraphNode[] = [];
@@ -116,16 +116,40 @@ export function buildGraphData(
   const derived = deriveEdges(raw, importEdges);
 
   for (const e of derived.inherits) {
-    edges.push({ kind: 'INHERITS', source_qualified: e.source, target_qualified: e.target, file_path: e.file || '', line: 0 });
+    edges.push({
+      kind: 'INHERITS',
+      source_qualified: e.source,
+      target_qualified: e.target,
+      file_path: e.file || '',
+      line: 0,
+    });
   }
   for (const e of derived.implements) {
-    edges.push({ kind: 'IMPLEMENTS', source_qualified: e.source, target_qualified: e.target, file_path: e.file || '', line: 0 });
+    edges.push({
+      kind: 'IMPLEMENTS',
+      source_qualified: e.source,
+      target_qualified: e.target,
+      file_path: e.file || '',
+      line: 0,
+    });
   }
   for (const e of derived.testedBy) {
-    edges.push({ kind: 'TESTED_BY', source_qualified: e.source, target_qualified: e.target, file_path: e.target || '', line: 0 });
+    edges.push({
+      kind: 'TESTED_BY',
+      source_qualified: e.source,
+      target_qualified: e.target,
+      file_path: e.target || '',
+      line: 0,
+    });
   }
   for (const e of derived.contains) {
-    edges.push({ kind: 'CONTAINS', source_qualified: e.source, target_qualified: e.target, file_path: e.source, line: 0 });
+    edges.push({
+      kind: 'CONTAINS',
+      source_qualified: e.source,
+      target_qualified: e.target,
+      file_path: e.source,
+      line: 0,
+    });
   }
 
   return { nodes, edges };
@@ -133,7 +157,8 @@ export function buildGraphData(
 
 function detectLang(file: string): string {
   if (file.endsWith('.ts') || file.endsWith('.tsx')) return 'typescript';
-  if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.mjs') || file.endsWith('.cjs')) return 'javascript';
+  if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.mjs') || file.endsWith('.cjs'))
+    return 'javascript';
   if (file.endsWith('.py')) return 'python';
   if (file.endsWith('.rb')) return 'ruby';
   if (file.endsWith('.go')) return 'go';

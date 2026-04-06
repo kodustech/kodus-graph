@@ -1,24 +1,24 @@
-import type { GraphData, ContextOutput } from '../graph/types';
+import type { ContextOutput, GraphData } from '../graph/types';
 import { computeBlastRadius } from './blast-radius';
 import { computeRiskScore } from './risk-score';
 import { findTestGaps } from './test-gaps';
 
-export function buildReviewContext(
-  graph: GraphData,
-  changedFiles: string[],
-): ContextOutput {
+export function buildReviewContext(graph: GraphData, changedFiles: string[]): ContextOutput {
   const changedSet = new Set(changedFiles);
   const lines: string[] = [];
 
   // Build caller/callee index from CALLS edges
   const callersOf = new Map<string, Array<{ name: string; file: string; line: number; confidence: number }>>();
-  const calleesOf = new Map<string, Array<{ name: string; target: string; file: string; line: number; confidence: number }>>();
+  const calleesOf = new Map<
+    string,
+    Array<{ name: string; target: string; file: string; line: number; confidence: number }>
+  >();
 
   // Index nodes by qualified name
-  const nodeIndex = new Map(graph.nodes.map(n => [n.qualified_name, n]));
+  const nodeIndex = new Map(graph.nodes.map((n) => [n.qualified_name, n]));
 
   for (const edge of graph.edges) {
-    if (edge.kind !== 'CALLS' || (edge.confidence ?? 0) < 0.50) continue;
+    if (edge.kind !== 'CALLS' || (edge.confidence ?? 0) < 0.5) continue;
 
     // callers: who calls edge.target
     if (!callersOf.has(edge.target_qualified)) callersOf.set(edge.target_qualified, []);
@@ -43,15 +43,16 @@ export function buildReviewContext(
   }
 
   // TESTED_BY index
-  const testedFiles = new Set(
-    graph.edges.filter(e => e.kind === 'TESTED_BY').map(e => e.source_qualified),
-  );
+  const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
 
   lines.push('Changed functions (AST analysis):\n');
 
   // Functions in changed files
   const changedFunctions = graph.nodes
-    .filter(n => changedSet.has(n.file_path) && !n.is_test && n.kind !== 'Class' && n.kind !== 'Interface' && n.kind !== 'Enum')
+    .filter(
+      (n) =>
+        changedSet.has(n.file_path) && !n.is_test && n.kind !== 'Class' && n.kind !== 'Interface' && n.kind !== 'Enum',
+    )
     .sort((a, b) => a.file_path.localeCompare(b.file_path) || a.line_start - b.line_start);
 
   let callerCount = 0;
@@ -83,7 +84,8 @@ export function buildReviewContext(
       seenCallees.add(callee.target);
       const calleeNode = nodeIndex.get(callee.target);
       if (calleeNode) {
-        const calleeSig = calleeNode.params && calleeNode.params !== '()' ? `${callee.name}${calleeNode.params}` : callee.name;
+        const calleeSig =
+          calleeNode.params && calleeNode.params !== '()' ? `${callee.name}${calleeNode.params}` : callee.name;
         const calleeRet = calleeNode.return_type ? ` -> ${calleeNode.return_type}` : '';
         lines.push(`  → calls ${calleeSig}${calleeRet}  (${calleeNode.file_path}:${calleeNode.line_start})`);
       } else {
@@ -104,7 +106,9 @@ export function buildReviewContext(
   // Blast radius
   const blastRadius = computeBlastRadius(graph, changedFiles);
   if (blastRadius.total_files > changedFiles.length) {
-    lines.push(`Blast radius: ${changedFunctions.filter(f => f.kind !== 'Constructor').length} changed functions impact ${blastRadius.total_files - changedFiles.length} other files`);
+    lines.push(
+      `Blast radius: ${changedFunctions.filter((f) => f.kind !== 'Constructor').length} changed functions impact ${blastRadius.total_files - changedFiles.length} other files`,
+    );
   }
 
   // Risk score
@@ -125,7 +129,7 @@ export function buildReviewContext(
   return {
     text: lines.join('\n'),
     metadata: {
-      changed_functions: changedFunctions.filter(f => f.kind !== 'Constructor').length,
+      changed_functions: changedFunctions.filter((f) => f.kind !== 'Constructor').length,
       caller_count: callerCount,
       callee_count: calleeCount,
       untested_count: untestedCount,

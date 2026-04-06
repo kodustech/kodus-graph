@@ -1,27 +1,23 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
+import { Lang } from '@ast-grep/napi';
+import type { RawCallSite, RawGraph } from '../../graph/types';
+import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
-import type {
-  RawGraph,
-  RawFunction,
-  RawClass,
-  RawInterface,
-  RawEnum,
-  RawTest,
-  RawImport,
-  RawReExport,
-} from '../../graph/types';
 
 export function extractTypeScript(
   root: SgRoot,
   fp: string,
   seen: Set<string>,
   graph: RawGraph,
+  lang: Lang | string = Lang.TypeScript,
 ): void {
-  const kinds = LANG_KINDS['typescript'];
+  const kinds = LANG_KINDS.typescript;
   const rootNode = root.root();
+  const isTS = lang === Lang.TypeScript || lang === Lang.Tsx;
 
   // ── Classes ──
-  for (const kind of [kinds.class, kinds.abstractClass]) {
+  const classKinds = isTS ? [kinds.class, kinds.abstractClass] : [kinds.class];
+  for (const kind of classKinds) {
     for (const node of rootNode.findAll({ rule: { kind } })) {
       const name = node.field('name')?.text();
       if (!name || seen.has(`c:${fp}:${name}`)) continue;
@@ -37,18 +33,14 @@ export function extractTypeScript(
             ?.children()
             .find(
               (c: SgNode) =>
-                c.kind() === 'identifier' ||
-                c.kind() === 'type_identifier' ||
-                c.kind() === 'member_expression',
+                c.kind() === 'identifier' || c.kind() === 'type_identifier' || c.kind() === 'member_expression',
             )
             ?.text() || '';
         const impl = heritage.children().find((c: SgNode) => c.kind() === 'implements_clause');
         implementsName =
           impl
             ?.children()
-            .find(
-              (c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier',
-            )
+            .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
             ?.text() || '';
       }
 
@@ -74,7 +66,7 @@ export function extractTypeScript(
 
     const classAncestor = node
       .ancestors()
-      .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass);
+      .find((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass));
     const className = classAncestor?.field('name')?.text() || '';
     const params = node.field('parameters');
     const retType = node.field('return_type')?.text()?.replace(/^:\s*/, '') || '';
@@ -93,15 +85,15 @@ export function extractTypeScript(
               .children()
               .find(
                 (c: SgNode) =>
-                  c.kind() === 'type_identifier' ||
-                  c.kind() === 'identifier' ||
-                  c.kind() === 'generic_type',
+                  c.kind() === 'type_identifier' || c.kind() === 'identifier' || c.kind() === 'generic_type',
               );
             if (typeNode) {
               const typeName =
                 typeNode.kind() === 'generic_type'
-                  ? typeNode.children().find((c: SgNode) => c.kind() === 'type_identifier')?.text() ||
-                    typeNode.text()
+                  ? typeNode
+                      .children()
+                      .find((c: SgNode) => c.kind() === 'type_identifier')
+                      ?.text() || typeNode.text()
                   : typeNode.text();
               fieldTypeMap.set(ident.text(), typeName);
             }
@@ -131,9 +123,7 @@ export function extractTypeScript(
         returnType: retType,
         kind: className ? 'Method' : 'Function',
         className,
-        qualified: className
-          ? `${fp}::${className}.${name}`
-          : `${fp}::${name}`,
+        qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
       });
     }
   }
@@ -144,11 +134,7 @@ export function extractTypeScript(
     if (!name) continue;
     const line = node.range().start.line;
     if (seen.has(`f:${fp}:${name}:${line}`)) continue;
-    if (
-      node
-        .ancestors()
-        .some((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass)
-    )
+    if (node.ancestors().some((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass)))
       continue;
     seen.add(`f:${fp}:${name}:${line}`);
 
@@ -189,44 +175,46 @@ export function extractTypeScript(
     });
   }
 
-  // ── Interfaces ──
-  for (const node of rootNode.findAll({ rule: { kind: kinds.interface } })) {
-    const name = node.field('name')?.text();
-    if (!name || seen.has(`i:${fp}:${name}`)) continue;
-    seen.add(`i:${fp}:${name}`);
+  // ── Interfaces (TS only — JS grammar has no interface_declaration) ──
+  if (isTS)
+    for (const node of rootNode.findAll({ rule: { kind: kinds.interface } })) {
+      const name = node.field('name')?.text();
+      if (!name || seen.has(`i:${fp}:${name}`)) continue;
+      seen.add(`i:${fp}:${name}`);
 
-    const methods: string[] = [];
-    const body = node.field('body');
-    if (body) {
-      for (const child of body.findAll({ rule: { kind: kinds.methodSignature } })) {
-        const mn = child.field('name')?.text();
-        if (mn) methods.push(mn);
+      const methods: string[] = [];
+      const body = node.field('body');
+      if (body) {
+        for (const child of body.findAll({ rule: { kind: kinds.methodSignature } })) {
+          const mn = child.field('name')?.text();
+          if (mn) methods.push(mn);
+        }
       }
+
+      graph.interfaces.push({
+        name,
+        file: fp,
+        line_start: node.range().start.line,
+        line_end: node.range().end.line,
+        methods,
+        qualified: `${fp}::${name}`,
+      });
     }
 
-    graph.interfaces.push({
-      name,
-      file: fp,
-      line_start: node.range().start.line,
-      line_end: node.range().end.line,
-      methods,
-      qualified: `${fp}::${name}`,
-    });
-  }
-
-  // ── Enums ──
-  for (const node of rootNode.findAll({ rule: { kind: kinds.enum } })) {
-    const name = node.field('name')?.text();
-    if (!name || seen.has(`e:${fp}:${name}`)) continue;
-    seen.add(`e:${fp}:${name}`);
-    graph.enums.push({
-      name,
-      file: fp,
-      line_start: node.range().start.line,
-      line_end: node.range().end.line,
-      qualified: `${fp}::${name}`,
-    });
-  }
+  // ── Enums (TS only — JS grammar has no enum_declaration) ──
+  if (isTS)
+    for (const node of rootNode.findAll({ rule: { kind: kinds.enum } })) {
+      const name = node.field('name')?.text();
+      if (!name || seen.has(`e:${fp}:${name}`)) continue;
+      seen.add(`e:${fp}:${name}`);
+      graph.enums.push({
+        name,
+        file: fp,
+        line_start: node.range().start.line,
+        line_end: node.range().end.line,
+        qualified: `${fp}::${name}`,
+      });
+    }
 
   // ── Imports ──
   for (const node of rootNode.findAll({ rule: { kind: kinds.import } })) {
@@ -245,7 +233,10 @@ export function extractTypeScript(
           for (const spec of child.findAll({ rule: { kind: 'import_specifier' } })) {
             const n =
               spec.field('name')?.text() ||
-              spec.children().find((c: SgNode) => c.kind() === 'identifier')?.text();
+              spec
+                .children()
+                .find((c: SgNode) => c.kind() === 'identifier')
+                ?.text();
             if (n) names.push(n);
           }
         } else if (child.kind() === 'namespace_import') {
@@ -299,5 +290,40 @@ export function extractTypeScript(
         qualified: `${fp}::test:${name}`,
       });
     }
+  }
+}
+
+/**
+ * Extract raw call sites from a TypeScript/JavaScript AST.
+ * Finds DI calls (this.field.method) and direct calls ($CALLEE($$$ARGS)).
+ * Filters NOISE. Does NOT resolve — just collects raw sites.
+ */
+export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawCallSite[]): void {
+  const rootNode = root.root();
+
+  // DI pattern: this.$FIELD.$METHOD($$$ARGS)
+  for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
+    const field = m.getMatch('FIELD')?.text();
+    const method = m.getMatch('METHOD')?.text();
+    if (!method || NOISE.has(method)) continue;
+    calls.push({
+      source: fp,
+      callName: method,
+      line: m.range().start.line,
+      diField: field,
+    });
+  }
+
+  // Direct calls: $CALLEE($$$ARGS)
+  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
+    const callee = m.getMatch('CALLEE')?.text();
+    if (!callee || callee.startsWith('this.')) continue;
+    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
+    if (NOISE.has(callName)) continue;
+    calls.push({
+      source: fp,
+      callName,
+      line: m.range().start.line,
+    });
   }
 }

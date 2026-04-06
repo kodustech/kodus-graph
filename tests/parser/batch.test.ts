@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test';
-import { parseBatch } from '../../src/parser/batch';
+import { describe, expect, it } from 'bun:test';
 import { resolve } from 'path';
+import { parseBatch } from '../../src/parser/batch';
 
 // Import to trigger language registration
 import '../../src/parser/languages';
