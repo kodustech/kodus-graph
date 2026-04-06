@@ -1,10 +1,16 @@
 {
-  "name": "kodus-graph",
+  "name": "@kodus/kodus-graph",
   "version": "0.1.0",
+  "description": "Code graph builder for Kodus code review — parses source code into structural graphs with nodes, edges, and analysis",
   "type": "module",
   "bin": {
     "kodus-graph": "./src/cli.ts"
   },
+  "files": [
+    "src/**/*.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "bun run src/cli.ts",
     "test": "bun test",
@@ -13,7 +19,28 @@
     "format": "biome format --write src/ tests/",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run lint && bun test",
-    "build": "bun build src/cli.ts --compile --outfile kodus-graph"
+    "build": "bun build src/cli.ts --compile --outfile kodus-graph",
+    "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64",
+    "build:darwin-arm64": "bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/kodus-graph-darwin-arm64",
+    "build:darwin-x64": "bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/kodus-graph-darwin-x64",
+    "build:linux-x64": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile dist/kodus-graph-linux-x64",
+    "build:linux-arm64": "bun build src/cli.ts --compile --target=bun-linux-arm64 --outfile dist/kodus-graph-linux-arm64"
+  },
+  "keywords": [
+    "code-graph",
+    "ast",
+    "code-review",
+    "static-analysis",
+    "kodus"
+  ],
+  "author": "Kodus AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kodustech/kodus-graph.git"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "dependencies": {
     "@ast-grep/lang-csharp": "^0.0.6",
