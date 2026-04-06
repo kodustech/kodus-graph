@@ -13,7 +13,7 @@ import { executeUpdate } from './commands/update';
 
 const program = new Command();
 
-program.name('kodus-graph').description('Code graph builder for Kodus code review').version('0.2.0');
+program.name('kodus-graph').description('Code graph builder for Kodus code review').version('0.2.1');
 
 program
   .command('parse')
@@ -21,6 +21,8 @@ program
   .option('--all', 'Parse all files in repo')
   .option('--files <paths...>', 'Parse specific files')
   .option('--repo-dir <path>', 'Repository root directory', '.')
+  .option('--include <glob...>', 'Include only files matching glob (repeatable)')
+  .option('--exclude <glob...>', 'Exclude files matching glob (repeatable)')
   .requiredOption('--out <path>', 'Output JSON file path')
   .action(async (opts) => {
     const repoDir = resolve(opts.repoDir);
@@ -33,6 +35,8 @@ program
       files: opts.files,
       all: opts.all ?? false,
       out: opts.out,
+      include: opts.include,
+      exclude: opts.exclude,
     });
   });
 

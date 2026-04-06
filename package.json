@@ -1,6 +1,6 @@
 {
   "name": "@kodus/kodus-graph",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Code graph builder for Kodus code review — parses source code into structural graphs with nodes, edges, and analysis",
   "type": "module",
   "bin": {

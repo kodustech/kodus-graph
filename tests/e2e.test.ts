@@ -41,6 +41,20 @@ describe('E2E: kodus-graph CLI', () => {
     rmSync(out, { force: true });
   });
 
+  it('parse --all --exclude should skip excluded files', () => {
+    const out = '/tmp/kodus-graph-e2e-parse-exclude.json';
+    execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --exclude "**/*.test.*" --out ${out}`);
+    const result = JSON.parse(readFileSync(out, 'utf-8'));
+
+    expect(result.metadata.files_parsed).toBeGreaterThan(0);
+    // No test file nodes should be present since we excluded *.test.* files
+    for (const node of result.nodes) {
+      expect(node.file_path).not.toMatch(/\.test\./);
+    }
+
+    rmSync(out, { force: true });
+  });
+
   it('analyze should produce blast radius and risk score', () => {
     const parsePath = '/tmp/kodus-graph-e2e-analyze-parse.json';
     const analyzePath = '/tmp/kodus-graph-e2e-analyze.json';
