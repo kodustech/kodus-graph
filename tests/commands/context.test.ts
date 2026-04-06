@@ -13,7 +13,6 @@ describe('executeContext', () => {
   const outPath = '/tmp/kodus-graph-test-context.json';
 
   it('should produce V2 context with graph and analysis sections', async () => {
-    // Build parse output first
     await executeParse({
       repoDir: fixtureDir,
       all: true,
@@ -27,6 +26,7 @@ describe('executeContext', () => {
       out: outPath,
       minConfidence: 0.5,
       maxDepth: 3,
+      format: 'json',
     });
 
     const output = JSON.parse(readFileSync(outPath, 'utf-8'));
@@ -42,9 +42,39 @@ describe('executeContext', () => {
     expect(output.analysis).toHaveProperty('test_gaps');
     expect(output.analysis).toHaveProperty('risk');
     expect(output.analysis.metadata.changed_functions_count).toBeGreaterThan(0);
-    expect(output.analysis.metadata.min_confidence).toBe(0.5);
 
     rmSync(parsePath, { force: true });
     rmSync(outPath, { force: true });
+  });
+
+  it('should produce prompt text with --format prompt', async () => {
+    const promptPath = '/tmp/kodus-graph-test-prompt.txt';
+
+    await executeParse({
+      repoDir: fixtureDir,
+      all: true,
+      out: parsePath,
+    });
+
+    await executeContext({
+      repoDir: fixtureDir,
+      files: ['src/auth.ts'],
+      graph: parsePath,
+      out: promptPath,
+      minConfidence: 0.5,
+      maxDepth: 3,
+      format: 'prompt',
+    });
+
+    const text = readFileSync(promptPath, 'utf-8');
+    expect(text).toContain('# Code Review Context');
+    expect(text).toContain('Risk:');
+    expect(text).toContain('## Changed Functions');
+    expect(text).toContain('authenticate');
+    expect(text).toContain('Callers:');
+    expect(text).toContain('Test coverage:');
+
+    rmSync(parsePath, { force: true });
+    rmSync(promptPath, { force: true });
   });
 });

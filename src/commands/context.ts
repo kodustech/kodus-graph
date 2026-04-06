@@ -1,6 +1,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
+import { formatPrompt } from '../analysis/prompt-formatter';
 import { mergeGraphs } from '../graph/merger';
 import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
@@ -15,6 +16,7 @@ interface ContextOptions {
   out: string;
   minConfidence: number;
   maxDepth: number;
+  format: 'json' | 'prompt';
 }
 
 export async function executeContext(opts: ContextOptions): Promise<void> {
@@ -69,7 +71,11 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
       maxDepth: opts.maxDepth,
     });
 
-    writeFileSync(opts.out, JSON.stringify(output, null, 2));
+    if (opts.format === 'prompt') {
+      writeFileSync(opts.out, formatPrompt(output));
+    } else {
+      writeFileSync(opts.out, JSON.stringify(output, null, 2));
+    }
   } finally {
     try {
       rmSync(tmp.dir, { recursive: true, force: true });

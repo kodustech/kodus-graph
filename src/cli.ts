@@ -66,10 +66,15 @@ program
   .requiredOption('--out <path>', 'Output JSON file path')
   .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
   .option('--max-depth <n>', 'Blast radius BFS depth', '3')
+  .option('--format <type>', 'Output format: json or prompt', 'json')
   .action(async (opts) => {
     const repoDir = resolve(opts.repoDir);
     if (!existsSync(repoDir)) {
       process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+      process.exit(1);
+    }
+    if (opts.format !== 'json' && opts.format !== 'prompt') {
+      process.stderr.write('Error: --format must be "json" or "prompt"\n');
       process.exit(1);
     }
     await executeContext({
@@ -79,6 +84,7 @@ program
       out: opts.out,
       minConfidence: Number.parseFloat(opts.minConfidence),
       maxDepth: Number.parseInt(opts.maxDepth, 10),
+      format: opts.format,
     });
   });
 
