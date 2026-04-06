@@ -2,7 +2,8 @@ import type { SgRoot } from '@ast-grep/napi';
 import { parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { extname, relative } from 'path';
-import type { ParseBatchResult, RawGraph } from '../graph/types';
+import type { ParseBatchResult, RawCallSite, RawGraph } from '../graph/types';
+import { NOISE } from '../shared/filters';
 import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
 import { getLanguage } from './languages';
@@ -60,7 +61,14 @@ export async function parseBatch(files: string[], repoRoot: string): Promise<Par
       }
 
       try {
-        extractCallsFromFile(root, fp, lang, graph.rawCalls);
+        // Extract calls into a temporary buffer, then filter noise before pushing
+        const rawCalls: RawCallSite[] = [];
+        extractCallsFromFile(root, fp, lang, rawCalls);
+        for (const call of rawCalls) {
+          if (!NOISE.has(call.callName)) {
+            graph.rawCalls.push(call);
+          }
+        }
       } catch (err) {
         log.error('Call extraction crashed', { file: fp, error: String(err) });
         extractErrors++;
