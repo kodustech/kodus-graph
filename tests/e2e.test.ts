@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { execSync } from 'child_process';
 import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
@@ -46,7 +46,9 @@ describe('E2E: kodus-graph CLI', () => {
     const analyzePath = '/tmp/kodus-graph-e2e-analyze.json';
 
     execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --out ${parsePath}`);
-    execSync(`bun run ${CLI} analyze --files src/auth.ts --repo-dir ${FIXTURE} --graph ${parsePath} --out ${analyzePath}`);
+    execSync(
+      `bun run ${CLI} analyze --files src/auth.ts --repo-dir ${FIXTURE} --graph ${parsePath} --out ${analyzePath}`,
+    );
 
     const result = JSON.parse(readFileSync(analyzePath, 'utf-8'));
     expect(result.blast_radius).toBeDefined();

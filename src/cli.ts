@@ -1,17 +1,14 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
-import { resolve } from 'path';
 import { existsSync } from 'fs';
-import { executeParse } from './commands/parse';
+import { resolve } from 'path';
 import { executeAnalyze } from './commands/analyze';
 import { executeContext } from './commands/context';
+import { executeParse } from './commands/parse';
 
 const program = new Command();
 
-program
-  .name('kodus-graph')
-  .description('Code graph builder for Kodus code review')
-  .version('0.1.0');
+program.name('kodus-graph').description('Code graph builder for Kodus code review').version('0.1.0');
 
 program
   .command('parse')

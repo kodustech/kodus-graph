@@ -1,11 +1,11 @@
-import { registerDynamicLanguage, Lang } from '@ast-grep/napi';
-import python from '@ast-grep/lang-python';
-import ruby from '@ast-grep/lang-ruby';
+import csharp from '@ast-grep/lang-csharp';
 import go from '@ast-grep/lang-go';
 import java from '@ast-grep/lang-java';
-import rust from '@ast-grep/lang-rust';
 import php from '@ast-grep/lang-php';
-import csharp from '@ast-grep/lang-csharp';
+import python from '@ast-grep/lang-python';
+import ruby from '@ast-grep/lang-ruby';
+import rust from '@ast-grep/lang-rust';
+import { Lang, registerDynamicLanguage } from '@ast-grep/napi';
 
 // Register dynamic languages at import time (side effect).
 // This must happen before parseAsync can parse these languages.
@@ -14,19 +14,19 @@ registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp });
 // Extension -> language identifier
 // Built-in langs use Lang enum, dynamic langs use lowercase string
 const EXT_TO_LANG: Record<string, Lang | string> = {
-  '.ts':   Lang.TypeScript,
-  '.tsx':  Lang.Tsx,
-  '.js':   Lang.JavaScript,
-  '.jsx':  Lang.JavaScript,
-  '.mjs':  Lang.JavaScript,
-  '.cjs':  Lang.JavaScript,
-  '.py':   'python',
-  '.rb':   'ruby',
-  '.go':   'go',
+  '.ts': Lang.TypeScript,
+  '.tsx': Lang.Tsx,
+  '.js': Lang.JavaScript,
+  '.jsx': Lang.JavaScript,
+  '.mjs': Lang.JavaScript,
+  '.cjs': Lang.JavaScript,
+  '.py': 'python',
+  '.rb': 'ruby',
+  '.go': 'go',
   '.java': 'java',
-  '.rs':   'rust',
-  '.cs':   'csharp',
-  '.php':  'php',
+  '.rs': 'rust',
+  '.cs': 'csharp',
+  '.php': 'php',
 };
 
 export function getLanguage(ext: string): Lang | string | null {

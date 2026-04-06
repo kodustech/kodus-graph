@@ -1,8 +1,8 @@
 // tests/parser/call-extraction.test.ts
-import { describe, it, expect } from 'bun:test';
-import { parseAsync, Lang } from '@ast-grep/napi';
-import { extractCallsFromTypeScript } from '../../src/parser/extractors/typescript';
+import { describe, expect, it } from 'bun:test';
+import { Lang, parseAsync } from '@ast-grep/napi';
 import type { RawCallSite } from '../../src/graph/types';
+import { extractCallsFromTypeScript } from '../../src/parser/extractors/typescript';
 
 // Import to trigger language registration
 import '../../src/parser/languages';
@@ -24,7 +24,7 @@ describe('extractCallsFromTypeScript', () => {
       }
     `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).toContain('validate');
     expect(names).toContain('processData');
   });
@@ -39,7 +39,7 @@ describe('extractCallsFromTypeScript', () => {
       }
     `;
     const calls = await extractCalls(source);
-    const diCall = calls.find(c => c.callName === 'validate');
+    const diCall = calls.find((c) => c.callName === 'validate');
     expect(diCall).toBeDefined();
     expect(diCall!.diField).toBe('authService');
     expect(diCall!.source).toBe('src/test.ts');
@@ -53,7 +53,7 @@ describe('extractCallsFromTypeScript', () => {
       realFunction(arg);
     `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).not.toContain('log');
     expect(names).not.toContain('push');
     expect(names).not.toContain('map');
@@ -63,7 +63,7 @@ describe('extractCallsFromTypeScript', () => {
   it('should set correct line numbers', async () => {
     const source = `const x = 1;\nconst y = 2;\nmyFunc(x, y);\n`;
     const calls = await extractCalls(source);
-    const call = calls.find(c => c.callName === 'myFunc');
+    const call = calls.find((c) => c.callName === 'myFunc');
     expect(call).toBeDefined();
     expect(call!.line).toBe(2); // 0-indexed line
   });
@@ -76,9 +76,9 @@ describe('extractCallsFromTypeScript', () => {
   });
 });
 
+import { extractCallsFromGeneric } from '../../src/parser/extractors/generic';
 import { extractCallsFromPython } from '../../src/parser/extractors/python';
 import { extractCallsFromRuby } from '../../src/parser/extractors/ruby';
-import { extractCallsFromGeneric } from '../../src/parser/extractors/generic';
 
 describe('extractCallsFromPython', () => {
   async function extractCalls(source: string, fp: string = 'src/test.py'): Promise<RawCallSite[]> {
@@ -95,7 +95,7 @@ def main():
     process_data(input)
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).toContain('validate');
     expect(names).toContain('process_data');
   });
@@ -106,7 +106,7 @@ print("hello")
 real_function(arg)
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).not.toContain('print');
     expect(names).toContain('real_function');
   });
@@ -136,7 +136,7 @@ def main
 end
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).toContain('validate');
     expect(names).toContain('process_data');
   });
@@ -147,7 +147,7 @@ puts "hello"
 real_function(arg)
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).not.toContain('puts');
     expect(names).toContain('real_function');
   });
@@ -171,7 +171,7 @@ func main() {
 }
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).toContain('validate');
     expect(names).toContain('processData');
   });
@@ -186,7 +186,7 @@ func main() {
 }
 `;
     const calls = await extractCalls(source);
-    const names = calls.map(c => c.callName);
+    const names = calls.map((c) => c.callName);
     expect(names).not.toContain('Println');
     expect(names).toContain('realFunction');
   });

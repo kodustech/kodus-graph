@@ -1,16 +1,11 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import { LANG_KINDS } from '../languages';
-import type { RawGraph, RawCallSite } from '../../graph/types';
-import { log } from '../../shared/logger';
+import type { RawCallSite, RawGraph } from '../../graph/types';
 import { NOISE } from '../../shared/filters';
+import { log } from '../../shared/logger';
+import { LANG_KINDS } from '../languages';
 
-export function extractRuby(
-  root: SgRoot,
-  fp: string,
-  seen: Set<string>,
-  graph: RawGraph,
-): void {
-  const kinds = LANG_KINDS['ruby'];
+export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
+  const kinds = LANG_KINDS.ruby;
   const rootNode = root.root();
 
   // ── Classes ──
@@ -55,9 +50,7 @@ export function extractRuby(
     if (seen.has(`m:${fp}:${name}:${line}`)) continue;
     seen.add(`m:${fp}:${name}:${line}`);
 
-    const classAncestor = node
-      .ancestors()
-      .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
+    const classAncestor = node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
     const className = classAncestor?.field('name')?.text() || '';
 
     graph.functions.push({
@@ -132,11 +125,7 @@ export function extractRuby(
  * Extract raw call sites from a Ruby AST.
  * Direct calls only — Ruby has no DI pattern.
  */
-export function extractCallsFromRuby(
-  root: SgRoot,
-  fp: string,
-  calls: RawCallSite[],
-): void {
+export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
   const rootNode = root.root();
 
   for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {

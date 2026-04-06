@@ -1,12 +1,12 @@
+import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
-import { readFileSync, writeFileSync, rmSync } from 'fs';
-import { executeParse } from './parse';
-import { mergeGraphs } from '../graph/merger';
 import { buildReviewContext } from '../analysis/review-context';
-import type { MainGraphInput, ContextOutput } from '../graph/types';
+import { mergeGraphs } from '../graph/merger';
+import type { ContextOutput, GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
-import { createSecureTempFile } from '../shared/temp';
 import { GraphInputSchema } from '../shared/schemas';
+import { createSecureTempFile } from '../shared/temp';
+import { executeParse } from './parse';
 
 interface ContextOptions {
   repoDir: string;
@@ -30,12 +30,12 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
     const parseResult = JSON.parse(readFileSync(tmp.filePath, 'utf-8'));
 
     // Load and merge with main graph if provided
-    let mergedGraph;
+    let mergedGraph: GraphData;
     if (opts.graph) {
       let raw: unknown;
       try {
         raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
-      } catch (err) {
+      } catch (_err) {
         process.stderr.write(`Error: Failed to read --graph file: ${opts.graph}\n`);
         process.exit(1);
       }
@@ -60,7 +60,9 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
 
     writeFileSync(opts.out, JSON.stringify(contextOutput, null, 2));
   } finally {
-    try { rmSync(tmp.dir, { recursive: true, force: true }); } catch (err) {
+    try {
+      rmSync(tmp.dir, { recursive: true, force: true });
+    } catch (err) {
       log.debug('Failed to clean up temp dir', { dir: tmp.dir, error: String(err) });
     }
   }

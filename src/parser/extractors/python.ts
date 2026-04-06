@@ -1,15 +1,10 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import { LANG_KINDS } from '../languages';
-import type { RawGraph, RawCallSite } from '../../graph/types';
+import type { RawCallSite, RawGraph } from '../../graph/types';
 import { NOISE } from '../../shared/filters';
+import { LANG_KINDS } from '../languages';
 
-export function extractPython(
-  root: SgRoot,
-  fp: string,
-  seen: Set<string>,
-  graph: RawGraph,
-): void {
-  const kinds = LANG_KINDS['python'];
+export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
+  const kinds = LANG_KINDS.python;
   const rootNode = root.root();
 
   // ── Classes ──
@@ -18,11 +13,12 @@ export function extractPython(
     if (!name || seen.has(`c:${fp}:${name}`)) continue;
     seen.add(`c:${fp}:${name}`);
 
-    const argList =
-      node.field('superclasses') ||
-      node.children().find((c: SgNode) => c.kind() === 'argument_list');
+    const argList = node.field('superclasses') || node.children().find((c: SgNode) => c.kind() === 'argument_list');
     const extendsName =
-      argList?.children().find((c: SgNode) => c.kind() === 'identifier')?.text() || '';
+      argList
+        ?.children()
+        .find((c: SgNode) => c.kind() === 'identifier')
+        ?.text() || '';
 
     graph.classes.push({
       name,
@@ -45,7 +41,11 @@ export function extractPython(
 
     const classAncestor = node.ancestors().find((a: SgNode) => a.kind() === kinds.class);
     const className = classAncestor?.field('name')?.text() || '';
-    const retType = node.field('return_type')?.text()?.replace(/^->\s*/, '') || '';
+    const retType =
+      node
+        .field('return_type')
+        ?.text()
+        ?.replace(/^->\s*/, '') || '';
 
     const isTest = name.startsWith('test_');
     if (isTest) {
@@ -73,9 +73,7 @@ export function extractPython(
 
   // ── Imports (from X import Y) ──
   for (const node of rootNode.findAll({ rule: { kind: kinds.import } })) {
-    const modNode = node
-      .children()
-      .find((c: SgNode) => c.kind() === 'dotted_name' || c.kind() === 'relative_import');
+    const modNode = node.children().find((c: SgNode) => c.kind() === 'dotted_name' || c.kind() === 'relative_import');
     const modulePath = modNode?.text() || '';
     if (!modulePath) continue;
 
@@ -112,11 +110,7 @@ export function extractPython(
  * Extract raw call sites from a Python AST.
  * Direct calls only — Python has no DI pattern.
  */
-export function extractCallsFromPython(
-  root: SgRoot,
-  fp: string,
-  calls: RawCallSite[],
-): void {
+export function extractCallsFromPython(root: SgRoot, fp: string, calls: RawCallSite[]): void {
   const rootNode = root.root();
 
   for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {

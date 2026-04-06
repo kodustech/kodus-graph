@@ -1,15 +1,31 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { computeRiskScore } from '../../src/analysis/risk-score';
-import type { GraphData, BlastRadiusResult } from '../../src/graph/types';
+import type { BlastRadiusResult, GraphData } from '../../src/graph/types';
 
 describe('computeRiskScore', () => {
   it('should return LOW for small blast radius with tests', () => {
     const graph: GraphData = {
       nodes: [
-        { kind: 'Function', name: 'foo', qualified_name: 'src/a.ts::foo', file_path: 'src/a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'a' },
+        {
+          kind: 'Function',
+          name: 'foo',
+          qualified_name: 'src/a.ts::foo',
+          file_path: 'src/a.ts',
+          line_start: 1,
+          line_end: 5,
+          language: 'typescript',
+          is_test: false,
+          file_hash: 'a',
+        },
       ],
       edges: [
-        { kind: 'TESTED_BY', source_qualified: 'src/a.ts', target_qualified: 'tests/a.test.ts', file_path: 'tests/a.test.ts', line: 0 },
+        {
+          kind: 'TESTED_BY',
+          source_qualified: 'src/a.ts',
+          target_qualified: 'tests/a.test.ts',
+          file_path: 'tests/a.test.ts',
+          line: 0,
+        },
       ],
     };
     const blastRadius: BlastRadiusResult = { total_functions: 1, total_files: 1, by_depth: {} };
@@ -22,7 +38,17 @@ describe('computeRiskScore', () => {
   it('should return HIGH for large blast radius without tests', () => {
     const graph: GraphData = {
       nodes: [
-        { kind: 'Function', name: 'core', qualified_name: 'src/core.ts::core', file_path: 'src/core.ts', line_start: 1, line_end: 100, language: 'typescript', is_test: false, file_hash: 'a' },
+        {
+          kind: 'Function',
+          name: 'core',
+          qualified_name: 'src/core.ts::core',
+          file_path: 'src/core.ts',
+          line_start: 1,
+          line_end: 100,
+          language: 'typescript',
+          is_test: false,
+          file_hash: 'a',
+        },
       ],
       edges: [],
     };

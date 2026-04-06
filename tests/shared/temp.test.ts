@@ -1,14 +1,15 @@
-import { describe, it, expect, afterEach } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { existsSync, rmSync, statSync } from 'fs';
 import { createSecureTempFile } from '../../src/shared/temp';
-import { existsSync, statSync, rmSync } from 'fs';
-import { dirname } from 'path';
 
 describe('createSecureTempFile', () => {
   const cleanupDirs: string[] = [];
 
   afterEach(() => {
     for (const dir of cleanupDirs) {
-      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
     }
     cleanupDirs.length = 0;
   });

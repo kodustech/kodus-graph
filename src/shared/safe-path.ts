@@ -1,5 +1,5 @@
-import { resolve, relative } from 'path';
 import { realpathSync } from 'fs';
+import { relative, resolve } from 'path';
 
 /**
  * Validate that a resolved path is within the repository root.

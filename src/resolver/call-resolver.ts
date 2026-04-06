@@ -8,10 +8,10 @@
  * Raw call sites are provided by the batch parser.
  */
 
-import { NOISE } from '../shared/filters';
 import type { RawCallEdge, RawCallSite } from '../graph/types';
-import type { SymbolTable } from './symbol-table';
+import { NOISE } from '../shared/filters';
 import type { ImportMap } from './import-map';
+import type { SymbolTable } from './symbol-table';
 
 // ── Types ──
 
@@ -99,7 +99,7 @@ export function resolveAllCalls(
 function resolveDICall(
   fieldName: string,
   methodName: string,
-  currentFile: string,
+  _currentFile: string,
   diMap: Map<string, string> | undefined,
   symbolTable: SymbolTable,
 ): ResolveResult | null {
@@ -120,7 +120,7 @@ function resolveDICall(
     const implCandidates = symbolTable.lookupGlobal(implName);
     if (implCandidates.length >= 1) {
       const implFile = implCandidates[0].split('::')[0];
-      return { target: `${implFile}::${implName}.${methodName}`, confidence: 0.90, strategy: 'di' };
+      return { target: `${implFile}::${implName}.${methodName}`, confidence: 0.9, strategy: 'di' };
     }
   }
 
@@ -143,20 +143,20 @@ function resolveByName(
   const importedFrom = importMap.lookup(currentFile, callName);
   if (importedFrom) {
     const targetSym = symbolTable.lookupExact(importedFrom, callName);
-    if (targetSym) return { target: targetSym, confidence: 0.90, strategy: 'import' };
-    return { target: `${importedFrom}::${callName}`, confidence: 0.70, strategy: 'import' };
+    if (targetSym) return { target: targetSym, confidence: 0.9, strategy: 'import' };
+    return { target: `${importedFrom}::${callName}`, confidence: 0.7, strategy: 'import' };
   }
 
   // Strategy 3: Unique global name (0.50)
   if (symbolTable.isUnique(callName)) {
     const candidates = symbolTable.lookupGlobal(callName);
-    return { target: candidates[0], confidence: 0.50, strategy: 'unique' };
+    return { target: candidates[0], confidence: 0.5, strategy: 'unique' };
   }
 
   // Strategy 4: Ambiguous (0.30)
   const candidates = symbolTable.lookupGlobal(callName);
   if (candidates.length > 1) {
-    return { target: callName, confidence: 0.30, strategy: 'ambiguous' };
+    return { target: callName, confidence: 0.3, strategy: 'ambiguous' };
   }
 
   return null;

@@ -1,21 +1,24 @@
+import type { SgRoot } from '@ast-grep/napi';
 import { parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { extname, relative } from 'path';
-import { getLanguage } from './languages';
-import { extractFromFile } from './extractor';
-import { extractCallsFromFile } from './extractor';
-import type { RawGraph, ParseBatchResult } from '../graph/types';
+import type { ParseBatchResult, RawGraph } from '../graph/types';
 import { log } from '../shared/logger';
+import { extractCallsFromFile, extractFromFile } from './extractor';
+import { getLanguage } from './languages';
 
 const BATCH_SIZE = 50;
 
-export async function parseBatch(
-  files: string[],
-  repoRoot: string,
-): Promise<ParseBatchResult> {
+export async function parseBatch(files: string[], repoRoot: string): Promise<ParseBatchResult> {
   const graph: RawGraph = {
-    functions: [], classes: [], interfaces: [], enums: [],
-    tests: [], imports: [], reExports: [], rawCalls: [],
+    functions: [],
+    classes: [],
+    interfaces: [],
+    enums: [],
+    tests: [],
+    imports: [],
+    reExports: [],
+    rawCalls: [],
     diMaps: new Map(),
   };
   const seen = new Set<string>();
@@ -30,14 +33,18 @@ export async function parseBatch(
       if (!lang) return;
 
       let source: string;
-      try { source = readFileSync(filePath, 'utf-8'); } catch (err) {
+      try {
+        source = readFileSync(filePath, 'utf-8');
+      } catch (err) {
         log.warn('Failed to read file', { file: filePath, error: String(err) });
         parseErrors++;
         return;
       }
 
-      let root;
-      try { root = await parseAsync(lang, source); } catch (err) {
+      let root: SgRoot;
+      try {
+        root = await parseAsync(lang, source);
+      } catch (err) {
         log.warn('Failed to parse file', { file: filePath, error: String(err) });
         parseErrors++;
         return;

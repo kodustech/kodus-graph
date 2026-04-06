@@ -1,5 +1,5 @@
 // tests/shared/logger.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { log } from '../../src/shared/logger';
 
 describe('logger', () => {

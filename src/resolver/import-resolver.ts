@@ -5,16 +5,16 @@
  * falls back to tsconfig aliases for TypeScript/JavaScript.
  */
 
-import { resolve as resolveTsImport, resolveWithAliases, loadTsconfigAliases } from './languages/typescript';
-import { resolve as resolvePyImport } from './languages/python';
-import { resolve as resolveRbImport } from './languages/ruby';
+import { log } from '../shared/logger';
+import { ensureWithinRoot } from '../shared/safe-path';
+import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolveGoImport } from './languages/go';
 import { resolve as resolveJavaImport } from './languages/java';
-import { resolve as resolveRustImport } from './languages/rust';
-import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolvePhpImport } from './languages/php';
-import { ensureWithinRoot } from '../shared/safe-path';
-import { log } from '../shared/logger';
+import { resolve as resolvePyImport } from './languages/python';
+import { resolve as resolveRbImport } from './languages/ruby';
+import { resolve as resolveRustImport } from './languages/rust';
+import { loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
 
 const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
   ts: resolveTsImport,

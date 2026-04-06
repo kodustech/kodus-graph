@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'bun:test';
-import { ensureWithinRoot } from '../../src/shared/safe-path';
-import { resolve, join } from 'path';
-import { mkdtempSync, symlinkSync, rmSync } from 'fs';
+import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
+import { join, resolve } from 'path';
+import { ensureWithinRoot } from '../../src/shared/safe-path';
 
 describe('ensureWithinRoot', () => {
   const repoRoot = resolve('tests/fixtures/sample-repo');

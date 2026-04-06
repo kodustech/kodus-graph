@@ -8,6 +8,11 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "test": "bun test",
+    "lint": "biome check src/ tests/",
+    "lint:fix": "biome check --write src/ tests/",
+    "format": "biome format --write src/ tests/",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun run lint && bun test",
     "build": "bun build src/cli.ts --compile --outfile kodus-graph"
   },
   "dependencies": {
@@ -23,6 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
     "@types/bun": "latest",
     "typescript": "^5.5.0"
   }

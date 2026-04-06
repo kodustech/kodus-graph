@@ -1,21 +1,8 @@
 // ── Node kinds (aligned with Postgres ast_nodes.kind) ──
-export type NodeKind =
-  | 'Function'
-  | 'Method'
-  | 'Constructor'
-  | 'Class'
-  | 'Interface'
-  | 'Enum'
-  | 'Test';
+export type NodeKind = 'Function' | 'Method' | 'Constructor' | 'Class' | 'Interface' | 'Enum' | 'Test';
 
 // ── Edge kinds (aligned with Postgres ast_edges.kind) ──
-export type EdgeKind =
-  | 'CALLS'
-  | 'IMPORTS'
-  | 'INHERITS'
-  | 'IMPLEMENTS'
-  | 'TESTED_BY'
-  | 'CONTAINS';
+export type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 'CONTAINS';
 
 // ── Graph node (matches ast_nodes table) ──
 export interface GraphNode {
@@ -190,10 +177,10 @@ export interface RawReExport {
 }
 
 export interface RawCallSite {
-  source: string;     // relative file path
-  callName: string;   // function or method name being called
-  line: number;       // line number of the call
-  diField?: string;   // if DI pattern (this.field.method), the field name
+  source: string; // relative file path
+  callName: string; // function or method name being called
+  line: number; // line number of the call
+  diField?: string; // if DI pattern (this.field.method), the field name
 }
 
 export interface RawCallEdge {

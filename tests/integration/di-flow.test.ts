@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { resolve } from 'path';
 import { parseBatch } from '../../src/parser/batch';
 import { resolveAllCalls } from '../../src/resolver/call-resolver';
-import { createSymbolTable } from '../../src/resolver/symbol-table';
 import { createImportMap } from '../../src/resolver/import-map';
+import { createSymbolTable } from '../../src/resolver/symbol-table';
 
 // Trigger language registration
 import '../../src/parser/languages';
@@ -27,9 +27,7 @@ describe('DI flow: extraction → parseBatch → resolveAllCalls', () => {
     expect(controllerDI!.get('authService')).toBe('AuthService');
 
     // Verify rawCalls include DI call with diField
-    const diCall = rawGraph.rawCalls.find(
-      c => c.source === 'src/controller.ts' && c.diField === 'authService'
-    );
+    const diCall = rawGraph.rawCalls.find((c) => c.source === 'src/controller.ts' && c.diField === 'authService');
     expect(diCall).toBeDefined();
     expect(diCall!.callName).toBe('authenticate');
 
@@ -47,7 +45,7 @@ describe('DI flow: extraction → parseBatch → resolveAllCalls', () => {
 
     // Verify DI resolution produced an edge with 0.95 confidence
     const diEdge = callEdges.find(
-      e => e.source === 'src/controller.ts' && e.callName === 'authenticate' && e.confidence >= 0.90
+      (e) => e.source === 'src/controller.ts' && e.callName === 'authenticate' && e.confidence >= 0.9,
     );
     expect(diEdge).toBeDefined();
     expect(diEdge!.target).toContain('AuthService.authenticate');

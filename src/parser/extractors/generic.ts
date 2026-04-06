@@ -1,16 +1,10 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import { LANG_KINDS } from '../languages';
-import type { RawGraph, RawCallSite } from '../../graph/types';
-import { log } from '../../shared/logger';
+import type { RawCallSite, RawGraph } from '../../graph/types';
 import { NOISE } from '../../shared/filters';
+import { log } from '../../shared/logger';
+import { LANG_KINDS } from '../languages';
 
-export function extractGeneric(
-  root: SgRoot,
-  fp: string,
-  lang: string,
-  seen: Set<string>,
-  graph: RawGraph,
-): void {
+export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set<string>, graph: RawGraph): void {
   const kinds = LANG_KINDS[lang];
   if (!kinds) return;
   const rootNode = root.root();
@@ -38,7 +32,8 @@ export function extractGeneric(
   }
 
   // Try to extract functions/methods
-  for (const funcKind of [kinds.function, kinds.method, kinds.constructor].filter(Boolean)) {
+  // biome-ignore lint/complexity/useLiteralKeys: 'constructor' must use bracket notation to avoid Object.prototype.constructor
+  for (const funcKind of [kinds.function, kinds.method, kinds['constructor'] as string | undefined].filter(Boolean)) {
     try {
       for (const node of rootNode.findAll({ rule: { kind: funcKind } })) {
         const name = node.field('name')?.text();
@@ -48,7 +43,7 @@ export function extractGeneric(
         seen.add(`f:${fp}:${name}:${line}`);
 
         const classAncestor = node.ancestors().find((a: SgNode) => {
-          const k = a.kind();
+          const k = String(a.kind());
           return k.includes('class') || k.includes('struct') || k.includes('impl');
         });
         const className = classAncestor?.field('name')?.text() || '';
@@ -62,9 +57,7 @@ export function extractGeneric(
           returnType: node.field('return_type')?.text() || '',
           kind: className ? 'Method' : 'Function',
           className,
-          qualified: className
-            ? `${fp}::${className}.${name}`
-            : `${fp}::${name}`,
+          qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
         });
       }
     } catch (err) {
@@ -77,11 +70,7 @@ export function extractGeneric(
  * Extract raw call sites from a generic language AST.
  * Direct calls only.
  */
-export function extractCallsFromGeneric(
-  root: SgRoot,
-  fp: string,
-  calls: RawCallSite[],
-): void {
+export function extractCallsFromGeneric(root: SgRoot, fp: string, calls: RawCallSite[]): void {
   const rootNode = root.root();
 
   for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {

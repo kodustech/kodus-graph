@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { resolveCall } from '../../src/resolver/call-resolver';
-import { createSymbolTable } from '../../src/resolver/symbol-table';
 import { createImportMap } from '../../src/resolver/import-map';
+import { createSymbolTable } from '../../src/resolver/symbol-table';
 
 describe('resolveCall', () => {
   it('should resolve same-file call with 0.85 confidence', () => {
@@ -23,7 +23,7 @@ describe('resolveCall', () => {
 
     const result = resolveCall('findUser', 'src/auth.ts', st, im);
     expect(result).not.toBeNull();
-    expect(result!.confidence).toBe(0.90);
+    expect(result!.confidence).toBe(0.9);
   });
 
   it('should resolve unique global name with 0.50 confidence', () => {
@@ -33,7 +33,7 @@ describe('resolveCall', () => {
 
     const result = resolveCall('calculateTaxRate', 'src/other.ts', st, im);
     expect(result).not.toBeNull();
-    expect(result!.confidence).toBe(0.50);
+    expect(result!.confidence).toBe(0.5);
   });
 
   it('should resolve ambiguous call with 0.30 confidence', () => {
@@ -44,7 +44,7 @@ describe('resolveCall', () => {
 
     const result = resolveCall('handleRequest', 'src/other.ts', st, im);
     expect(result).not.toBeNull();
-    expect(result!.confidence).toBe(0.30);
+    expect(result!.confidence).toBe(0.3);
   });
 
   it('should return null for noise functions', () => {
@@ -77,7 +77,7 @@ describe('resolveCall', () => {
 
     const result = resolveCall('findUser', 'src/auth.ts', st, im);
     expect(result).not.toBeNull();
-    expect(result!.confidence).toBe(0.70);
+    expect(result!.confidence).toBe(0.7);
     expect(result!.target).toBe('src/db.ts::findUser');
   });
 
@@ -104,8 +104,8 @@ describe('resolveDICall', () => {
   });
 });
 
-import { resolveAllCalls } from '../../src/resolver/call-resolver';
 import type { RawCallSite } from '../../src/graph/types';
+import { resolveAllCalls } from '../../src/resolver/call-resolver';
 
 describe('resolveAllCalls (pure, no I/O)', () => {
   it('should resolve DI call via diMaps', () => {
@@ -122,7 +122,7 @@ describe('resolveAllCalls (pure, no I/O)', () => {
 
     const { callEdges } = resolveAllCalls(rawCalls, diMaps, st, im);
     expect(callEdges.length).toBeGreaterThanOrEqual(1);
-    const diEdge = callEdges.find(e => e.confidence >= 0.90);
+    const diEdge = callEdges.find((e) => e.confidence >= 0.9);
     expect(diEdge).toBeDefined();
   });
 
@@ -138,7 +138,7 @@ describe('resolveAllCalls (pure, no I/O)', () => {
 
     const { callEdges } = resolveAllCalls(rawCalls, diMaps, st, im);
     expect(callEdges.length).toBeGreaterThanOrEqual(1);
-    expect(callEdges[0].confidence).toBeLessThan(0.90);
+    expect(callEdges[0].confidence).toBeLessThan(0.9);
   });
 
   it('should resolve direct calls without diField', () => {
@@ -148,13 +148,11 @@ describe('resolveAllCalls (pure, no I/O)', () => {
     im.add('src/controller.ts', 'handleRequest', 'src/auth.ts');
     const diMaps = new Map<string, Map<string, string>>();
 
-    const rawCalls: RawCallSite[] = [
-      { source: 'src/controller.ts', callName: 'handleRequest', line: 5 },
-    ];
+    const rawCalls: RawCallSite[] = [{ source: 'src/controller.ts', callName: 'handleRequest', line: 5 }];
 
     const { callEdges } = resolveAllCalls(rawCalls, diMaps, st, im);
     expect(callEdges).toHaveLength(1);
-    expect(callEdges[0].confidence).toBe(0.90);
+    expect(callEdges[0].confidence).toBe(0.9);
   });
 
   it('should filter NOISE calls', () => {

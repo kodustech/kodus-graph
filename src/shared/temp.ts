@@ -1,7 +1,7 @@
+import { randomBytes } from 'crypto';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { randomBytes } from 'crypto';
 
 /**
  * Create a secure temp directory + file path.

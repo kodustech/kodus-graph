@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'bun:test';
-import { discoverFiles } from '../../src/parser/discovery';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { describe, expect, it } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { discoverFiles } from '../../src/parser/discovery';
 
 describe('discoverFiles', () => {
   const tmpDir = '/tmp/kodus-graph-test-discovery';
@@ -31,6 +31,24 @@ describe('discoverFiles', () => {
     const files = discoverFiles(tmpDir, ['src/a.ts']);
     expect(files).toHaveLength(1);
     expect(files[0]).toContain('a.ts');
+
+    rmSync(tmpDir, { recursive: true });
+  });
+
+  it('should skip minified and bundled files', () => {
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(join(tmpDir, 'src/app.ts'), 'const x = 1;');
+    writeFileSync(join(tmpDir, 'src/chart.min.js'), 'minified code');
+    writeFileSync(join(tmpDir, 'src/vendor.bundle.js'), 'bundled code');
+    writeFileSync(join(tmpDir, 'src/viz-3.0.1.js'), 'vendored code'); // not minified, should still be included
+    writeFileSync(join(tmpDir, 'src/main.chunk.js'), 'chunk code');
+
+    const files = discoverFiles(tmpDir);
+    expect(files).toContain(join(tmpDir, 'src/app.ts'));
+    expect(files).toContain(join(tmpDir, 'src/viz-3.0.1.js'));
+    expect(files).not.toContain(join(tmpDir, 'src/chart.min.js'));
+    expect(files).not.toContain(join(tmpDir, 'src/vendor.bundle.js'));
+    expect(files).not.toContain(join(tmpDir, 'src/main.chunk.js'));
 
     rmSync(tmpDir, { recursive: true });
   });

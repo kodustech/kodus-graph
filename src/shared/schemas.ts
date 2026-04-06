@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const GraphNodeSchema = z.object({
-  kind: z.string(),
+  kind: z.enum(['Function', 'Method', 'Constructor', 'Class', 'Interface', 'Enum', 'Test']),
   name: z.string(),
   qualified_name: z.string(),
   file_path: z.string(),
@@ -17,7 +17,7 @@ const GraphNodeSchema = z.object({
 });
 
 const GraphEdgeSchema = z.object({
-  kind: z.string(),
+  kind: z.enum(['CALLS', 'IMPORTS', 'INHERITS', 'IMPLEMENTS', 'TESTED_BY', 'CONTAINS']),
   source_qualified: z.string(),
   target_qualified: z.string(),
   file_path: z.string(),

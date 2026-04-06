@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { readFileSync, rmSync } from 'fs';
+import { resolve } from 'path';
 import { executeContext } from '../../src/commands/context';
 import { executeParse } from '../../src/commands/parse';
-import { resolve } from 'path';
-import { readFileSync, rmSync } from 'fs';
 
 // Import to trigger language registration
 import '../../src/parser/languages';

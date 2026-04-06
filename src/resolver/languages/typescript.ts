@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve as resolvePath } from 'path';
+import { dirname, join, resolve as resolvePath } from 'path';
 import { log } from '../../shared/logger';
 
 const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
@@ -18,11 +18,7 @@ const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
  * Resolve a TypeScript/JavaScript relative import to an absolute file path.
  * Returns null for non-relative (external package) imports.
  */
-export function resolve(
-  fromAbsFile: string,
-  modulePath: string,
-  repoRoot: string,
-): string | null {
+export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: string): string | null {
   if (!modulePath.startsWith('.')) return null;
 
   let base = join(dirname(fromAbsFile), modulePath);
@@ -123,7 +119,7 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
         for (const [alias, targets] of Object.entries(paths)) {
           // Convert alias pattern: "@libs/*" -> prefix "@libs/"
           const prefix = alias.replace('/*', '/').replace('*', '');
-          const resolvedTargets = (targets as string[]).map(t => {
+          const resolvedTargets = (targets as string[]).map((t) => {
             const targetPath = t.replace('/*', '').replace('*', '');
             return join(baseDir, targetPath);
           });
@@ -146,7 +142,7 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
 export function resolveWithAliases(
   modulePath: string,
   aliases: Map<string, string[]>,
-  repoRoot: string,
+  _repoRoot: string,
 ): string | null {
   for (const [prefix, targets] of aliases) {
     if (modulePath.startsWith(prefix)) {

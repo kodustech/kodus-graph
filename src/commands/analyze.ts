@@ -1,13 +1,13 @@
-import { resolve } from 'path';
 import { readFileSync, writeFileSync } from 'fs';
+import { resolve } from 'path';
 import { computeBlastRadius } from '../analysis/blast-radius';
 import { computeRiskScore } from '../analysis/risk-score';
 import { findTestGaps } from '../analysis/test-gaps';
+import { buildGraphData } from '../graph/builder';
 import { mergeGraphs } from '../graph/merger';
+import type { AnalysisOutput, MainGraphInput } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
-import { buildGraphData } from '../graph/builder';
-import type { AnalysisOutput, MainGraphInput } from '../graph/types';
 import { GraphInputSchema } from '../shared/schemas';
 
 interface AnalyzeOptions {
@@ -26,7 +26,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
-    } catch (err) {
+    } catch (_err) {
       process.stderr.write(`Error: Failed to read --graph file: ${opts.graph}\n`);
       process.exit(1);
     }
@@ -49,9 +49,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
   const localGraphData = buildGraphData(rawGraph, [], [], repoDir, new Map());
 
   // Merge with main graph (or use local only)
-  const mergedGraph = mainGraph
-    ? mergeGraphs(mainGraph, localGraphData, opts.files)
-    : localGraphData;
+  const mergedGraph = mainGraph ? mergeGraphs(mainGraph, localGraphData, opts.files) : localGraphData;
 
   // Analyze
   const blastRadius = computeBlastRadius(mergedGraph, opts.files);
