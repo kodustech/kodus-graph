@@ -116,6 +116,64 @@ export interface MainGraphInput {
   edges: GraphEdge[];
 }
 
+// ── Context V2 types ──
+export interface CallerRef {
+  qualified_name: string;
+  name: string;
+  file_path: string;
+  line: number;
+  confidence: number;
+}
+
+export interface CalleeRef {
+  qualified_name: string;
+  name: string;
+  file_path: string;
+  signature: string;
+}
+
+export interface EnrichedFunction {
+  qualified_name: string;
+  name: string;
+  kind: NodeKind;
+  signature: string;
+  file_path: string;
+  line_start: number;
+  line_end: number;
+  callers: CallerRef[];
+  callees: CalleeRef[];
+  has_test_coverage: boolean;
+  diff_changes: string[];
+  is_new: boolean;
+  in_flows: string[];
+}
+
+export interface AffectedFlow {
+  entry_point: string;
+  type: 'test' | 'http';
+  touches_changed: string[];
+  depth: number;
+  path: string[];
+}
+
+export interface InheritanceEntry {
+  qualified_name: string;
+  file_path: string;
+  extends?: string;
+  implements: string[];
+  children: string[];
+}
+
+export interface ContextAnalysisMetadata {
+  changed_functions_count: number;
+  total_callers: number;
+  total_callees: number;
+  untested_count: number;
+  affected_flows_count: number;
+  duration_ms: number;
+  min_confidence: number;
+}
+
 // ── Internal types used during parsing pipeline ──
 export interface RawFunction {
   name: string;

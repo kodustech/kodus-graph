@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { loadGraph } from '../../src/graph/loader';
-import type { ParseOutput } from '../../src/graph/types';
+import { indexGraph, loadGraph } from '../../src/graph/loader';
+import type { GraphData, ParseOutput } from '../../src/graph/types';
 
 const tmpDir = '/tmp/kodus-graph-test-loader';
 
@@ -100,5 +100,58 @@ describe('loadGraph', () => {
 
   it('should throw on missing file', () => {
     expect(() => loadGraph('/tmp/nonexistent-graph-xyz.json')).toThrow();
+  });
+});
+
+describe('indexGraph', () => {
+  it('should build indices from in-memory GraphData', () => {
+    const data: GraphData = {
+      nodes: [
+        {
+          kind: 'Function',
+          name: 'foo',
+          qualified_name: 'src/a.ts::foo',
+          file_path: 'src/a.ts',
+          line_start: 1,
+          line_end: 10,
+          language: 'typescript',
+          is_test: false,
+          file_hash: 'abc',
+        },
+        {
+          kind: 'Function',
+          name: 'bar',
+          qualified_name: 'src/b.ts::bar',
+          file_path: 'src/b.ts',
+          line_start: 1,
+          line_end: 5,
+          language: 'typescript',
+          is_test: false,
+          file_hash: 'def',
+        },
+      ],
+      edges: [
+        {
+          kind: 'CALLS',
+          source_qualified: 'src/a.ts::foo',
+          target_qualified: 'src/b.ts::bar',
+          file_path: 'src/a.ts',
+          line: 5,
+          confidence: 0.9,
+        },
+      ],
+    };
+
+    const indexed = indexGraph(data);
+
+    expect(indexed.nodes).toHaveLength(2);
+    expect(indexed.edges).toHaveLength(1);
+    expect(indexed.byQualified.get('src/a.ts::foo')?.name).toBe('foo');
+    expect(indexed.byFile.get('src/a.ts')).toHaveLength(1);
+    expect(indexed.adjacency.get('src/a.ts::foo')).toHaveLength(1);
+    expect(indexed.reverseAdjacency.get('src/b.ts::bar')).toHaveLength(1);
+    expect(indexed.edgesByKind.get('CALLS')).toHaveLength(1);
+    expect(indexed.metadata.total_nodes).toBe(2);
+    expect(indexed.metadata.total_edges).toBe(1);
   });
 });

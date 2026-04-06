@@ -1,8 +1,8 @@
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
-import { buildReviewContext } from '../analysis/review-context';
+import { buildContextV2 } from '../analysis/context-builder';
 import { mergeGraphs } from '../graph/merger';
-import type { ContextOutput, GraphData, MainGraphInput } from '../graph/types';
+import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
 import { GraphInputSchema } from '../shared/schemas';
 import { createSecureTempFile } from '../shared/temp';
@@ -13,6 +13,8 @@ interface ContextOptions {
   files: string[];
   graph?: string;
   out: string;
+  minConfidence: number;
+  maxDepth: number;
 }
 
 export async function executeContext(opts: ContextOptions): Promise<void> {
@@ -31,6 +33,8 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
 
     // Load and merge with main graph if provided
     let mergedGraph: GraphData;
+    let oldGraph: GraphData | null = null;
+
     if (opts.graph) {
       let raw: unknown;
       try {
@@ -44,6 +48,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
         process.stderr.write(`Error: Invalid graph JSON: ${validated.error.message}\n`);
         process.exit(1);
       }
+      oldGraph = { nodes: validated.data.nodes, edges: validated.data.edges };
       const mainGraph: MainGraphInput = {
         repo_id: '',
         sha: '',
@@ -55,10 +60,16 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
       mergedGraph = { nodes: parseResult.nodes, edges: parseResult.edges };
     }
 
-    // Build review context
-    const contextOutput: ContextOutput = buildReviewContext(mergedGraph, opts.files);
+    // Build V2 context
+    const output = buildContextV2({
+      mergedGraph,
+      oldGraph,
+      changedFiles: opts.files,
+      minConfidence: opts.minConfidence,
+      maxDepth: opts.maxDepth,
+    });
 
-    writeFileSync(opts.out, JSON.stringify(contextOutput, null, 2));
+    writeFileSync(opts.out, JSON.stringify(output, null, 2));
   } finally {
     try {
       rmSync(tmp.dir, { recursive: true, force: true });

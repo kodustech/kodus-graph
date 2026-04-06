@@ -1,7 +1,7 @@
 // src/graph/loader.ts
 import { readFileSync } from 'fs';
 import { z } from 'zod';
-import type { GraphEdge, GraphNode, ParseMetadata } from './types';
+import type { GraphData, GraphEdge, GraphNode, ParseMetadata } from './types';
 
 const ParseOutputSchema = z.object({
   metadata: z.object({
@@ -55,19 +55,17 @@ export interface IndexedGraph {
   metadata: ParseMetadata;
 }
 
-export function loadGraph(path: string): IndexedGraph {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(path, 'utf-8'));
-  } catch (err) {
-    throw new Error(`Failed to read graph file: ${path} — ${String(err)}`);
-  }
-
-  const parsed = ParseOutputSchema.parse(raw);
-
-  const nodes = parsed.nodes as GraphNode[];
-  const edges = parsed.edges as GraphEdge[];
-  const metadata = parsed.metadata as ParseMetadata;
+export function indexGraph(data: GraphData, metadata?: ParseMetadata): IndexedGraph {
+  const { nodes, edges } = data;
+  const meta: ParseMetadata = metadata ?? {
+    repo_dir: '',
+    files_parsed: 0,
+    total_nodes: nodes.length,
+    total_edges: edges.length,
+    duration_ms: 0,
+    parse_errors: 0,
+    extract_errors: 0,
+  };
 
   const byQualified = new Map<string, GraphNode>();
   const byFile = new Map<string, GraphNode[]>();
@@ -96,5 +94,20 @@ export function loadGraph(path: string): IndexedGraph {
     else edgesByKind.set(edge.kind, [edge]);
   }
 
-  return { nodes, edges, byQualified, byFile, adjacency, reverseAdjacency, edgesByKind, metadata };
+  return { nodes, edges, byQualified, byFile, adjacency, reverseAdjacency, edgesByKind, metadata: meta };
+}
+
+export function loadGraph(path: string): IndexedGraph {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (err) {
+    throw new Error(`Failed to read graph file: ${path} — ${String(err)}`);
+  }
+
+  const parsed = ParseOutputSchema.parse(raw);
+  return indexGraph(
+    { nodes: parsed.nodes as GraphNode[], edges: parsed.edges as GraphEdge[] },
+    parsed.metadata as ParseMetadata,
+  );
 }

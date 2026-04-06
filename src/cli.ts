@@ -64,6 +64,8 @@ program
   .option('--repo-dir <path>', 'Repository root directory', '.')
   .option('--graph <path>', 'Path to main graph JSON')
   .requiredOption('--out <path>', 'Output JSON file path')
+  .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
+  .option('--max-depth <n>', 'Blast radius BFS depth', '3')
   .action(async (opts) => {
     const repoDir = resolve(opts.repoDir);
     if (!existsSync(repoDir)) {
@@ -75,6 +77,8 @@ program
       files: opts.files,
       graph: opts.graph,
       out: opts.out,
+      minConfidence: Number.parseFloat(opts.minConfidence),
+      maxDepth: Number.parseInt(opts.maxDepth, 10),
     });
   });
 

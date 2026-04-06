@@ -60,7 +60,7 @@ describe('E2E: kodus-graph CLI', () => {
     rmSync(analyzePath, { force: true });
   });
 
-  it('context should produce formatted text with callers/callees', () => {
+  it('context should produce V2 structured output with graph and analysis', () => {
     const parsePath = '/tmp/kodus-graph-e2e-main.json';
     const ctxPath = '/tmp/kodus-graph-e2e-ctx.json';
 
@@ -71,8 +71,11 @@ describe('E2E: kodus-graph CLI', () => {
     execSync(`bun run ${CLI} context --files src/auth.ts --repo-dir ${FIXTURE} --graph ${parsePath} --out ${ctxPath}`);
 
     const result = JSON.parse(readFileSync(ctxPath, 'utf-8'));
-    expect(result.text).toContain('authenticate');
-    expect(result.metadata.changed_functions).toBeGreaterThan(0);
+    expect(result.graph).toBeDefined();
+    expect(result.graph.nodes.length).toBeGreaterThan(0);
+    expect(result.analysis).toBeDefined();
+    expect(result.analysis.changed_functions.length).toBeGreaterThan(0);
+    expect(result.analysis.metadata.changed_functions_count).toBeGreaterThan(0);
 
     rmSync(parsePath, { force: true });
     rmSync(ctxPath, { force: true });
