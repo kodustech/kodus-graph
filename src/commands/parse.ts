@@ -26,8 +26,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
   const repoDir = resolve(opts.repoDir);
 
   // Phase 1: Discover files
-  // TODO Task 4: pass opts.include, opts.exclude once discoverFiles supports them
-  const files = discoverFiles(repoDir, opts.all ? undefined : opts.files);
+  const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude);
   process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
   // Phase 2: Parse + extract
