@@ -1,4 +1,5 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
+import { Lang } from '@ast-grep/napi';
 import { LANG_KINDS } from '../languages';
 import { NOISE } from '../../shared/filters';
 import type {
@@ -18,12 +19,15 @@ export function extractTypeScript(
   fp: string,
   seen: Set<string>,
   graph: RawGraph,
+  lang: Lang | string = Lang.TypeScript,
 ): void {
   const kinds = LANG_KINDS['typescript'];
   const rootNode = root.root();
+  const isTS = lang === Lang.TypeScript || lang === Lang.Tsx;
 
   // ── Classes ──
-  for (const kind of [kinds.class, kinds.abstractClass]) {
+  const classKinds = isTS ? [kinds.class, kinds.abstractClass] : [kinds.class];
+  for (const kind of classKinds) {
     for (const node of rootNode.findAll({ rule: { kind } })) {
       const name = node.field('name')?.text();
       if (!name || seen.has(`c:${fp}:${name}`)) continue;
@@ -76,7 +80,7 @@ export function extractTypeScript(
 
     const classAncestor = node
       .ancestors()
-      .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass);
+      .find((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass));
     const className = classAncestor?.field('name')?.text() || '';
     const params = node.field('parameters');
     const retType = node.field('return_type')?.text()?.replace(/^:\s*/, '') || '';
@@ -149,7 +153,7 @@ export function extractTypeScript(
     if (
       node
         .ancestors()
-        .some((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass)
+        .some((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass))
     )
       continue;
     seen.add(`f:${fp}:${name}:${line}`);
@@ -191,8 +195,8 @@ export function extractTypeScript(
     });
   }
 
-  // ── Interfaces ──
-  for (const node of rootNode.findAll({ rule: { kind: kinds.interface } })) {
+  // ── Interfaces (TS only — JS grammar has no interface_declaration) ──
+  if (isTS) for (const node of rootNode.findAll({ rule: { kind: kinds.interface } })) {
     const name = node.field('name')?.text();
     if (!name || seen.has(`i:${fp}:${name}`)) continue;
     seen.add(`i:${fp}:${name}`);
@@ -216,8 +220,8 @@ export function extractTypeScript(
     });
   }
 
-  // ── Enums ──
-  for (const node of rootNode.findAll({ rule: { kind: kinds.enum } })) {
+  // ── Enums (TS only — JS grammar has no enum_declaration) ──
+  if (isTS) for (const node of rootNode.findAll({ rule: { kind: kinds.enum } })) {
     const name = node.field('name')?.text();
     if (!name || seen.has(`e:${fp}:${name}`)) continue;
     seen.add(`e:${fp}:${name}`);

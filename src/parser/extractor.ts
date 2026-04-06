@@ -20,7 +20,7 @@ export function extractFromFile(
   graph: RawGraph,
 ): void {
   if (isTypeScriptLike(lang)) {
-    extractTypeScript(root, filePath, seen, graph);
+    extractTypeScript(root, filePath, seen, graph, lang);
   } else if (lang === 'python') {
     extractPython(root, filePath, seen, graph);
   } else if (lang === 'ruby') {
