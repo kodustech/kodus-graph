@@ -46,6 +46,8 @@ export interface ParseMetadata {
   duration_ms: number;
   parse_errors: number;
   extract_errors: number;
+  files_unchanged?: number;
+  incremental?: boolean;
 }
 
 export interface ParseOutput {
