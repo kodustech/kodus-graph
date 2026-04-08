@@ -25,10 +25,11 @@ function getGemPathLibDirs(repoRoot: string): string[] {
         const content = readFileSync(gemfilePath, 'utf-8');
         // Match lines like: gem 'mylib', path: './libs/mylib'
         const regex = /^\s*gem\s+['"][^'"]+['"]\s*,\s*path:\s*['"]([^'"]+)['"]/gm;
-        let match: RegExpExecArray | null;
-        while ((match = regex.exec(content)) !== null) {
+        let match: RegExpExecArray | null = regex.exec(content);
+        while (match !== null) {
             const gemPath = match[1];
             libDirs.push(resolvePath(join(repoRoot, gemPath, 'lib')));
+            match = regex.exec(content);
         }
     }
 

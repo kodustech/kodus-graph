@@ -42,7 +42,9 @@ function getModuleName(repoRoot: string): string | null {
 /** Parse replace directives from go.mod. Returns map: module path → local directory (absolute). */
 function getReplaceMap(repoRoot: string): Map<string, string> {
     const cached = replaceCache.get(repoRoot);
-    if (cached) return cached;
+    if (cached) {
+        return cached;
+    }
 
     const result = new Map<string, string>();
     const goModPath = join(repoRoot, 'go.mod');
@@ -55,13 +57,14 @@ function getReplaceMap(repoRoot: string): Map<string, string> {
         const content = readFileSync(goModPath, 'utf-8');
         // Match single-line replace: replace mod => ./path  or  replace mod v1.2.3 => ./path
         const replaceRe = /^replace\s+(\S+)(?:\s+\S+)?\s+=>\s+(\S+)/gm;
-        let m: RegExpExecArray | null;
-        while ((m = replaceRe.exec(content)) !== null) {
+        let m: RegExpExecArray | null = replaceRe.exec(content);
+        while (m !== null) {
             const modPath = m[1];
             const replacement = m[2];
             if (replacement.startsWith('./') || replacement.startsWith('../')) {
                 result.set(modPath, resolvePath(join(repoRoot, replacement)));
             }
+            m = replaceRe.exec(content);
         }
     } catch {
         /* ignore */
@@ -74,7 +77,9 @@ function getReplaceMap(repoRoot: string): Map<string, string> {
 /** Parse go.work use directives. Returns map: module name → absolute directory of the module. */
 function getWorkspaceModules(repoRoot: string): Map<string, string> {
     const cached = workspaceCache.get(repoRoot);
-    if (cached) return cached;
+    if (cached) {
+        return cached;
+    }
 
     const result = new Map<string, string>();
     const goWorkPath = join(repoRoot, 'go.work');
@@ -88,10 +93,10 @@ function getWorkspaceModules(repoRoot: string): Map<string, string> {
         // Parse use directives — both single-line and block form
         // Block: use ( ./a \n ./b )
         const blockRe = /use\s*\(([\s\S]*?)\)/g;
-        let blockMatch: RegExpExecArray | null;
+        let blockMatch: RegExpExecArray | null = blockRe.exec(content);
         const useDirs: string[] = [];
 
-        while ((blockMatch = blockRe.exec(content)) !== null) {
+        while (blockMatch !== null) {
             const inner = blockMatch[1];
             for (const line of inner.split('\n')) {
                 const trimmed = line.trim();
@@ -99,16 +104,18 @@ function getWorkspaceModules(repoRoot: string): Map<string, string> {
                     useDirs.push(trimmed);
                 }
             }
+            blockMatch = blockRe.exec(content);
         }
 
         // Single-line: use ./foo
         const singleRe = /^use\s+(\S+)\s*$/gm;
-        let singleMatch: RegExpExecArray | null;
-        while ((singleMatch = singleRe.exec(content)) !== null) {
+        let singleMatch: RegExpExecArray | null = singleRe.exec(content);
+        while (singleMatch !== null) {
             const dir = singleMatch[1];
             if (dir !== '(') {
                 useDirs.push(dir);
             }
+            singleMatch = singleRe.exec(content);
         }
 
         // For each use directory, read its go.mod to get the module name
@@ -164,7 +171,9 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
         const relPath = modulePath.slice(moduleName.length + 1);
         if (relPath) {
             const result = findGoFile(join(repoRoot, relPath));
-            if (result) return result;
+            if (result) {
+                return result;
+            }
         }
     }
 
@@ -177,7 +186,9 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
             const relPath = suffix.startsWith('/') ? suffix.slice(1) : suffix;
             if (relPath) {
                 const result = findGoFile(join(localDir, relPath));
-                if (result) return result;
+                if (result) {
+                    return result;
+                }
             }
         }
     }
@@ -190,7 +201,9 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
             const relPath = suffix.startsWith('/') ? suffix.slice(1) : suffix;
             if (relPath) {
                 const result = findGoFile(join(wsModDir, relPath));
-                if (result) return result;
+                if (result) {
+                    return result;
+                }
             }
         }
     }
@@ -198,7 +211,9 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
     // 4. Try vendor directory
     const vendorDir = join(repoRoot, 'vendor', modulePath);
     const vendorResult = findGoFile(vendorDir);
-    if (vendorResult) return vendorResult;
+    if (vendorResult) {
+        return vendorResult;
+    }
 
     return null;
 }
