@@ -13,6 +13,7 @@ import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
+import { log } from '../shared/logger';
 
 interface DiffCommandOptions {
     repoDir: string;
@@ -33,7 +34,7 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
             const output = execSync(`git diff --name-only ${opts.base}`, { cwd: repoDir, encoding: 'utf-8' });
             changedFiles = output.trim().split('\n').filter(Boolean);
         } catch (err) {
-            process.stderr.write(`Error: failed to run git diff with base "${opts.base}": ${String(err)}\n`);
+            log.error('failed to run git diff', { base: opts.base, error: String(err) });
             process.exit(1);
         }
     } else {
@@ -45,7 +46,7 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
     // Load old graph
     const graphPath = resolve(opts.graph);
     if (!existsSync(graphPath)) {
-        process.stderr.write(`Error: graph file not found: ${graphPath}\n`);
+        log.error('graph file not found', { path: graphPath });
         process.exit(1);
     }
     const oldGraph = loadGraph(graphPath);

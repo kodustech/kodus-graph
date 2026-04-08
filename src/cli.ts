@@ -31,7 +31,7 @@ program
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
-            process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+            log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
         await executeParse({
@@ -54,7 +54,7 @@ program
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
-            process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+            log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
         await executeAnalyze({
@@ -78,11 +78,11 @@ program
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
-            process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+            log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
         if (opts.format !== 'json' && opts.format !== 'prompt') {
-            process.stderr.write('Error: --format must be "json" or "prompt"\n');
+            log.error('--format must be "json" or "prompt"', { got: opts.format });
             process.exit(1);
         }
         await executeContext({
@@ -106,12 +106,12 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         if (!opts.base && !opts.files) {
-            process.stderr.write('Error: one of --base or --files is required\n');
+            log.error('one of --base or --files is required');
             process.exit(1);
         }
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
-            process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+            log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
         await executeDiff({
@@ -132,7 +132,7 @@ program
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
-            process.stderr.write(`Error: --repo-dir does not exist: ${repoDir}\n`);
+            log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
         await executeUpdate({
@@ -188,11 +188,11 @@ program
     .action((opts) => {
         const modes = [opts.query, opts.callersOf, opts.calleesOf].filter(Boolean).length;
         if (modes === 0) {
-            process.stderr.write('Error: one of --query, --callers-of, or --callees-of is required\n');
+            log.error('one of --query, --callers-of, or --callees-of is required');
             process.exit(1);
         }
         if (modes > 1) {
-            process.stderr.write('Error: --query, --callers-of, and --callees-of are mutually exclusive\n');
+            log.error('--query, --callers-of, and --callees-of are mutually exclusive');
             process.exit(1);
         }
         executeSearch({
@@ -207,4 +207,8 @@ program
         });
     });
 
-program.parse();
+program.parseAsync().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(message);
+    process.exit(1);
+});

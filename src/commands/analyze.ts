@@ -34,12 +34,12 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
         try {
             raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
         } catch (_err) {
-            process.stderr.write(`Error: Failed to read --graph file: ${opts.graph}\n`);
+            log.error('failed to read --graph file', { path: opts.graph });
             process.exit(1);
         }
         const validated = GraphInputSchema.safeParse(raw);
         if (!validated.success) {
-            process.stderr.write(`Error: Invalid graph JSON: ${validated.error.message}\n`);
+            log.error('invalid graph JSON', { error: validated.error.message });
             process.exit(1);
         }
         mainGraph = {

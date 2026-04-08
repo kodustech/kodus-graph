@@ -11,6 +11,7 @@ import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
+import { log } from '../shared/logger';
 
 const DEFAULT_GRAPH_PATH = '.kodus-graph/graph.json';
 
@@ -27,7 +28,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const outPath = resolve(repoDir, opts.out || opts.graph || DEFAULT_GRAPH_PATH);
 
     if (!existsSync(graphPath)) {
-        process.stderr.write(`Error: graph file not found: ${graphPath}. Run "kodus-graph parse" first.\n`);
+        log.error('graph file not found — run "kodus-graph parse" first', { path: graphPath });
         process.exit(1);
     }
 
