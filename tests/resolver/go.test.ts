@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/go';
+import { clearCache, resolve } from '../../src/resolver/languages/go';
 
 const TMP = join(import.meta.dir, '../fixtures/go-resolver-tmp');
 
@@ -44,5 +44,83 @@ describe('Go import resolver', () => {
 
     test('cleanup', () => {
         rmSync(TMP, { recursive: true, force: true });
+    });
+});
+
+const TMP_REPLACE = join(import.meta.dir, '../fixtures/go-replace-tmp');
+
+describe('Go replace directives', () => {
+    test('setup', () => {
+        clearCache();
+        rmSync(TMP_REPLACE, { recursive: true, force: true });
+        mkdirSync(join(TMP_REPLACE, 'libs/shared/utils'), { recursive: true });
+        writeFileSync(
+            join(TMP_REPLACE, 'go.mod'),
+            [
+                'module github.com/acme/app',
+                '',
+                'go 1.21',
+                '',
+                'require github.com/acme/shared v0.0.0',
+                '',
+                'replace github.com/acme/shared => ./libs/shared',
+                '',
+            ].join('\n'),
+        );
+        writeFileSync(join(TMP_REPLACE, 'libs/shared/go.mod'), 'module github.com/acme/shared\n\ngo 1.21\n');
+        writeFileSync(join(TMP_REPLACE, 'libs/shared/utils/helpers.go'), 'package utils\n');
+    });
+
+    test('resolves replace-directive local module import', () => {
+        const result = resolve('', 'github.com/acme/shared/utils', TMP_REPLACE);
+        expect(result).not.toBeNull();
+        expect(result).toContain('helpers.go');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_REPLACE, { recursive: true, force: true });
+        clearCache();
+    });
+});
+
+const TMP_WORKSPACE = join(import.meta.dir, '../fixtures/go-workspace-tmp');
+
+describe('Go workspace (go.work)', () => {
+    test('setup', () => {
+        clearCache();
+        rmSync(TMP_WORKSPACE, { recursive: true, force: true });
+        mkdirSync(join(TMP_WORKSPACE, 'svc-api/handler'), { recursive: true });
+        mkdirSync(join(TMP_WORKSPACE, 'lib-core/models'), { recursive: true });
+
+        writeFileSync(
+            join(TMP_WORKSPACE, 'go.work'),
+            ['go 1.21', '', 'use (', '    ./svc-api', '    ./lib-core', ')', ''].join('\n'),
+        );
+        writeFileSync(join(TMP_WORKSPACE, 'svc-api/go.mod'), 'module github.com/acme/svc-api\n\ngo 1.21\n');
+        writeFileSync(join(TMP_WORKSPACE, 'svc-api/handler/handler.go'), 'package handler\n');
+        writeFileSync(join(TMP_WORKSPACE, 'lib-core/go.mod'), 'module github.com/acme/lib-core\n\ngo 1.21\n');
+        writeFileSync(join(TMP_WORKSPACE, 'lib-core/models/user.go'), 'package models\n');
+    });
+
+    test('resolves cross-module import via go.work', () => {
+        const result = resolve(
+            join(TMP_WORKSPACE, 'svc-api/handler/handler.go'),
+            'github.com/acme/lib-core/models',
+            TMP_WORKSPACE,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('user.go');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_WORKSPACE, { recursive: true, force: true });
+        clearCache();
+    });
+});
+
+describe('Go CGo sentinel', () => {
+    test('import "C" returns null', () => {
+        clearCache();
+        expect(resolve('', 'C', TMP)).toBeNull();
     });
 });
