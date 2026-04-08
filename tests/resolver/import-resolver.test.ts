@@ -310,3 +310,29 @@ describe('TypeScript package.json #imports', () => {
         expect(result).toBe(resolve(join(tmpDir, 'src/shared/utils.ts')));
     });
 });
+
+const TS_VITE = join(import.meta.dir, '../fixtures/ts-vite-tmp');
+
+describe('TypeScript Vite query suffix stripping', () => {
+    beforeAll(() => {
+        rmSync(TS_VITE, { recursive: true, force: true });
+        mkdirSync(join(TS_VITE, 'src'), { recursive: true });
+        writeFileSync(join(TS_VITE, 'src/data.txt'), 'hello\n');
+        writeFileSync(join(TS_VITE, 'src/worker.ts'), 'self.onmessage = () => {};\n');
+        writeFileSync(join(TS_VITE, 'src/app.ts'), "import raw from './data.txt?raw';\nimport W from './worker?worker';\n");
+    });
+
+    afterAll(() => rmSync(TS_VITE, { recursive: true, force: true }));
+
+    it('resolves import with ?raw suffix by stripping query', () => {
+        const result = resolveImport(join(TS_VITE, 'src/app.ts'), './data.txt?raw', 'ts', TS_VITE);
+        expect(result).not.toBeNull();
+        expect(result).toContain('data.txt');
+    });
+
+    it('resolves import with ?worker suffix by stripping query', () => {
+        const result = resolveImport(join(TS_VITE, 'src/app.ts'), './worker?worker', 'ts', TS_VITE);
+        expect(result).not.toBeNull();
+        expect(result).toContain('worker.ts');
+    });
+});

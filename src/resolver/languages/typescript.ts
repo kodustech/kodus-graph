@@ -65,11 +65,24 @@ function loadTsconfigCompilerOptions(repoRoot: string): { rootDirs?: string[] } 
  * Returns null for non-relative (external package) imports.
  */
 export function resolve(fromAbsFile: string, modulePath: string, repoRoot: string): string | null {
+    // Strip Vite-style query suffixes (?raw, ?url, ?worker, etc.)
+    const queryIdx = modulePath.indexOf('?');
+    if (queryIdx !== -1) {
+        modulePath = modulePath.slice(0, queryIdx);
+    }
+
     if (!modulePath.startsWith('.')) {
         return null;
     }
 
     let base = join(dirname(fromAbsFile), modulePath);
+
+    // If the path has a non-TS/JS extension (e.g. .txt, .svg), try exact match
+    if (/\.\w+$/.test(modulePath) && !TS_EXTENSIONS.some(ext => modulePath.endsWith(ext))) {
+        if (existsSync(base)) {
+            return resolvePath(base);
+        }
+    }
 
     // ESM convention: .js in import -> .ts on disk
     if (modulePath.endsWith('.js')) {
