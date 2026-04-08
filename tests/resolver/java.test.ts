@@ -135,6 +135,45 @@ describe('Java multi-module (Gradle)', () => {
     });
 });
 
+const TMP_MAVEN = join(import.meta.dir, '../fixtures/java-maven-multi-tmp');
+
+describe('Java Maven multi-module', () => {
+    test('setup', () => {
+        rmSync(TMP_MAVEN, { recursive: true, force: true });
+        mkdirSync(join(TMP_MAVEN, 'api/src/main/java/com/example/api'), { recursive: true });
+        mkdirSync(join(TMP_MAVEN, 'core/src/main/java/com/example/core'), { recursive: true });
+
+        writeFileSync(join(TMP_MAVEN, 'pom.xml'), [
+            '<project>',
+            '  <modules>',
+            '    <module>api</module>',
+            '    <module>core</module>',
+            '  </modules>',
+            '</project>',
+        ].join('\n'));
+        writeFileSync(join(TMP_MAVEN, 'api/pom.xml'), '<project></project>\n');
+        writeFileSync(join(TMP_MAVEN, 'core/pom.xml'), '<project></project>\n');
+        writeFileSync(
+            join(TMP_MAVEN, 'api/src/main/java/com/example/api/Controller.java'),
+            'package com.example.api;\nimport com.example.core.Service;\n',
+        );
+        writeFileSync(
+            join(TMP_MAVEN, 'core/src/main/java/com/example/core/Service.java'),
+            'package com.example.core;\npublic class Service {}\n',
+        );
+    });
+
+    test('resolves cross-module import via Maven pom.xml modules', () => {
+        const result = resolve('', 'com.example.core.Service', TMP_MAVEN);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Service.java');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_MAVEN, { recursive: true, force: true });
+    });
+});
+
 const TMP_KOTLIN = join(import.meta.dir, '../fixtures/java-kotlin-tmp');
 
 describe('Java Kotlin interop', () => {

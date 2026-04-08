@@ -31,6 +31,23 @@ function collectSourceRoots(repoRoot: string): string[] {
         break; // only read first settings file found
     }
 
+    // Discover Maven subprojects from pom.xml
+    const pomPath = join(repoRoot, 'pom.xml');
+    if (existsSync(pomPath)) {
+        try {
+            const content = readFileSync(pomPath, 'utf-8');
+            const moduleRegex = /<module>([^<]+)<\/module>/g;
+            let match: RegExpExecArray | null;
+            while ((match = moduleRegex.exec(content)) !== null) {
+                const subDir = match[1];
+                roots.push(join(subDir, 'src/main/java'));
+                roots.push(join(subDir, 'src/main/kotlin'));
+            }
+        } catch {
+            // pom.xml read failed, continue
+        }
+    }
+
     return roots;
 }
 
