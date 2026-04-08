@@ -27,7 +27,8 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     line_start: node.range().start.line,
                     line_end: node.range().end.line,
                     extends: '',
-                    implements: '',
+                    implements: [],
+                    ast_kind: String(node.kind()),
                     qualified: `${fp}::${name}`,
                     content_hash: computeContentHash(node.text()),
                 });
@@ -66,6 +67,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     params: node.field('parameters')?.text() || '()',
                     returnType: node.field('return_type')?.text() || '',
                     kind: className ? 'Method' : 'Function',
+                    ast_kind: String(node.kind()),
                     className,
                     qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
                     content_hash: computeContentHash(node.text()),

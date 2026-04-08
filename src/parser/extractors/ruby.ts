@@ -24,7 +24,8 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: superclass,
-            implements: '',
+            implements: [],
+            ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
         });
@@ -43,7 +44,8 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: '',
-            implements: '',
+            implements: [],
+            ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
         });
@@ -74,6 +76,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             params: node.field('parameters')?.text() || '()',
             returnType: '',
             kind: className ? 'Method' : 'Function',
+            ast_kind: String(node.kind()),
             className,
             qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
@@ -105,6 +108,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
                     file: fp,
                     line_start: m.range().start.line,
                     line_end: m.range().end.line,
+                    ast_kind: String(m.kind()),
                     qualified: `${fp}::test:${name}`,
                     content_hash: computeContentHash(m.text()),
                 });

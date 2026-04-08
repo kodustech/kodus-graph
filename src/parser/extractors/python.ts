@@ -29,7 +29,8 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: extendsName,
-            implements: '',
+            implements: [],
+            ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
         });
@@ -62,6 +63,7 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
                 file: fp,
                 line_start: line,
                 line_end: node.range().end.line,
+                ast_kind: String(node.kind()),
                 qualified: `${fp}::test:${name}`,
                 content_hash: computeContentHash(node.text()),
             });
@@ -75,6 +77,7 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             params: node.field('parameters')?.text() || '()',
             returnType: retType,
             kind: name === '__init__' ? 'Constructor' : className ? 'Method' : 'Function',
+            ast_kind: String(node.kind()),
             className,
             qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),

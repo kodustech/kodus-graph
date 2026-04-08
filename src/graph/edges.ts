@@ -43,10 +43,13 @@ export function deriveEdges(graph: RawGraph, importEdges: ImportEdge[]): Derived
         .filter((c) => c.extends)
         .map((c) => ({ source: c.qualified, target: c.extends, file: c.file }));
 
-    // IMPLEMENTS: class implements interface
-    const implements_ = graph.classes
-        .filter((c) => c.implements)
-        .map((c) => ({ source: c.qualified, target: c.implements, file: c.file }));
+    // IMPLEMENTS: class implements interface(s)
+    const implements_: DerivedEdge[] = [];
+    for (const c of graph.classes) {
+        for (const iface of c.implements) {
+            implements_.push({ source: c.qualified, target: iface, file: c.file });
+        }
+    }
 
     // TESTED_BY: two heuristics, deduplicated
     const testFiles = new Set(graph.tests.map((t) => t.file));
