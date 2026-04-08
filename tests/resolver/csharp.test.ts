@@ -115,10 +115,7 @@ describe('C# global usings', () => {
         mkdirSync(join(TMP_GLOBAL, 'src/Services'), { recursive: true });
 
         writeFileSync(join(TMP_GLOBAL, 'GlobalUsings.cs'), 'global using MyApp.Models;\n');
-        writeFileSync(
-            join(TMP_GLOBAL, 'src/Models/User.cs'),
-            'namespace MyApp.Models;\npublic class User {}\n',
-        );
+        writeFileSync(join(TMP_GLOBAL, 'src/Models/User.cs'), 'namespace MyApp.Models;\npublic class User {}\n');
         writeFileSync(
             join(TMP_GLOBAL, 'src/Services/Auth.cs'),
             'namespace MyApp.Services;\npublic class Auth { User u; }\n',

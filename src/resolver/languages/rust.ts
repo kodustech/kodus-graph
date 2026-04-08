@@ -58,7 +58,9 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
             for (let i = segments.length; i >= 1; i--) {
                 const partial = segments.slice(0, i).join('/');
                 const result = probeRustPath(srcDir, partial);
-                if (result) return result;
+                if (result) {
+                    return result;
+                }
             }
         }
 
@@ -71,7 +73,9 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
             for (let i = segments.length; i >= 1; i--) {
                 const partial = segments.slice(0, i).join('/');
                 const result = probeRustPath(srcDir, partial);
-                if (result) return result;
+                if (result) {
+                    return result;
+                }
             }
         }
     }
@@ -89,7 +93,9 @@ const pathDepCache = new Map<string, Map<string, string>>();
  */
 function resolveWorkspacePathDep(fromAbsFile: string, depName: string): string | null {
     const crateDir = findCrateDir(fromAbsFile);
-    if (!crateDir) return null;
+    if (!crateDir) {
+        return null;
+    }
 
     let deps = pathDepCache.get(crateDir);
     if (!deps) {
@@ -111,7 +117,9 @@ function findCrateDir(fromAbsFile: string): string | null {
             return dir;
         }
         const parent = dirname(dir);
-        if (parent === dir) break;
+        if (parent === dir) {
+            break;
+        }
         dir = parent;
     }
     return null;
@@ -126,10 +134,14 @@ const pkgNameCache = new Map<string, string | null>();
  */
 function findLocalPackageName(fromAbsFile: string): string | null {
     const crateDir = findCrateDir(fromAbsFile);
-    if (!crateDir) return null;
+    if (!crateDir) {
+        return null;
+    }
 
     const cached = pkgNameCache.get(crateDir);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        return cached;
+    }
 
     const cargoPath = join(crateDir, 'Cargo.toml');
     if (!existsSync(cargoPath)) {
@@ -157,7 +169,9 @@ function findLocalPackageName(fromAbsFile: string): string | null {
 function parsePathDeps(crateDir: string): Map<string, string> {
     const result = new Map<string, string>();
     const cargoPath = join(crateDir, 'Cargo.toml');
-    if (!existsSync(cargoPath)) return result;
+    if (!existsSync(cargoPath)) {
+        return result;
+    }
 
     const content = readFileSync(cargoPath, 'utf-8');
     const lines = content.split('\n');

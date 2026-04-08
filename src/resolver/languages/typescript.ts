@@ -39,7 +39,9 @@ const tsconfigCache = new Map<string, { rootDirs?: string[] }>();
 
 function loadTsconfigCompilerOptions(repoRoot: string): { rootDirs?: string[] } {
     const cached = tsconfigCache.get(repoRoot);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        return cached;
+    }
 
     const tsconfigPath = join(repoRoot, 'tsconfig.json');
     let result: { rootDirs?: string[] } = {};
@@ -78,7 +80,7 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
     let base = join(dirname(fromAbsFile), modulePath);
 
     // If the path has a non-TS/JS extension (e.g. .txt, .svg), try exact match
-    if (/\.\w+$/.test(modulePath) && !TS_EXTENSIONS.some(ext => modulePath.endsWith(ext))) {
+    if (/\.\w+$/.test(modulePath) && !TS_EXTENSIONS.some((ext) => modulePath.endsWith(ext))) {
         if (existsSync(base)) {
             return resolvePath(base);
         }
@@ -90,7 +92,9 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
     }
 
     const direct = probeExtensions(base);
-    if (direct) return direct;
+    if (direct) {
+        return direct;
+    }
 
     // rootDirs fallback: try the same relative import from other root directories
     const { rootDirs } = loadTsconfigCompilerOptions(repoRoot);
@@ -99,11 +103,13 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
         for (const rd of rootDirs) {
             const absRd = resolvePath(repoRoot, rd);
             // Check if fromDir is inside this rootDir
-            if (fromDir.startsWith(absRd + '/') || fromDir === absRd) {
+            if (fromDir.startsWith(`${absRd}/`) || fromDir === absRd) {
                 const relFromRoot = fromDir.slice(absRd.length); // e.g. "" or "/sub"
                 // Try the same relative path under each other rootDir
                 for (const otherRd of rootDirs) {
-                    if (otherRd === rd) continue;
+                    if (otherRd === rd) {
+                        continue;
+                    }
                     const absOtherRd = resolvePath(repoRoot, otherRd);
                     const relModule = modulePath.startsWith('./') ? modulePath.slice(2) : modulePath;
                     let otherBase = join(absOtherRd, relFromRoot, relModule);
@@ -111,7 +117,9 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
                         otherBase = otherBase.slice(0, -3);
                     }
                     const result = probeExtensions(otherBase);
-                    if (result) return result;
+                    if (result) {
+                        return result;
+                    }
                 }
                 break;
             }

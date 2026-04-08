@@ -110,10 +110,7 @@ describe('Java multi-module (Gradle)', () => {
         rmSync(TMP_MULTI, { recursive: true, force: true });
         mkdirSync(join(TMP_MULTI, 'app/src/main/java/com/example/app'), { recursive: true });
         mkdirSync(join(TMP_MULTI, 'lib/src/main/java/com/example/lib'), { recursive: true });
-        writeFileSync(
-            join(TMP_MULTI, 'settings.gradle'),
-            "include ':app', ':lib'\n",
-        );
+        writeFileSync(join(TMP_MULTI, 'settings.gradle'), "include ':app', ':lib'\n");
         writeFileSync(
             join(TMP_MULTI, 'app/src/main/java/com/example/app/Main.java'),
             'package com.example.app;\npublic class Main {}\n',
@@ -143,14 +140,17 @@ describe('Java Maven multi-module', () => {
         mkdirSync(join(TMP_MAVEN, 'api/src/main/java/com/example/api'), { recursive: true });
         mkdirSync(join(TMP_MAVEN, 'core/src/main/java/com/example/core'), { recursive: true });
 
-        writeFileSync(join(TMP_MAVEN, 'pom.xml'), [
-            '<project>',
-            '  <modules>',
-            '    <module>api</module>',
-            '    <module>core</module>',
-            '  </modules>',
-            '</project>',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP_MAVEN, 'pom.xml'),
+            [
+                '<project>',
+                '  <modules>',
+                '    <module>api</module>',
+                '    <module>core</module>',
+                '  </modules>',
+                '</project>',
+            ].join('\n'),
+        );
         writeFileSync(join(TMP_MAVEN, 'api/pom.xml'), '<project></project>\n');
         writeFileSync(join(TMP_MAVEN, 'core/pom.xml'), '<project></project>\n');
         writeFileSync(

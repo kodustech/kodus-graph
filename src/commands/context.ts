@@ -70,7 +70,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             const changedSet = new Set(opts.files);
 
             // Detect same-branch via commit sha comparison
-            const graphSha = (raw as Record<string, unknown>)?.sha as string || '';
+            const graphSha = ((raw as Record<string, unknown>)?.sha as string) || '';
             let headSha = '';
             try {
                 headSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf-8' }).trim();

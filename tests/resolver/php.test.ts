@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve, clearCache } from '../../src/resolver/languages/php';
+import { clearCache, resolve } from '../../src/resolver/languages/php';
 
 const TMP = join(import.meta.dir, '../fixtures/php-resolver-tmp');
 
@@ -93,18 +93,12 @@ describe('PHP multi-root PSR-4', () => {
                 2,
             ),
         );
-        writeFileSync(
-            join(TMP_PSR4, 'src/Models/User.php'),
-            '<?php\nnamespace App\\Models;\nclass User {}\n',
-        );
+        writeFileSync(join(TMP_PSR4, 'src/Models/User.php'), '<?php\nnamespace App\\Models;\nclass User {}\n');
         writeFileSync(
             join(TMP_PSR4, 'src/Http/Controllers/UserController.php'),
             '<?php\nnamespace App\\Http\\Controllers;\nclass UserController {}\n',
         );
-        writeFileSync(
-            join(TMP_PSR4, 'tests/UserTest.php'),
-            '<?php\nnamespace Tests;\nclass UserTest {}\n',
-        );
+        writeFileSync(join(TMP_PSR4, 'tests/UserTest.php'), '<?php\nnamespace Tests;\nclass UserTest {}\n');
     });
 
     test('resolves App\\Models\\User to src/Models/User.php', () => {
@@ -153,10 +147,7 @@ describe('PHP Laravel app/ convention', () => {
                 2,
             ),
         );
-        writeFileSync(
-            join(TMP_LARAVEL, 'app/Models/User.php'),
-            '<?php\nnamespace App\\Models;\nclass User {}\n',
-        );
+        writeFileSync(join(TMP_LARAVEL, 'app/Models/User.php'), '<?php\nnamespace App\\Models;\nclass User {}\n');
         writeFileSync(
             join(TMP_LARAVEL, 'app/Services/AuthService.php'),
             '<?php\nnamespace App\\Services;\nclass AuthService {}\n',

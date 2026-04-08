@@ -28,9 +28,7 @@ export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: stri
             base = dirname(base);
         }
 
-        const candidates = rest
-            ? [`${rest}.py`, `${rest}/__init__.py`]
-            : [`__init__.py`];
+        const candidates = rest ? [`${rest}.py`, `${rest}/__init__.py`] : [`__init__.py`];
 
         for (const candidate of candidates) {
             const full = join(base, candidate);

@@ -5,7 +5,7 @@
  * falls back to tsconfig aliases for TypeScript/JavaScript.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
 import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
@@ -37,20 +37,28 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
  */
 function resolveHashImport(modulePath: string, repoRoot: string): string | null {
     const pkgPath = join(repoRoot, 'package.json');
-    if (!existsSync(pkgPath)) return null;
+    if (!existsSync(pkgPath)) {
+        return null;
+    }
 
     try {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
         const imports = pkg?.imports;
-        if (!imports) return null;
+        if (!imports) {
+            return null;
+        }
 
         for (const [pattern, target] of Object.entries(imports)) {
-            if (typeof target !== 'string') continue;
+            if (typeof target !== 'string') {
+                continue;
+            }
 
             if (pattern === modulePath) {
                 // Exact match: "#utils" -> "./src/shared/utils.ts"
                 const resolved = resolvePath(repoRoot, target);
-                if (existsSync(resolved)) return resolved;
+                if (existsSync(resolved)) {
+                    return resolved;
+                }
             }
 
             // Wildcard match: "#db/*" -> "./src/db/*.ts"
@@ -59,7 +67,9 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
                 if (modulePath.startsWith(prefix)) {
                     const rest = modulePath.slice(prefix.length); // "connection"
                     const resolved = resolvePath(repoRoot, (target as string).replace('*', rest));
-                    if (existsSync(resolved)) return resolved;
+                    if (existsSync(resolved)) {
+                        return resolved;
+                    }
                 }
             }
         }
@@ -76,12 +86,16 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
  */
 function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | null {
     const rootPkgPath = join(repoRoot, 'package.json');
-    if (!existsSync(rootPkgPath)) return null;
+    if (!existsSync(rootPkgPath)) {
+        return null;
+    }
 
     try {
         const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf-8'));
         const workspaces: string[] | undefined = rootPkg?.workspaces;
-        if (!Array.isArray(workspaces)) return null;
+        if (!Array.isArray(workspaces)) {
+            return null;
+        }
 
         // Collect all workspace package directories
         const pkgDirs: string[] = [];
@@ -105,14 +119,20 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
         // Search each workspace package for a matching name + exports
         for (const pkgDir of pkgDirs) {
             const pkgJsonPath = join(pkgDir, 'package.json');
-            if (!existsSync(pkgJsonPath)) continue;
+            if (!existsSync(pkgJsonPath)) {
+                continue;
+            }
 
             const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
             const pkgName: string | undefined = pkg?.name;
-            if (!pkgName) continue;
+            if (!pkgName) {
+                continue;
+            }
 
             const exports = pkg?.exports;
-            if (!exports || typeof exports !== 'object') continue;
+            if (!exports || typeof exports !== 'object') {
+                continue;
+            }
 
             // Check if modulePath matches this package (exact or subpath)
             if (modulePath === pkgName) {
@@ -120,15 +140,19 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
                 const target = exports['.'];
                 if (typeof target === 'string') {
                     const resolved = resolvePath(pkgDir, target);
-                    if (existsSync(resolved)) return resolved;
+                    if (existsSync(resolved)) {
+                        return resolved;
+                    }
                 }
-            } else if (modulePath.startsWith(pkgName + '/')) {
+            } else if (modulePath.startsWith(`${pkgName}/`)) {
                 // Subpath export: "./button" entry
-                const subpath = './' + modulePath.slice(pkgName.length + 1);
+                const subpath = `./${modulePath.slice(pkgName.length + 1)}`;
                 const target = exports[subpath];
                 if (typeof target === 'string') {
                     const resolved = resolvePath(pkgDir, target);
-                    if (existsSync(resolved)) return resolved;
+                    if (existsSync(resolved)) {
+                        return resolved;
+                    }
                 }
             }
         }

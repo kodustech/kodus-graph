@@ -10,7 +10,7 @@ describe('Ruby basic require_relative', () => {
         rmSync(TMP, { recursive: true, force: true });
         mkdirSync(join(TMP, 'lib/models'), { recursive: true });
         writeFileSync(join(TMP, 'lib/app.rb'), "require_relative 'models/user'\n");
-        writeFileSync(join(TMP, 'lib/models/user.rb'), "class User\nend\n");
+        writeFileSync(join(TMP, 'lib/models/user.rb'), 'class User\nend\n');
     });
 
     test('resolves models/user from lib/app.rb', () => {
@@ -38,20 +38,12 @@ describe('Ruby Gemfile path gem', () => {
         mkdirSync(join(TMP_GEMPATH, 'libs/mylib/lib/mylib'), { recursive: true });
         writeFileSync(
             join(TMP_GEMPATH, 'Gemfile'),
-            [
-                "source 'https://rubygems.org'",
-                '',
-                "gem 'mylib', path: './libs/mylib'",
-                '',
-            ].join('\n'),
+            ["source 'https://rubygems.org'", '', "gem 'mylib', path: './libs/mylib'", ''].join('\n'),
         );
-        writeFileSync(
-            join(TMP_GEMPATH, 'libs/mylib/lib/mylib.rb'),
-            "require 'mylib/helper'\n\nmodule Mylib\nend\n",
-        );
+        writeFileSync(join(TMP_GEMPATH, 'libs/mylib/lib/mylib.rb'), "require 'mylib/helper'\n\nmodule Mylib\nend\n");
         writeFileSync(
             join(TMP_GEMPATH, 'libs/mylib/lib/mylib/helper.rb'),
-            "module Mylib\n  module Helper\n  end\nend\n",
+            'module Mylib\n  module Helper\n  end\nend\n',
         );
         writeFileSync(join(TMP_GEMPATH, 'app.rb'), "require 'mylib'\nrequire 'mylib/helper'\n");
     });

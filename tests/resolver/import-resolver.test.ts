@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
 import { resolve as resolveTsImport } from '../../src/resolver/languages/typescript';
@@ -243,22 +243,12 @@ describe('TypeScript monorepo workspaces', () => {
     });
 
     it('should resolve workspace root export', () => {
-        const result = resolveImport(
-            join(tmpDir, 'packages/app/src/page.ts'),
-            '@acme/ui',
-            'ts',
-            tmpDir,
-        );
+        const result = resolveImport(join(tmpDir, 'packages/app/src/page.ts'), '@acme/ui', 'ts', tmpDir);
         expect(result).toBe(resolve(join(tmpDir, 'packages/ui/src/index.ts')));
     });
 
     it('should resolve workspace subpath export', () => {
-        const result = resolveImport(
-            join(tmpDir, 'packages/app/src/form.ts'),
-            '@acme/ui/button',
-            'ts',
-            tmpDir,
-        );
+        const result = resolveImport(join(tmpDir, 'packages/app/src/form.ts'), '@acme/ui/button', 'ts', tmpDir);
         expect(result).toBe(resolve(join(tmpDir, 'packages/ui/src/components/button.ts')));
     });
 });
@@ -291,22 +281,12 @@ describe('TypeScript package.json #imports', () => {
     });
 
     it('should resolve wildcard #import', () => {
-        const result = resolveImport(
-            join(tmpDir, 'src/app.ts'),
-            '#db/connection',
-            'ts',
-            tmpDir,
-        );
+        const result = resolveImport(join(tmpDir, 'src/app.ts'), '#db/connection', 'ts', tmpDir);
         expect(result).toBe(resolve(join(tmpDir, 'src/db/connection.ts')));
     });
 
     it('should resolve exact #import', () => {
-        const result = resolveImport(
-            join(tmpDir, 'src/app.ts'),
-            '#utils',
-            'ts',
-            tmpDir,
-        );
+        const result = resolveImport(join(tmpDir, 'src/app.ts'), '#utils', 'ts', tmpDir);
         expect(result).toBe(resolve(join(tmpDir, 'src/shared/utils.ts')));
     });
 });
@@ -319,7 +299,10 @@ describe('TypeScript Vite query suffix stripping', () => {
         mkdirSync(join(TS_VITE, 'src'), { recursive: true });
         writeFileSync(join(TS_VITE, 'src/data.txt'), 'hello\n');
         writeFileSync(join(TS_VITE, 'src/worker.ts'), 'self.onmessage = () => {};\n');
-        writeFileSync(join(TS_VITE, 'src/app.ts'), "import raw from './data.txt?raw';\nimport W from './worker?worker';\n");
+        writeFileSync(
+            join(TS_VITE, 'src/app.ts'),
+            "import raw from './data.txt?raw';\nimport W from './worker?worker';\n",
+        );
     });
 
     afterAll(() => rmSync(TS_VITE, { recursive: true, force: true }));

@@ -16,32 +16,14 @@ describe('Python basic resolution', () => {
         mkdirSync(join(TMP_BASIC, 'mypackage/services'), { recursive: true });
         mkdirSync(join(TMP_BASIC, 'mypackage/utils'), { recursive: true });
 
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/__init__.py'),
-            'from .models.user import User\n',
-        );
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/models/__init__.py'),
-            'from .user import User\n',
-        );
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/models/user.py'),
-            'class User: pass\n',
-        );
+        writeFileSync(join(TMP_BASIC, 'mypackage/__init__.py'), 'from .models.user import User\n');
+        writeFileSync(join(TMP_BASIC, 'mypackage/models/__init__.py'), 'from .user import User\n');
+        writeFileSync(join(TMP_BASIC, 'mypackage/models/user.py'), 'class User: pass\n');
         writeFileSync(join(TMP_BASIC, 'mypackage/services/__init__.py'), '');
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/services/auth.py'),
-            'from ..models.user import User\n',
-        );
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/services/billing.py'),
-            'from . import auth\n',
-        );
+        writeFileSync(join(TMP_BASIC, 'mypackage/services/auth.py'), 'from ..models.user import User\n');
+        writeFileSync(join(TMP_BASIC, 'mypackage/services/billing.py'), 'from . import auth\n');
         writeFileSync(join(TMP_BASIC, 'mypackage/utils/__init__.py'), '');
-        writeFileSync(
-            join(TMP_BASIC, 'mypackage/utils/helpers.py'),
-            'from mypackage.models.user import User\n',
-        );
+        writeFileSync(join(TMP_BASIC, 'mypackage/utils/helpers.py'), 'from mypackage.models.user import User\n');
     });
 
     test('absolute dotted: mypackage.models.user from helpers.py', () => {
@@ -103,15 +85,9 @@ describe('Python src layout', () => {
         );
         writeFileSync(join(TMP_SRC, 'src/myapp/__init__.py'), '');
         writeFileSync(join(TMP_SRC, 'src/myapp/core/__init__.py'), '');
-        writeFileSync(
-            join(TMP_SRC, 'src/myapp/core/engine.py'),
-            'class Engine: pass\n',
-        );
+        writeFileSync(join(TMP_SRC, 'src/myapp/core/engine.py'), 'class Engine: pass\n');
         writeFileSync(join(TMP_SRC, 'src/myapp/api/__init__.py'), '');
-        writeFileSync(
-            join(TMP_SRC, 'src/myapp/api/routes.py'),
-            'from myapp.core.engine import Engine\n',
-        );
+        writeFileSync(join(TMP_SRC, 'src/myapp/api/routes.py'), 'from myapp.core.engine import Engine\n');
     });
 
     test('absolute with src remap: myapp.core.engine from routes.py', () => {
@@ -139,19 +115,10 @@ describe('Python namespace package', () => {
         mkdirSync(join(TMP_NS, 'mycompany/billing'), { recursive: true });
         // NO mycompany/__init__.py — namespace package
         writeFileSync(join(TMP_NS, 'mycompany/auth/__init__.py'), '');
-        writeFileSync(
-            join(TMP_NS, 'mycompany/auth/service.py'),
-            'class AuthService: pass\n',
-        );
+        writeFileSync(join(TMP_NS, 'mycompany/auth/service.py'), 'class AuthService: pass\n');
         writeFileSync(join(TMP_NS, 'mycompany/billing/__init__.py'), '');
-        writeFileSync(
-            join(TMP_NS, 'mycompany/billing/service.py'),
-            'class BillingService: pass\n',
-        );
-        writeFileSync(
-            join(TMP_NS, 'app.py'),
-            'from mycompany.auth.service import AuthService\n',
-        );
+        writeFileSync(join(TMP_NS, 'mycompany/billing/service.py'), 'class BillingService: pass\n');
+        writeFileSync(join(TMP_NS, 'app.py'), 'from mycompany.auth.service import AuthService\n');
     });
 
     test('namespace without __init__: mycompany.auth.service from app.py', () => {
@@ -180,28 +147,15 @@ describe('Python Django app imports', () => {
         mkdirSync(join(TMP_DJANGO, 'myproject'), { recursive: true });
 
         writeFileSync(join(TMP_DJANGO, 'users/__init__.py'), '');
-        writeFileSync(
-            join(TMP_DJANGO, 'users/models.py'),
-            'class User: pass\n',
-        );
+        writeFileSync(join(TMP_DJANGO, 'users/models.py'), 'class User: pass\n');
         writeFileSync(
             join(TMP_DJANGO, 'users/views.py'),
-            [
-                'from .models import User',
-                'from orders.models import Order',
-                '',
-            ].join('\n'),
+            ['from .models import User', 'from orders.models import Order', ''].join('\n'),
         );
         writeFileSync(join(TMP_DJANGO, 'orders/__init__.py'), '');
-        writeFileSync(
-            join(TMP_DJANGO, 'orders/models.py'),
-            'class Order: pass\n',
-        );
+        writeFileSync(join(TMP_DJANGO, 'orders/models.py'), 'class Order: pass\n');
         writeFileSync(join(TMP_DJANGO, 'myproject/__init__.py'), '');
-        writeFileSync(
-            join(TMP_DJANGO, 'myproject/urls.py'),
-            'from users.views import index\n',
-        );
+        writeFileSync(join(TMP_DJANGO, 'myproject/urls.py'), 'from users.views import index\n');
     });
 
     test('relative in app: .models from users/views.py', () => {
@@ -241,7 +195,10 @@ describe('Python wildcard import with __all__', () => {
         rmSync(TMP_WILDCARD, { recursive: true, force: true });
         mkdirSync(join(TMP_WILDCARD, 'mylib'), { recursive: true });
 
-        writeFileSync(join(TMP_WILDCARD, 'mylib/__init__.py'), "__all__ = ['Foo', 'Bar']\nfrom .foo import Foo\nfrom .bar import Bar\n");
+        writeFileSync(
+            join(TMP_WILDCARD, 'mylib/__init__.py'),
+            "__all__ = ['Foo', 'Bar']\nfrom .foo import Foo\nfrom .bar import Bar\n",
+        );
         writeFileSync(join(TMP_WILDCARD, 'mylib/foo.py'), 'class Foo: pass\n');
         writeFileSync(join(TMP_WILDCARD, 'mylib/bar.py'), 'class Bar: pass\n');
         writeFileSync(join(TMP_WILDCARD, 'app.py'), 'from mylib import *\n');
