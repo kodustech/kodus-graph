@@ -178,3 +178,34 @@ describe('Rust #[path] attribute (documented limitation)', () => {
         rmSync(TMP_PATH_ATTR, { recursive: true, force: true });
     });
 });
+
+const TMP_PUBUSE = join(import.meta.dir, '../fixtures/rust-pubuse-tmp');
+
+describe('Rust pub use re-exports (documented behavior)', () => {
+    test('setup', () => {
+        rmSync(TMP_PUBUSE, { recursive: true, force: true });
+        mkdirSync(join(TMP_PUBUSE, 'src/internal'), { recursive: true });
+
+        writeFileSync(join(TMP_PUBUSE, 'Cargo.toml'), '[package]\nname = "mylib"\nedition = "2021"\n');
+        writeFileSync(join(TMP_PUBUSE, 'src/lib.rs'), 'pub mod internal;\npub use internal::core::Engine;\n');
+        writeFileSync(join(TMP_PUBUSE, 'src/internal/mod.rs'), 'pub mod core;\n');
+        writeFileSync(join(TMP_PUBUSE, 'src/internal/core.rs'), 'pub struct Engine {}\n');
+    });
+
+    test('crate::internal::core resolves directly', () => {
+        const result = resolve(join(TMP_PUBUSE, 'src/lib.rs'), 'crate::internal::core', TMP_PUBUSE);
+        expect(result).not.toBeNull();
+        expect(result).toContain('core.rs');
+    });
+
+    test('crate::Engine via pub use does not resolve (known limitation)', () => {
+        // pub use internal::core::Engine makes Engine available at crate root
+        // but the resolver can't follow pub use chains without AST analysis
+        const result = resolve(join(TMP_PUBUSE, 'src/lib.rs'), 'crate::Engine', TMP_PUBUSE);
+        expect(result).toBeNull(); // Known limitation
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_PUBUSE, { recursive: true, force: true });
+    });
+});
