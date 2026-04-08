@@ -72,3 +72,82 @@ describe('Rust import resolver', () => {
         rmSync(TMP, { recursive: true, force: true });
     });
 });
+
+const TMP_WORKSPACE = join(import.meta.dir, '../fixtures/rust-workspace-tmp');
+
+describe('Rust workspace path deps', () => {
+    test('setup', () => {
+        rmSync(TMP_WORKSPACE, { recursive: true, force: true });
+        mkdirSync(join(TMP_WORKSPACE, 'crates/app/src'), { recursive: true });
+        mkdirSync(join(TMP_WORKSPACE, 'crates/shared/src'), { recursive: true });
+        writeFileSync(
+            join(TMP_WORKSPACE, 'Cargo.toml'),
+            '[workspace]\nmembers = ["crates/*"]\n',
+        );
+        writeFileSync(
+            join(TMP_WORKSPACE, 'crates/app/Cargo.toml'),
+            '[package]\nname = "app"\n\n[dependencies]\nshared = { path = "../shared" }\n',
+        );
+        writeFileSync(
+            join(TMP_WORKSPACE, 'crates/shared/Cargo.toml'),
+            '[package]\nname = "shared"\n',
+        );
+        writeFileSync(join(TMP_WORKSPACE, 'crates/app/src/main.rs'), 'use shared::helper::format;\n');
+        writeFileSync(join(TMP_WORKSPACE, 'crates/shared/src/lib.rs'), 'pub mod helper;\n');
+        writeFileSync(join(TMP_WORKSPACE, 'crates/shared/src/helper.rs'), 'pub fn format() {}\n');
+    });
+
+    test('resolves shared::helper::format across workspace path dep', () => {
+        const result = resolve(
+            join(TMP_WORKSPACE, 'crates/app/src/main.rs'),
+            'shared::helper::format',
+            TMP_WORKSPACE,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('helper.rs');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_WORKSPACE, { recursive: true, force: true });
+    });
+});
+
+const TMP_MOD_PATTERNS = join(import.meta.dir, '../fixtures/rust-mod-patterns-tmp');
+
+describe('Rust mod patterns (file vs dir)', () => {
+    test('setup', () => {
+        rmSync(TMP_MOD_PATTERNS, { recursive: true, force: true });
+        mkdirSync(join(TMP_MOD_PATTERNS, 'src/beta'), { recursive: true });
+        writeFileSync(
+            join(TMP_MOD_PATTERNS, 'Cargo.toml'),
+            '[package]\nname = "mod-patterns"\nedition = "2021"\n',
+        );
+        writeFileSync(join(TMP_MOD_PATTERNS, 'src/lib.rs'), 'mod alpha;\nmod beta;\n');
+        writeFileSync(join(TMP_MOD_PATTERNS, 'src/alpha.rs'), 'pub fn hello() {}\n');
+        writeFileSync(join(TMP_MOD_PATTERNS, 'src/beta/mod.rs'), 'pub fn world() {}\n');
+    });
+
+    test('resolves crate::alpha to alpha.rs', () => {
+        const result = resolve(
+            join(TMP_MOD_PATTERNS, 'src/lib.rs'),
+            'crate::alpha',
+            TMP_MOD_PATTERNS,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('alpha.rs');
+    });
+
+    test('resolves crate::beta to beta/mod.rs', () => {
+        const result = resolve(
+            join(TMP_MOD_PATTERNS, 'src/lib.rs'),
+            'crate::beta',
+            TMP_MOD_PATTERNS,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('mod.rs');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_MOD_PATTERNS, { recursive: true, force: true });
+    });
+});
