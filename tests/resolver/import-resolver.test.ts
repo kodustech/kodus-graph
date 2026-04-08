@@ -291,6 +291,79 @@ describe('TypeScript package.json #imports', () => {
     });
 });
 
+const TS_COND = join(import.meta.dir, '../fixtures/ts-conditional-exports-tmp');
+
+describe('TypeScript conditional exports', () => {
+    beforeAll(() => {
+        rmSync(TS_COND, { recursive: true, force: true });
+        mkdirSync(join(TS_COND, 'packages/lib/src'), { recursive: true });
+        mkdirSync(join(TS_COND, 'packages/lib/dist/esm'), { recursive: true });
+        mkdirSync(join(TS_COND, 'packages/app/src'), { recursive: true });
+
+        writeFileSync(join(TS_COND, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
+        writeFileSync(join(TS_COND, 'packages/lib/package.json'), JSON.stringify({
+            name: '@acme/lib',
+            exports: {
+                '.': {
+                    types: './src/index.ts',
+                    import: './dist/esm/index.js',
+                    default: './dist/esm/index.js',
+                },
+            },
+        }));
+        writeFileSync(join(TS_COND, 'packages/lib/src/index.ts'), 'export function lib() {}\n');
+        writeFileSync(join(TS_COND, 'packages/lib/dist/esm/index.js'), 'export function lib() {}\n');
+        writeFileSync(join(TS_COND, 'packages/app/package.json'), JSON.stringify({
+            dependencies: { '@acme/lib': 'workspace:*' },
+        }));
+        writeFileSync(join(TS_COND, 'packages/app/src/main.ts'), "import { lib } from '@acme/lib';\n");
+    });
+
+    afterAll(() => rmSync(TS_COND, { recursive: true, force: true }));
+
+    it('prefers types field in conditional exports', () => {
+        const result = resolveImport(
+            join(TS_COND, 'packages/app/src/main.ts'),
+            '@acme/lib', 'ts', TS_COND,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('src/index.ts');
+        expect(result).not.toContain('dist');
+    });
+});
+
+const TS_MAIN = join(import.meta.dir, '../fixtures/ts-main-field-tmp');
+
+describe('TypeScript workspace main/module fallback', () => {
+    beforeAll(() => {
+        rmSync(TS_MAIN, { recursive: true, force: true });
+        mkdirSync(join(TS_MAIN, 'packages/old-lib/src'), { recursive: true });
+        mkdirSync(join(TS_MAIN, 'packages/app/src'), { recursive: true });
+
+        writeFileSync(join(TS_MAIN, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
+        writeFileSync(join(TS_MAIN, 'packages/old-lib/package.json'), JSON.stringify({
+            name: '@acme/old-lib',
+            main: './src/index.ts',
+        }));
+        writeFileSync(join(TS_MAIN, 'packages/old-lib/src/index.ts'), 'export function old() {}\n');
+        writeFileSync(join(TS_MAIN, 'packages/app/package.json'), JSON.stringify({
+            dependencies: { '@acme/old-lib': 'workspace:*' },
+        }));
+        writeFileSync(join(TS_MAIN, 'packages/app/src/main.ts'), "import { old } from '@acme/old-lib';\n");
+    });
+
+    afterAll(() => rmSync(TS_MAIN, { recursive: true, force: true }));
+
+    it('falls back to main field when no exports', () => {
+        const result = resolveImport(
+            join(TS_MAIN, 'packages/app/src/main.ts'),
+            '@acme/old-lib', 'ts', TS_MAIN,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('index.ts');
+    });
+});
+
 const TS_VITE = join(import.meta.dir, '../fixtures/ts-vite-tmp');
 
 describe('TypeScript Vite query suffix stripping', () => {

@@ -82,6 +82,32 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
 }
 
 /**
+ * Resolve a conditional export value to a single string path.
+ * When the value is a plain string, return it directly.
+ * When it's an object with condition keys, prefer: types > import > default > first value.
+ */
+function resolveExportValue(value: unknown): string | null {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const obj = value as Record<string, unknown>;
+        for (const key of ['types', 'import', 'default']) {
+            if (typeof obj[key] === 'string') {
+                return obj[key] as string;
+            }
+        }
+        // Fallback: first value that is a string
+        for (const v of Object.values(obj)) {
+            if (typeof v === 'string') {
+                return v;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Resolve monorepo workspace package exports.
  * Scans workspace directories to find packages matching the import specifier.
  */
@@ -117,7 +143,7 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
             }
         }
 
-        // Search each workspace package for a matching name + exports
+        // Search each workspace package for a matching name + exports/main/module
         for (const pkgDir of pkgDirs) {
             const pkgJsonPath = join(pkgDir, 'package.json');
             if (!cachedExists(pkgJsonPath)) {
@@ -131,25 +157,33 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
             }
 
             const exports = pkg?.exports;
-            if (!exports || typeof exports !== 'object') {
-                continue;
-            }
 
             // Check if modulePath matches this package (exact or subpath)
             if (modulePath === pkgName) {
-                // Root export: "." entry
-                const target = exports['.'];
-                if (typeof target === 'string') {
-                    const resolved = resolvePath(pkgDir, target);
-                    if (cachedExists(resolved)) {
-                        return resolved;
+                if (exports && typeof exports === 'object') {
+                    // Root export: "." entry
+                    const target = resolveExportValue(exports['.']);
+                    if (target) {
+                        const resolved = resolvePath(pkgDir, target);
+                        if (cachedExists(resolved)) {
+                            return resolved;
+                        }
+                    }
+                } else if (!exports) {
+                    // Fallback to main or module fields
+                    const fallback = pkg.main ?? pkg.module;
+                    if (typeof fallback === 'string') {
+                        const resolved = resolvePath(pkgDir, fallback);
+                        if (cachedExists(resolved)) {
+                            return resolved;
+                        }
                     }
                 }
-            } else if (modulePath.startsWith(`${pkgName}/`)) {
+            } else if (modulePath.startsWith(`${pkgName}/`) && exports && typeof exports === 'object') {
                 // Subpath export: "./button" entry
                 const subpath = `./${modulePath.slice(pkgName.length + 1)}`;
-                const target = exports[subpath];
-                if (typeof target === 'string') {
+                const target = resolveExportValue(exports[subpath]);
+                if (target) {
                     const resolved = resolvePath(pkgDir, target);
                     if (cachedExists(resolved)) {
                         return resolved;
