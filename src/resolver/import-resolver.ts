@@ -5,6 +5,8 @@
  * falls back to tsconfig aliases for TypeScript/JavaScript.
  */
 
+import { existsSync, readFileSync, readdirSync } from 'fs';
+import { join, resolve as resolvePath } from 'path';
 import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
 import { resolve as resolveCsImport } from './languages/csharp';
@@ -30,6 +32,114 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
 };
 
 /**
+ * Resolve package.json #imports (Node.js subpath imports).
+ * Handles both exact matches and wildcard patterns.
+ */
+function resolveHashImport(modulePath: string, repoRoot: string): string | null {
+    const pkgPath = join(repoRoot, 'package.json');
+    if (!existsSync(pkgPath)) return null;
+
+    try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        const imports = pkg?.imports;
+        if (!imports) return null;
+
+        for (const [pattern, target] of Object.entries(imports)) {
+            if (typeof target !== 'string') continue;
+
+            if (pattern === modulePath) {
+                // Exact match: "#utils" -> "./src/shared/utils.ts"
+                const resolved = resolvePath(repoRoot, target);
+                if (existsSync(resolved)) return resolved;
+            }
+
+            // Wildcard match: "#db/*" -> "./src/db/*.ts"
+            if (pattern.includes('*')) {
+                const prefix = pattern.split('*')[0]; // "#db/"
+                if (modulePath.startsWith(prefix)) {
+                    const rest = modulePath.slice(prefix.length); // "connection"
+                    const resolved = resolvePath(repoRoot, (target as string).replace('*', rest));
+                    if (existsSync(resolved)) return resolved;
+                }
+            }
+        }
+    } catch {
+        // ignore parse errors
+    }
+
+    return null;
+}
+
+/**
+ * Resolve monorepo workspace package exports.
+ * Scans workspace directories to find packages matching the import specifier.
+ */
+function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | null {
+    const rootPkgPath = join(repoRoot, 'package.json');
+    if (!existsSync(rootPkgPath)) return null;
+
+    try {
+        const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf-8'));
+        const workspaces: string[] | undefined = rootPkg?.workspaces;
+        if (!Array.isArray(workspaces)) return null;
+
+        // Collect all workspace package directories
+        const pkgDirs: string[] = [];
+        for (const ws of workspaces) {
+            if (ws.endsWith('/*')) {
+                // Glob pattern like "packages/*"
+                const parentDir = join(repoRoot, ws.slice(0, -2));
+                if (existsSync(parentDir)) {
+                    const entries = readdirSync(parentDir, { withFileTypes: true });
+                    for (const entry of entries) {
+                        if (entry.isDirectory()) {
+                            pkgDirs.push(join(parentDir, entry.name));
+                        }
+                    }
+                }
+            } else {
+                pkgDirs.push(join(repoRoot, ws));
+            }
+        }
+
+        // Search each workspace package for a matching name + exports
+        for (const pkgDir of pkgDirs) {
+            const pkgJsonPath = join(pkgDir, 'package.json');
+            if (!existsSync(pkgJsonPath)) continue;
+
+            const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+            const pkgName: string | undefined = pkg?.name;
+            if (!pkgName) continue;
+
+            const exports = pkg?.exports;
+            if (!exports || typeof exports !== 'object') continue;
+
+            // Check if modulePath matches this package (exact or subpath)
+            if (modulePath === pkgName) {
+                // Root export: "." entry
+                const target = exports['.'];
+                if (typeof target === 'string') {
+                    const resolved = resolvePath(pkgDir, target);
+                    if (existsSync(resolved)) return resolved;
+                }
+            } else if (modulePath.startsWith(pkgName + '/')) {
+                // Subpath export: "./button" entry
+                const subpath = './' + modulePath.slice(pkgName.length + 1);
+                const target = exports[subpath];
+                if (typeof target === 'string') {
+                    const resolved = resolvePath(pkgDir, target);
+                    if (existsSync(resolved)) return resolved;
+                }
+            }
+        }
+    } catch {
+        // ignore parse errors
+    }
+
+    return null;
+}
+
+/**
  * Resolve an import from one file to another.
  *
  * @param fromAbsFile - Absolute path of the importing file
@@ -51,11 +161,36 @@ export function resolveImport(
         return null;
     }
 
+    const isTs = lang === 'ts' || lang === 'javascript' || lang === 'typescript';
+
+    // Handle package.json #imports (TS/JS only)
+    if (isTs && modulePath.startsWith('#')) {
+        const result = resolveHashImport(modulePath, repoRoot);
+        if (result) {
+            try {
+                ensureWithinRoot(result, repoRoot);
+                return result;
+            } catch {
+                log.warn('Import resolves outside repository root', {
+                    from: fromAbsFile,
+                    module: modulePath,
+                    resolved: result,
+                });
+                return null;
+            }
+        }
+    }
+
     let result = resolver(fromAbsFile, modulePath, repoRoot);
 
     // Fallback: tsconfig aliases for TS/JS
-    if (!result && (lang === 'ts' || lang === 'javascript' || lang === 'typescript') && tsconfigAliases?.size) {
+    if (!result && isTs && tsconfigAliases?.size) {
         result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
+    }
+
+    // Fallback: monorepo workspace exports for TS/JS bare specifiers
+    if (!result && isTs && !modulePath.startsWith('.')) {
+        result = resolveWorkspaceExport(modulePath, repoRoot);
     }
 
     // Validate resolved path is within repo root

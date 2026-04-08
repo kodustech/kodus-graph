@@ -15,10 +15,56 @@ import { log } from '../../shared/logger';
 const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
 /**
+ * Probe a base path for TS/JS files: try extensions, then index files.
+ * Returns the resolved absolute path or null.
+ */
+function probeExtensions(base: string): string | null {
+    for (const ext of TS_EXTENSIONS) {
+        const candidate = base + ext;
+        if (existsSync(candidate)) {
+            return resolvePath(candidate);
+        }
+    }
+    for (const ext of TS_EXTENSIONS) {
+        const candidate = join(base, `index${ext}`);
+        if (existsSync(candidate)) {
+            return resolvePath(candidate);
+        }
+    }
+    return null;
+}
+
+/** Cache for parsed tsconfig.json (keyed by repoRoot). */
+const tsconfigCache = new Map<string, { rootDirs?: string[] }>();
+
+function loadTsconfigCompilerOptions(repoRoot: string): { rootDirs?: string[] } {
+    const cached = tsconfigCache.get(repoRoot);
+    if (cached !== undefined) return cached;
+
+    const tsconfigPath = join(repoRoot, 'tsconfig.json');
+    let result: { rootDirs?: string[] } = {};
+    if (existsSync(tsconfigPath)) {
+        try {
+            const content = readFileSync(tsconfigPath, 'utf-8');
+            const cleaned = stripJsonComments(content);
+            const config = JSON.parse(cleaned);
+            const rootDirs = config?.compilerOptions?.rootDirs;
+            if (Array.isArray(rootDirs)) {
+                result = { rootDirs };
+            }
+        } catch {
+            // ignore parse errors
+        }
+    }
+    tsconfigCache.set(repoRoot, result);
+    return result;
+}
+
+/**
  * Resolve a TypeScript/JavaScript relative import to an absolute file path.
  * Returns null for non-relative (external package) imports.
  */
-export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: string): string | null {
+export function resolve(fromAbsFile: string, modulePath: string, repoRoot: string): string | null {
     if (!modulePath.startsWith('.')) {
         return null;
     }
@@ -30,19 +76,32 @@ export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: stri
         base = base.slice(0, -3);
     }
 
-    // Try direct with extension
-    for (const ext of TS_EXTENSIONS) {
-        const candidate = base + ext;
-        if (existsSync(candidate)) {
-            return resolvePath(candidate);
-        }
-    }
+    const direct = probeExtensions(base);
+    if (direct) return direct;
 
-    // Try index file in directory
-    for (const ext of TS_EXTENSIONS) {
-        const candidate = join(base, `index${ext}`);
-        if (existsSync(candidate)) {
-            return resolvePath(candidate);
+    // rootDirs fallback: try the same relative import from other root directories
+    const { rootDirs } = loadTsconfigCompilerOptions(repoRoot);
+    if (rootDirs && rootDirs.length > 0) {
+        const fromDir = dirname(fromAbsFile);
+        for (const rd of rootDirs) {
+            const absRd = resolvePath(repoRoot, rd);
+            // Check if fromDir is inside this rootDir
+            if (fromDir.startsWith(absRd + '/') || fromDir === absRd) {
+                const relFromRoot = fromDir.slice(absRd.length); // e.g. "" or "/sub"
+                // Try the same relative path under each other rootDir
+                for (const otherRd of rootDirs) {
+                    if (otherRd === rd) continue;
+                    const absOtherRd = resolvePath(repoRoot, otherRd);
+                    const relModule = modulePath.startsWith('./') ? modulePath.slice(2) : modulePath;
+                    let otherBase = join(absOtherRd, relFromRoot, relModule);
+                    if (modulePath.endsWith('.js')) {
+                        otherBase = otherBase.slice(0, -3);
+                    }
+                    const result = probeExtensions(otherBase);
+                    if (result) return result;
+                }
+                break;
+            }
         }
     }
 
