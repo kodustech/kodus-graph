@@ -15,6 +15,7 @@ export function buildGraphData(
     for (const f of raw.functions) {
         nodes.push({
             kind: f.kind,
+            ast_kind: f.ast_kind,
             name: f.name,
             qualified_name: f.qualified,
             file_path: f.file,
@@ -34,6 +35,7 @@ export function buildGraphData(
     for (const c of raw.classes) {
         nodes.push({
             kind: 'Class',
+            ast_kind: c.ast_kind,
             name: c.name,
             qualified_name: c.qualified,
             file_path: c.file,
@@ -50,6 +52,7 @@ export function buildGraphData(
     for (const i of raw.interfaces) {
         nodes.push({
             kind: 'Interface',
+            ast_kind: i.ast_kind,
             name: i.name,
             qualified_name: i.qualified,
             file_path: i.file,
@@ -66,6 +69,7 @@ export function buildGraphData(
     for (const e of raw.enums) {
         nodes.push({
             kind: 'Enum',
+            ast_kind: e.ast_kind,
             name: e.name,
             qualified_name: e.qualified,
             file_path: e.file,
@@ -82,6 +86,7 @@ export function buildGraphData(
     for (const t of raw.tests) {
         nodes.push({
             kind: 'Test',
+            ast_kind: t.ast_kind,
             name: t.name,
             qualified_name: t.qualified,
             file_path: t.file,
