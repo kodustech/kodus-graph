@@ -41,8 +41,10 @@ describe('Java import resolver', () => {
         expect(resolve('', 'javax.servlet.http.HttpServletRequest', TMP)).toBeNull();
     });
 
-    test('returns null for wildcard imports', () => {
-        expect(resolve('', 'com.example.auth.*', TMP)).toBeNull();
+    test('wildcard import resolves to a file in the package directory', () => {
+        const result = resolve('', 'com.example.auth.*', TMP);
+        expect(result).not.toBeNull();
+        expect(result).toContain('AuthService.java');
     });
 
     test('returns null for external library not present on disk', () => {
