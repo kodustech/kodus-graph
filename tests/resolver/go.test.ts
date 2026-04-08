@@ -151,3 +151,26 @@ describe('Go CGo sentinel', () => {
         expect(resolve('', 'C', TMP)).toBeNull();
     });
 });
+
+const TMP_INTERNAL = join(import.meta.dir, '../fixtures/go-internal-tmp');
+
+describe('Go internal package', () => {
+    test('setup', () => {
+        rmSync(TMP_INTERNAL, { recursive: true, force: true });
+        mkdirSync(join(TMP_INTERNAL, 'internal/auth'), { recursive: true });
+        writeFileSync(join(TMP_INTERNAL, 'go.mod'), 'module github.com/acme/svc\n\ngo 1.21\n');
+        writeFileSync(join(TMP_INTERNAL, 'internal/auth/handler.go'), 'package auth\n');
+        clearCache();
+    });
+
+    test('resolves internal package normally', () => {
+        const result = resolve('', 'github.com/acme/svc/internal/auth', TMP_INTERNAL);
+        expect(result).not.toBeNull();
+        expect(result).toContain('handler.go');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_INTERNAL, { recursive: true, force: true });
+        clearCache();
+    });
+});

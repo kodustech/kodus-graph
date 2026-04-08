@@ -165,3 +165,30 @@ describe('PHP Laravel app/ convention', () => {
         clearCache();
     });
 });
+
+const TMP_REQUIRE = join(import.meta.dir, '../fixtures/php-require-tmp');
+
+describe('PHP require/include paths', () => {
+    test('setup', () => {
+        rmSync(TMP_REQUIRE, { recursive: true, force: true });
+        mkdirSync(join(TMP_REQUIRE, 'config'), { recursive: true });
+        mkdirSync(join(TMP_REQUIRE, 'src'), { recursive: true });
+
+        writeFileSync(join(TMP_REQUIRE, 'composer.json'), JSON.stringify({ autoload: { 'psr-4': { 'App\\': 'src/' } } }));
+        writeFileSync(join(TMP_REQUIRE, 'config/database.php'), '<?php return [];\n');
+        writeFileSync(join(TMP_REQUIRE, 'src/App.php'), "<?php\nrequire_once __DIR__ . '/../config/database.php';\n");
+        clearCache();
+    });
+
+    test('resolves relative file path import', () => {
+        // When modulePath looks like a file path (contains / or .php), resolve as file path
+        const result = resolve(join(TMP_REQUIRE, 'src/App.php'), '../config/database.php', TMP_REQUIRE);
+        expect(result).not.toBeNull();
+        expect(result).toContain('config/database.php');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_REQUIRE, { recursive: true, force: true });
+        clearCache();
+    });
+});

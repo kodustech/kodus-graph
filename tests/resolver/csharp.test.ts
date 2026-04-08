@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/csharp';
+import { clearCache, resolve } from '../../src/resolver/languages/csharp';
 
 const TMP = join(import.meta.dir, '../fixtures/csharp-resolver-tmp');
 
@@ -133,5 +133,44 @@ describe('C# global usings', () => {
 
     test('cleanup', () => {
         rmSync(TMP_GLOBAL, { recursive: true, force: true });
+    });
+});
+
+const TMP_SLN = join(import.meta.dir, '../fixtures/cs-sln-tmp');
+
+describe('C# solution file project discovery', () => {
+    test('setup', () => {
+        rmSync(TMP_SLN, { recursive: true, force: true });
+        mkdirSync(join(TMP_SLN, 'src/Api/Controllers'), { recursive: true });
+        mkdirSync(join(TMP_SLN, 'src/Domain/Models'), { recursive: true });
+
+        writeFileSync(join(TMP_SLN, 'MySolution.sln'), [
+            'Project("{FAE04EC0}") = "Api", "src/Api/Api.csproj", "{GUID1}"',
+            'EndProject',
+            'Project("{FAE04EC0}") = "Domain", "src/Domain/Domain.csproj", "{GUID2}"',
+            'EndProject',
+        ].join('\n'));
+        writeFileSync(join(TMP_SLN, 'src/Api/Api.csproj'), '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n');
+        writeFileSync(join(TMP_SLN, 'src/Domain/Domain.csproj'), '<Project Sdk="Microsoft.NET.Sdk"></Project>\n');
+        writeFileSync(
+            join(TMP_SLN, 'src/Domain/Models/Order.cs'),
+            'namespace Domain.Models;\npublic class Order {}\n',
+        );
+        writeFileSync(
+            join(TMP_SLN, 'src/Api/Controllers/OrderController.cs'),
+            'using Domain.Models;\nnamespace Api.Controllers;\n',
+        );
+        clearCache();
+    });
+
+    test('resolves namespace from another solution project', () => {
+        const result = resolve('', 'Domain.Models', TMP_SLN);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Domain');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_SLN, { recursive: true, force: true });
+        clearCache();
     });
 });
