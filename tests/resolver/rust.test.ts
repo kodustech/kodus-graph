@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from '../../src/resolver/languages/rust';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from '../../src/resolver/languages/rust';
 
 const TMP = join(import.meta.dir, '../fixtures/rust-resolver-tmp');
 
@@ -12,6 +12,7 @@ describe('Rust import resolver', () => {
         mkdirSync(join(TMP, 'src/utils'), { recursive: true });
         writeFileSync(join(TMP, 'src/utils.rs'), 'pub fn helper() {}\n');
         writeFileSync(join(TMP, 'src/utils/format.rs'), 'pub fn fmt_val() {}\n');
+        writeFileSync(join(TMP, 'src/utils/helper.rs'), 'pub fn help() {}\n');
         writeFileSync(join(TMP, 'src/models/mod.rs'), 'pub struct User;\n');
         writeFileSync(join(TMP, 'src/lib.rs'), 'mod utils;\nmod models;\n');
     });
@@ -43,9 +44,16 @@ describe('Rust import resolver', () => {
         expect(result).toContain('format.rs');
     });
 
-    test('resolves super:: relative to parent directory', () => {
-        // from src/utils/format.rs, super:: goes to src/
-        const result = resolve(join(TMP, 'src/utils/format.rs'), 'super::utils', TMP);
+    test('resolves super:: from regular file (sibling in parent module)', () => {
+        // from src/utils/format.rs, super:: = crate::utils, probes src/utils/
+        const result = resolve(join(TMP, 'src/utils/format.rs'), 'super::helper', TMP);
+        expect(result).not.toBeNull();
+        expect(result).toContain('helper.rs');
+    });
+
+    test('resolves super:: from mod.rs (goes up two levels)', () => {
+        // from src/models/mod.rs, super:: = crate, probes src/
+        const result = resolve(join(TMP, 'src/models/mod.rs'), 'super::utils', TMP);
         expect(result).not.toBeNull();
         expect(result).toContain('utils.rs');
     });

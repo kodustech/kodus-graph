@@ -20,6 +20,7 @@ export interface ParseOptions {
     out: string;
     include?: string[];
     exclude?: string[];
+    skipTests?: boolean;
 }
 
 export async function executeParse(opts: ParseOptions): Promise<void> {
@@ -31,7 +32,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
     // Phase 2: Parse + extract
-    let rawGraph = await parseBatch(files, repoDir);
+    let rawGraph = await parseBatch(files, repoDir, { skipTests: opts.skipTests });
     process.stderr.write(
         `[2/5] Parsed ${rawGraph.functions.length} functions, ${rawGraph.classes.length} classes, ${rawGraph.rawCalls.length} call sites\n`,
     );

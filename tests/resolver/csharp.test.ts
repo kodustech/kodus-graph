@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from '../../src/resolver/languages/csharp';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from '../../src/resolver/languages/csharp';
 
 const TMP = join(import.meta.dir, '../fixtures/csharp-resolver-tmp');
 
@@ -14,10 +14,7 @@ describe('C# import resolver', () => {
             join(TMP, 'src/Services/AuthService.cs'),
             'namespace MyApp.Services { public class AuthService {} }\n',
         );
-        writeFileSync(
-            join(TMP, 'src/Models/User.cs'),
-            'namespace MyApp.Models { public class User {} }\n',
-        );
+        writeFileSync(join(TMP, 'src/Models/User.cs'), 'namespace MyApp.Models { public class User {} }\n');
     });
 
     test('resolves namespace by trailing class name segment', () => {

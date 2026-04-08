@@ -4,6 +4,7 @@ export function computeRiskScore(
     graph: GraphData,
     changedFiles: string[],
     blastRadius: BlastRadiusResult,
+    options?: { skipTests?: boolean },
 ): RiskScoreResult {
     const changedSet = new Set(changedFiles);
     const changedNodes = graph.nodes.filter((n) => changedSet.has(n.file_path) && !n.is_test);
@@ -11,11 +12,15 @@ export function computeRiskScore(
     // Factor 1: Blast radius (0.35)
     const brValue = Math.min(blastRadius.total_functions / 20, 1); // cap at 20
 
-    // Factor 2: Test gaps (0.30)
-    const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
+    // Factor 2: Test gaps (0.30) — skipped when test detection is disabled
+    let tgValue = 0;
+    let untestedCount = 0;
     const changedFunctions = changedNodes.filter((n) => n.kind === 'Function' || n.kind === 'Method');
-    const untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
-    const tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
+    if (!options?.skipTests) {
+        const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
+        untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
+        tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
+    }
 
     // Factor 3: Complexity (0.20)
     const avgSize =

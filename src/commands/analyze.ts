@@ -22,6 +22,7 @@ interface AnalyzeOptions {
     files: string[];
     graph?: string;
     out: string;
+    skipTests?: boolean;
 }
 
 export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
@@ -52,7 +53,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
 
     // Parse changed files locally
     const localFiles = discoverFiles(repoDir, opts.files);
-    const rawGraph = await parseBatch(localFiles, repoDir);
+    const rawGraph = await parseBatch(localFiles, repoDir, { skipTests: opts.skipTests });
 
     // Resolve imports
     const tsconfigAliases = loadTsconfigAliases(repoDir);
@@ -121,8 +122,8 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
 
     // Analyze
     const blastRadius = computeBlastRadius(mergedGraph, opts.files);
-    const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius);
-    const testGaps = findTestGaps(mergedGraph, opts.files);
+    const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, { skipTests: opts.skipTests });
+    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files);
 
     const output: AnalysisOutput = {
         blast_radius: blastRadius,

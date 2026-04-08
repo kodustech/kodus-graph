@@ -28,7 +28,7 @@ export function extractTypeScript(
             seen.add(`c:${fp}:${name}`);
 
             let extendsName = '';
-            let implementsName = '';
+            let implementsNames: string[] = [];
             const heritage = node.children().find((c: SgNode) => c.kind() === 'class_heritage');
             if (heritage) {
                 const ext = heritage.children().find((c: SgNode) => c.kind() === 'extends_clause');
@@ -43,11 +43,11 @@ export function extractTypeScript(
                         )
                         ?.text() || '';
                 const impl = heritage.children().find((c: SgNode) => c.kind() === 'implements_clause');
-                implementsName =
+                implementsNames =
                     impl
                         ?.children()
-                        .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
-                        ?.text() || '';
+                        .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+                        .map((c: SgNode) => c.text()) ?? [];
             }
 
             graph.classes.push({
@@ -56,7 +56,7 @@ export function extractTypeScript(
                 line_start: node.range().start.line,
                 line_end: node.range().end.line,
                 extends: extendsName,
-                implements: implementsName ? [implementsName] : [],
+                implements: implementsNames,
                 ast_kind: String(node.kind()),
                 qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),

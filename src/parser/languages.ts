@@ -1,4 +1,3 @@
-import type { SgNode } from '@ast-grep/napi';
 import csharp from '@ast-grep/lang-csharp';
 import go from '@ast-grep/lang-go';
 import java from '@ast-grep/lang-java';
@@ -6,6 +5,7 @@ import php from '@ast-grep/lang-php';
 import python from '@ast-grep/lang-python';
 import ruby from '@ast-grep/lang-ruby';
 import rust from '@ast-grep/lang-rust';
+import type { SgNode } from '@ast-grep/napi';
 import { Lang, registerDynamicLanguage } from '@ast-grep/napi';
 
 // Register dynamic languages at import time (side effect).
@@ -21,6 +21,8 @@ export type HeritageFinder = (node: SgNode) => string | string[] | undefined;
 export interface TestConfig {
     filePatterns?: RegExp[];
     funcPatterns?: RegExp[];
+    /** When both filePatterns and funcPatterns are set: 'and' requires both, 'or' (default) requires either */
+    matchMode?: 'and' | 'or';
     annotationKind?: string;
     annotationNames?: string[];
 }
@@ -131,6 +133,7 @@ const goConfig: LangConfig = {
     tests: {
         filePatterns: [/_test\.go$/],
         funcPatterns: [/^Test/, /^Benchmark/],
+        matchMode: 'and',
     },
 };
 
@@ -144,13 +147,17 @@ const javaConfig: LangConfig = {
     heritage: {
         extends: (node: SgNode) => {
             const superclass = node.children().find((c: SgNode) => c.kind() === 'superclass');
-            if (!superclass) return undefined;
+            if (!superclass) {
+                return undefined;
+            }
             const typeId = superclass.children().find((c: SgNode) => c.kind() === 'type_identifier');
             return typeId?.text();
         },
         implements: (node: SgNode) => {
             const superInterfaces = node.children().find((c: SgNode) => c.kind() === 'super_interfaces');
-            if (!superInterfaces) return [];
+            if (!superInterfaces) {
+                return [];
+            }
             // type_identifiers may be direct children or nested in a type_list
             const typeList = superInterfaces.children().find((c: SgNode) => c.kind() === 'type_list');
             const container = typeList || superInterfaces;
@@ -186,21 +193,32 @@ const csharpConfig: LangConfig = {
     import: ['using_directive'],
     enum: ['enum_declaration'],
     heritage: {
+        // C# base_list doesn't distinguish extends vs implements syntactically.
+        // Heuristic: names starting with 'I' + uppercase are interfaces (C# convention).
+        // First non-interface type is treated as the base class.
         extends: (node: SgNode) => {
             const baseList = node.children().find((c: SgNode) => c.kind() === 'base_list');
-            if (!baseList) return undefined;
+            if (!baseList) {
+                return undefined;
+            }
             const types = baseList
                 .children()
-                .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier');
-            return types[0]?.text();
+                .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+                .map((c: SgNode) => c.text());
+            // First non-interface name is the base class
+            return types.find((t) => !(t.length >= 2 && t[0] === 'I' && t[1] === t[1].toUpperCase()));
         },
         implements: (node: SgNode) => {
             const baseList = node.children().find((c: SgNode) => c.kind() === 'base_list');
-            if (!baseList) return undefined;
+            if (!baseList) {
+                return undefined;
+            }
             const types = baseList
                 .children()
-                .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier');
-            return types.slice(1).map((c: SgNode) => c.text());
+                .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+                .map((c: SgNode) => c.text());
+            // Names matching I+uppercase convention are interfaces
+            return types.filter((t) => t.length >= 2 && t[0] === 'I' && t[1] === t[1].toUpperCase());
         },
     },
     tests: {
@@ -218,15 +236,17 @@ const phpConfig: LangConfig = {
     heritage: {
         extends: (node: SgNode) => {
             const baseClause = node.children().find((c: SgNode) => c.kind() === 'base_clause');
-            if (!baseClause) return undefined;
+            if (!baseClause) {
+                return undefined;
+            }
             const name = baseClause.children().find((c: SgNode) => c.kind() === 'name');
             return name?.text();
         },
         implements: (node: SgNode) => {
-            const ifaceClause = node
-                .children()
-                .find((c: SgNode) => c.kind() === 'class_interface_clause');
-            if (!ifaceClause) return undefined;
+            const ifaceClause = node.children().find((c: SgNode) => c.kind() === 'class_interface_clause');
+            if (!ifaceClause) {
+                return undefined;
+            }
             return ifaceClause
                 .children()
                 .filter((c: SgNode) => c.kind() === 'name')
@@ -267,13 +287,27 @@ function firstOf(arr: string[] | undefined): string | undefined {
 
 function derivedKinds(config: LangConfig): Record<string, string> {
     const result: Record<string, string> = {};
-    if (firstOf(config.class)) result['class'] = firstOf(config.class)!;
-    if (firstOf(config.function)) result['function'] = firstOf(config.function)!;
-    if (firstOf(config.method)) result['method'] = firstOf(config.method)!;
-    if (firstOf(config.constructorKinds)) result['constructor'] = firstOf(config.constructorKinds)!;
-    if (firstOf(config.interface)) result['interface'] = firstOf(config.interface)!;
-    if (firstOf(config.enum)) result['enum'] = firstOf(config.enum)!;
-    if (firstOf(config.import)) result['import'] = firstOf(config.import)!;
+    if (firstOf(config.class)) {
+        result.class = firstOf(config.class)!;
+    }
+    if (firstOf(config.function)) {
+        result.function = firstOf(config.function)!;
+    }
+    if (firstOf(config.method)) {
+        result.method = firstOf(config.method)!;
+    }
+    if (firstOf(config.constructorKinds)) {
+        result.constructor = firstOf(config.constructorKinds)!;
+    }
+    if (firstOf(config.interface)) {
+        result.interface = firstOf(config.interface)!;
+    }
+    if (firstOf(config.enum)) {
+        result.enum = firstOf(config.enum)!;
+    }
+    if (firstOf(config.import)) {
+        result.import = firstOf(config.import)!;
+    }
     return result;
 }
 
@@ -297,11 +331,30 @@ export const LANG_KINDS: Record<string, Record<string, string>> = {
         singletonMethod: 'singleton_method',
         call: 'call',
     },
-    go: derivedKinds(goConfig),
-    java: derivedKinds(javaConfig),
-    rust: derivedKinds(rustConfig),
-    csharp: derivedKinds(csharpConfig),
-    php: derivedKinds(phpConfig),
+    go: {
+        ...derivedKinds(goConfig),
+        struct: 'type_declaration',
+    },
+    java: {
+        ...derivedKinds(javaConfig),
+        annotation: 'marker_annotation',
+    },
+    rust: {
+        ...derivedKinds(rustConfig),
+        impl: 'impl_item',
+        struct: 'struct_item',
+        trait: 'trait_item',
+        use: 'use_declaration',
+    },
+    csharp: {
+        ...derivedKinds(csharpConfig),
+        using: 'using_directive',
+        attribute: 'attribute',
+    },
+    php: {
+        ...derivedKinds(phpConfig),
+        namespace: 'namespace_use_declaration',
+    },
 };
 
 export { Lang };

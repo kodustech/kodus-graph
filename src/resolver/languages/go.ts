@@ -3,9 +3,16 @@ import { join, resolve as resolvePath } from 'path';
 
 const moduleCache = new Map<string, string>();
 
+/** Clear cached go.mod data. Call between analysis runs or when switching repos. */
+export function clearCache(): void {
+    moduleCache.clear();
+}
+
 function getModuleName(repoRoot: string): string | null {
     const cached = moduleCache.get(repoRoot);
-    if (cached !== undefined) return cached || null;
+    if (cached !== undefined) {
+        return cached || null;
+    }
 
     const goModPath = join(repoRoot, 'go.mod');
     if (!existsSync(goModPath)) {
@@ -20,7 +27,9 @@ function getModuleName(repoRoot: string): string | null {
             moduleCache.set(repoRoot, match[1]);
             return match[1];
         }
-    } catch { /* ignore */ }
+    } catch {
+        /* ignore */
+    }
 
     moduleCache.set(repoRoot, '');
     return null;
@@ -32,26 +41,40 @@ function isStdlib(modulePath: string): boolean {
 }
 
 export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: string): string | null {
-    if (isStdlib(modulePath)) return null;
+    if (isStdlib(modulePath)) {
+        return null;
+    }
 
     const moduleName = getModuleName(repoRoot);
-    if (!moduleName) return null;
-    if (!modulePath.startsWith(moduleName)) return null;
+    if (!moduleName) {
+        return null;
+    }
+    if (!modulePath.startsWith(moduleName)) {
+        return null;
+    }
 
     const relPath = modulePath.slice(moduleName.length + 1);
-    if (!relPath) return null;
+    if (!relPath) {
+        return null;
+    }
 
     const absDir = join(repoRoot, relPath);
 
     if (existsSync(absDir)) {
         try {
-            const files = readdirSync(absDir);
+            const files = readdirSync(absDir).sort();
             const goFile = files.find((f) => f.endsWith('.go') && !f.endsWith('_test.go'));
-            if (goFile) return resolvePath(join(absDir, goFile));
-        } catch { /* not a directory */ }
+            if (goFile) {
+                return resolvePath(join(absDir, goFile));
+            }
+        } catch {
+            /* not a directory */
+        }
     }
 
-    if (existsSync(absDir + '.go')) return resolvePath(absDir + '.go');
+    if (existsSync(`${absDir}.go`)) {
+        return resolvePath(`${absDir}.go`);
+    }
 
     return null;
 }

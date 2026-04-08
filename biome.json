@@ -1,69 +1,69 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": true
-  },
-  "files": {
-    "includes": ["src/**/*.ts", "tests/**/*.ts", "!tests/fixtures/**"]
-  },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 4,
-    "lineWidth": 120
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "complexity": {
-        "noForEach": "off"
-      },
-      "style": {
-        "noNonNullAssertion": "off",
-        "useNodejsImportProtocol": "off",
-        "noCommonJs": "off",
-        "useBlockStatements": "error"
-      },
-      "suspicious": {
-        "noExplicitAny": "off",
-        "noEmptyInterface": "off"
-      },
-      "correctness": {
-        "noUnusedImports": "error",
-        "noUnusedVariables": "warn"
-      }
-    }
-  },
-  "overrides": [
-    {
-      "includes": ["tests/**/*.ts"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "off"
-          }
-        }
-      }
-    }
-  ],
-  "assist": {
-    "actions": {
-      "source": {
-        "organizeImports": "on"
-      }
-    }
-  },
-  "javascript": {
+    "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "includes": ["src/**/*.ts", "tests/**/*.ts", "!tests/fixtures"]
+    },
     "formatter": {
-      "quoteStyle": "single",
-      "quoteProperties": "preserve",
-      "trailingCommas": "all",
-      "semicolons": "always",
-      "arrowParentheses": "always",
-      "bracketSpacing": true
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 120
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "complexity": {
+                "noForEach": "off"
+            },
+            "style": {
+                "noNonNullAssertion": "off",
+                "useNodejsImportProtocol": "off",
+                "noCommonJs": "off",
+                "useBlockStatements": "error"
+            },
+            "suspicious": {
+                "noExplicitAny": "off",
+                "noEmptyInterface": "off"
+            },
+            "correctness": {
+                "noUnusedImports": "error",
+                "noUnusedVariables": "warn"
+            }
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["tests/**/*.ts"],
+            "linter": {
+                "rules": {
+                    "suspicious": {
+                        "noExplicitAny": "off"
+                    }
+                }
+            }
+        }
+    ],
+    "assist": {
+        "actions": {
+            "source": {
+                "organizeImports": "on"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "quoteProperties": "preserve",
+            "trailingCommas": "all",
+            "semicolons": "always",
+            "arrowParentheses": "always",
+            "bracketSpacing": true
+        }
     }
-  }
 }

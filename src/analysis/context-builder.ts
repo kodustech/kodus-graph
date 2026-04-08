@@ -40,6 +40,7 @@ interface BuildContextV2Options {
     changedFiles: string[];
     minConfidence: number;
     maxDepth: number;
+    skipTests?: boolean;
 }
 
 export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
@@ -58,8 +59,8 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const structuralDiff = computeStructuralDiff(oldIndexed, newNodesInChanged, newEdgesInChanged, changedFiles);
     const blastRadius = computeBlastRadius(mergedGraph, changedFiles, maxDepth);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
-    const testGaps = findTestGaps(mergedGraph, changedFiles);
-    const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius);
+    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
+    const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
     const inheritance = extractInheritance(indexed, changedFiles);
 
     // Phase 3: Filter affected flows

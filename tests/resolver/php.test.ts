@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from '../../src/resolver/languages/php';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from '../../src/resolver/languages/php';
 
 const TMP = join(import.meta.dir, '../fixtures/php-resolver-tmp');
 
@@ -12,16 +12,23 @@ describe('PHP import resolver', () => {
         mkdirSync(join(TMP, 'src/Services'), { recursive: true });
         writeFileSync(
             join(TMP, 'composer.json'),
-            JSON.stringify({
-                autoload: {
-                    'psr-4': {
-                        'App\\': 'src/',
+            JSON.stringify(
+                {
+                    autoload: {
+                        'psr-4': {
+                            'App\\': 'src/',
+                        },
                     },
                 },
-            }, null, 2),
+                null,
+                2,
+            ),
         );
         writeFileSync(join(TMP, 'src/Models/User.php'), '<?php\nnamespace App\\Models;\nclass User {}\n');
-        writeFileSync(join(TMP, 'src/Services/AuthService.php'), '<?php\nnamespace App\\Services;\nclass AuthService {}\n');
+        writeFileSync(
+            join(TMP, 'src/Services/AuthService.php'),
+            '<?php\nnamespace App\\Services;\nclass AuthService {}\n',
+        );
     });
 
     test('resolves PSR-4 mapped namespace to correct file', () => {

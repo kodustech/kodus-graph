@@ -17,6 +17,7 @@ interface ContextOptions {
     minConfidence: number;
     maxDepth: number;
     format: 'json' | 'prompt';
+    skipTests?: boolean;
 }
 
 export async function executeContext(opts: ContextOptions): Promise<void> {
@@ -39,6 +40,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             files: opts.files,
             all: false,
             out: tmp.filePath,
+            skipTests: opts.skipTests,
         });
         const parseResult = JSON.parse(readFileSync(tmp.filePath, 'utf-8'));
 
@@ -106,6 +108,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             changedFiles: opts.files,
             minConfidence: opts.minConfidence,
             maxDepth: opts.maxDepth,
+            skipTests: opts.skipTests,
         });
 
         log.info('context: analysis done', {

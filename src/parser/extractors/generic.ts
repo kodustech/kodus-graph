@@ -3,7 +3,7 @@ import type { RawCallSite, RawGraph } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { log } from '../../shared/logger';
-import { type LangConfig, LANG_CONFIGS } from '../languages';
+import { LANG_CONFIGS, type LangConfig } from '../languages';
 
 // ---------------------------------------------------------------------------
 // Go disambiguation helpers
@@ -12,11 +12,17 @@ import { type LangConfig, LANG_CONFIGS } from '../languages';
 /** Determine whether a Go `type_declaration` node is a struct, interface, or unknown. */
 function goTypeKind(node: SgNode): 'struct' | 'interface' | null {
     const typeSpec = node.children().find((c) => c.kind() === 'type_spec');
-    if (!typeSpec) return null;
+    if (!typeSpec) {
+        return null;
+    }
     const hasStruct = typeSpec.children().some((c) => c.kind() === 'struct_type');
-    if (hasStruct) return 'struct';
+    if (hasStruct) {
+        return 'struct';
+    }
     const hasInterface = typeSpec.children().some((c) => c.kind() === 'interface_type');
-    if (hasInterface) return 'interface';
+    if (hasInterface) {
+        return 'interface';
+    }
     return null;
 }
 
@@ -34,29 +40,32 @@ function goTypeName(node: SgNode): string | undefined {
  * Returns true if the function should be considered a test based on file-path
  * and function-name conventions defined in config.tests.
  *
- * File patterns and func patterns are independent OR conditions:
- * - If the file matches a filePattern → it's a test (regardless of func name)
- * - If the func name matches a funcPattern → it's a test (regardless of file name)
- *
- * Exception: Go requires BOTH filePattern AND funcPattern to match (reflected in
- * goConfig having both patterns where only their intersection are real tests).
- * Since Go is the only language that explicitly requires AND semantics and its
- * config already pairs the two patterns correctly, we handle it by checking
- * whether the language config has ONLY filePatterns (Ruby) or ONLY funcPatterns
- * (Java/Rust/C#) as pure checks, and treat having both as OR for all languages.
+ * matchMode controls how filePatterns and funcPatterns interact:
+ * - 'and': BOTH must match (e.g., Go: file must be _test.go AND func must start with Test/Benchmark)
+ * - 'or' (default): EITHER matching is sufficient
  */
 function isTestByConvention(fp: string, funcName: string, config: LangConfig): boolean {
     const tests = config.tests;
-    if (!tests) return false;
+    if (!tests) {
+        return false;
+    }
 
     const fileMatch = tests.filePatterns ? tests.filePatterns.some((re) => re.test(fp)) : false;
     const funcMatch = tests.funcPatterns ? tests.funcPatterns.some((re) => re.test(funcName)) : false;
 
-    if (tests.filePatterns) {
-        if (fileMatch) return true;
+    if (tests.matchMode === 'and') {
+        // Both must match (or only the defined one must match)
+        const fileOk = !tests.filePatterns || fileMatch;
+        const funcOk = !tests.funcPatterns || funcMatch;
+        return fileOk && funcOk;
     }
-    if (tests.funcPatterns) {
-        if (funcMatch) return true;
+
+    // Default: OR — either matching is sufficient
+    if (fileMatch) {
+        return true;
+    }
+    if (funcMatch) {
+        return true;
     }
     return false;
 }
@@ -67,7 +76,9 @@ function isTestByConvention(fp: string, funcName: string, config: LangConfig): b
  */
 function hasTestAnnotation(node: SgNode, config: LangConfig): boolean {
     const tests = config.tests;
-    if (!tests?.annotationKind || !tests.annotationNames?.length) return false;
+    if (!tests?.annotationKind || !tests.annotationNames?.length) {
+        return false;
+    }
 
     const annotationKind = tests.annotationKind;
     const annotationNames = tests.annotationNames;
@@ -188,9 +199,13 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     // Go disambiguation: type_declaration is shared between struct and interface
                     if (lang === 'go' && classKind === 'type_declaration') {
                         const kind = goTypeKind(node);
-                        if (kind !== 'struct') continue; // interfaces handled separately below
+                        if (kind !== 'struct') {
+                            continue; // interfaces handled separately below
+                        }
                         const name = goTypeName(node);
-                        if (!name || seen.has(`c:${fp}:${name}`)) continue;
+                        if (!name || seen.has(`c:${fp}:${name}`)) {
+                            continue;
+                        }
                         seen.add(`c:${fp}:${name}`);
                         graph.classes.push({
                             name,
@@ -207,7 +222,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     }
 
                     const name = node.field('name')?.text();
-                    if (!name || seen.has(`c:${fp}:${name}`)) continue;
+                    if (!name || seen.has(`c:${fp}:${name}`)) {
+                        continue;
+                    }
                     seen.add(`c:${fp}:${name}`);
 
                     // Heritage extraction
@@ -258,9 +275,13 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     // Go disambiguation: type_declaration shared with class — only pick interface_type
                     if (lang === 'go' && ifaceKind === 'type_declaration') {
                         const kind = goTypeKind(node);
-                        if (kind !== 'interface') continue;
+                        if (kind !== 'interface') {
+                            continue;
+                        }
                         const name = goTypeName(node);
-                        if (!name || seen.has(`i:${fp}:${name}`)) continue;
+                        if (!name || seen.has(`i:${fp}:${name}`)) {
+                            continue;
+                        }
                         seen.add(`i:${fp}:${name}`);
                         graph.interfaces.push({
                             name,
@@ -276,7 +297,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     }
 
                     const name = node.field('name')?.text();
-                    if (!name || seen.has(`i:${fp}:${name}`)) continue;
+                    if (!name || seen.has(`i:${fp}:${name}`)) {
+                        continue;
+                    }
                     seen.add(`i:${fp}:${name}`);
                     graph.interfaces.push({
                         name,
@@ -301,7 +324,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
             try {
                 for (const node of rootNode.findAll({ rule: { kind: enumKind } })) {
                     const name = node.field('name')?.text();
-                    if (!name || seen.has(`e:${fp}:${name}`)) continue;
+                    if (!name || seen.has(`e:${fp}:${name}`)) {
+                        continue;
+                    }
                     seen.add(`e:${fp}:${name}`);
                     graph.enums.push({
                         name,
@@ -320,11 +345,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
     }
 
     // ── Functions / Methods / Constructors ────────────────────────────────
-    const funcKinds = [
-        ...(config.function ?? []),
-        ...(config.method ?? []),
-        ...(config.constructorKinds ?? []),
-    ];
+    const funcKinds = [...(config.function ?? []), ...(config.method ?? []), ...(config.constructorKinds ?? [])];
 
     const constructorKindSet = new Set(config.constructorKinds ?? []);
     const methodKindSet = new Set(config.method ?? []);
@@ -333,9 +354,13 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
         try {
             for (const node of rootNode.findAll({ rule: { kind: funcKind } })) {
                 const name = node.field('name')?.text();
-                if (!name) continue;
+                if (!name) {
+                    continue;
+                }
                 const line = node.range().start.line;
-                if (seen.has(`f:${fp}:${name}:${line}`)) continue;
+                if (seen.has(`f:${fp}:${name}:${line}`)) {
+                    continue;
+                }
                 seen.add(`f:${fp}:${name}:${line}`);
 
                 const classAncestor = node.ancestors().find((a: SgNode) => {
@@ -355,8 +380,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                 }
 
                 // Test detection
-                const isTest =
-                    isTestByConvention(fp, name, config) || hasTestAnnotation(node, config);
+                const isTest = isTestByConvention(fp, name, config) || hasTestAnnotation(node, config);
 
                 if (isTest) {
                     // Push to graph.tests
@@ -401,7 +425,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
             try {
                 for (const node of rootNode.findAll({ rule: { kind: importKind } })) {
                     const module = extractImportModule(node);
-                    if (!module) continue;
+                    if (!module) {
+                        continue;
+                    }
                     graph.imports.push({
                         module,
                         file: fp,

@@ -27,6 +27,7 @@ program
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--include <glob...>', 'Include only files matching glob (repeatable)')
     .option('--exclude <glob...>', 'Exclude files matching glob (repeatable)')
+    .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -41,6 +42,7 @@ program
             out: opts.out,
             include: opts.include,
             exclude: opts.exclude,
+            skipTests: opts.skipTests ?? false,
         });
     });
 
@@ -50,6 +52,7 @@ program
     .requiredOption('--files <paths...>', 'Changed files to analyze')
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
+    .option('--skip-tests', 'Skip test detection (no TESTED_BY edges or test gaps)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -62,6 +65,7 @@ program
             files: opts.files,
             graph: opts.graph,
             out: opts.out,
+            skipTests: opts.skipTests ?? false,
         });
     });
 
@@ -75,6 +79,7 @@ program
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
     .option('--max-depth <n>', 'Blast radius BFS depth', '3')
     .option('--format <type>', 'Output format: json or prompt', 'json')
+    .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
@@ -93,6 +98,7 @@ program
             minConfidence: Number.parseFloat(opts.minConfidence),
             maxDepth: Number.parseInt(opts.maxDepth, 10),
             format: opts.format,
+            skipTests: opts.skipTests ?? false,
         });
     });
 

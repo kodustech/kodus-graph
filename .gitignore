@@ -10,3 +10,5 @@ dist/
 .DS_Store
 .idea/
 /kodus-graph
+.mcp.json
+aura_brain

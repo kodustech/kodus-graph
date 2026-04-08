@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from '../../src/resolver/languages/java';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from '../../src/resolver/languages/java';
 
 const TMP = join(import.meta.dir, '../fixtures/java-resolver-tmp');
 

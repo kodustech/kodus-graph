@@ -10,7 +10,11 @@ import { getLanguage } from './languages';
 
 const BATCH_SIZE = 50;
 
-export async function parseBatch(files: string[], repoRoot: string): Promise<ParseBatchResult> {
+export async function parseBatch(
+    files: string[],
+    repoRoot: string,
+    options?: { skipTests?: boolean },
+): Promise<ParseBatchResult> {
     const graph: RawGraph = {
         functions: [],
         classes: [],
@@ -78,6 +82,10 @@ export async function parseBatch(files: string[], repoRoot: string): Promise<Par
         });
 
         await Promise.all(promises);
+    }
+
+    if (options?.skipTests) {
+        graph.tests = [];
     }
 
     return { ...graph, parseErrors, extractErrors };

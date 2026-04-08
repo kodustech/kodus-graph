@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { resolve } from '../../src/resolver/languages/go';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from '../../src/resolver/languages/go';
 
 const TMP = join(import.meta.dir, '../fixtures/go-resolver-tmp');
 
@@ -10,10 +10,7 @@ describe('Go import resolver', () => {
         rmSync(TMP, { recursive: true, force: true });
         mkdirSync(join(TMP, 'pkg/auth'), { recursive: true });
         mkdirSync(join(TMP, 'internal/db'), { recursive: true });
-        writeFileSync(
-            join(TMP, 'go.mod'),
-            'module github.com/example/myapp\n\ngo 1.21\n',
-        );
+        writeFileSync(join(TMP, 'go.mod'), 'module github.com/example/myapp\n\ngo 1.21\n');
         writeFileSync(join(TMP, 'pkg/auth/auth.go'), 'package auth\n');
         writeFileSync(join(TMP, 'internal/db/db.go'), 'package db\n');
     });
