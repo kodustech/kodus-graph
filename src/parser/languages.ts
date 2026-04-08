@@ -297,7 +297,7 @@ function derivedKinds(config: LangConfig): Record<string, string> {
         result.method = firstOf(config.method)!;
     }
     if (firstOf(config.constructorKinds)) {
-        result.constructor = firstOf(config.constructorKinds)!;
+        result['constructor'] = firstOf(config.constructorKinds)!;
     }
     if (firstOf(config.interface)) {
         result.interface = firstOf(config.interface)!;
