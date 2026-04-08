@@ -151,3 +151,27 @@ describe('Rust mod patterns (file vs dir)', () => {
         rmSync(TMP_MOD_PATTERNS, { recursive: true, force: true });
     });
 });
+
+const TMP_BINLIB = join(import.meta.dir, '../fixtures/rust-binlib-tmp');
+
+describe('Rust bin+lib same crate', () => {
+    test('setup', () => {
+        rmSync(TMP_BINLIB, { recursive: true, force: true });
+        mkdirSync(join(TMP_BINLIB, 'src'), { recursive: true });
+
+        writeFileSync(join(TMP_BINLIB, 'Cargo.toml'), '[package]\nname = "myapp"\nedition = "2021"\n');
+        writeFileSync(join(TMP_BINLIB, 'src/lib.rs'), 'pub mod utils;\n');
+        writeFileSync(join(TMP_BINLIB, 'src/utils.rs'), 'pub fn helper() {}\n');
+        writeFileSync(join(TMP_BINLIB, 'src/main.rs'), 'use myapp::utils::helper;\n');
+    });
+
+    test('resolves crate name import from main.rs to lib.rs module', () => {
+        const result = resolve(join(TMP_BINLIB, 'src/main.rs'), 'myapp::utils::helper', TMP_BINLIB);
+        expect(result).not.toBeNull();
+        expect(result).toContain('utils.rs');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_BINLIB, { recursive: true, force: true });
+    });
+});

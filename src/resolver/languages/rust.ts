@@ -61,6 +61,19 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
                 if (result) return result;
             }
         }
+
+        // bin+lib same crate: if the first segment matches the local [package] name,
+        // treat it like a crate:: import (resolve from src/)
+        const localPkgName = findLocalPackageName(fromAbsFile);
+        if (localPkgName && crateName === localPkgName) {
+            const srcDir = join(findCrateDir(fromAbsFile)!, 'src');
+            const segments = rest.split('/');
+            for (let i = segments.length; i >= 1; i--) {
+                const partial = segments.slice(0, i).join('/');
+                const result = probeRustPath(srcDir, partial);
+                if (result) return result;
+            }
+        }
     }
 
     return null;
@@ -102,6 +115,34 @@ function findCrateDir(fromAbsFile: string): string | null {
         dir = parent;
     }
     return null;
+}
+
+/** Cache: crate dir → parsed package name */
+const pkgNameCache = new Map<string, string | null>();
+
+/**
+ * Find the [package] name from the nearest Cargo.toml for the given file.
+ * Used to detect bin+lib same-crate imports (e.g. `use myapp::foo` from main.rs).
+ */
+function findLocalPackageName(fromAbsFile: string): string | null {
+    const crateDir = findCrateDir(fromAbsFile);
+    if (!crateDir) return null;
+
+    const cached = pkgNameCache.get(crateDir);
+    if (cached !== undefined) return cached;
+
+    const cargoPath = join(crateDir, 'Cargo.toml');
+    if (!existsSync(cargoPath)) {
+        pkgNameCache.set(crateDir, null);
+        return null;
+    }
+
+    const content = readFileSync(cargoPath, 'utf-8');
+    const match = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+    // Cargo crate names use hyphens but Rust imports use underscores
+    const name = match ? match[1].replace(/-/g, '_') : null;
+    pkgNameCache.set(crateDir, name);
+    return name;
 }
 
 /**
