@@ -336,3 +336,29 @@ describe('TypeScript Vite query suffix stripping', () => {
         expect(result).toContain('worker.ts');
     });
 });
+
+const TS_RN = join(import.meta.dir, '../fixtures/ts-rn-tmp');
+
+describe('TypeScript React Native platform extensions', () => {
+    beforeAll(() => {
+        rmSync(TS_RN, { recursive: true, force: true });
+        mkdirSync(join(TS_RN, 'src'), { recursive: true });
+
+        writeFileSync(join(TS_RN, 'src/utils.ts'), 'export function base() {}\n');
+        writeFileSync(join(TS_RN, 'src/utils.ios.ts'), 'export function iosOnly() {}\n');
+        writeFileSync(join(TS_RN, 'src/utils.native.ts'), 'export function nativeOnly() {}\n');
+        writeFileSync(join(TS_RN, 'src/app.ts'), "import { base } from './utils';\n");
+    });
+
+    afterAll(() => rmSync(TS_RN, { recursive: true, force: true }));
+
+    it('resolves to base .ts when platform extension also exists', () => {
+        // The resolver should find utils.ts (the base file)
+        // Platform-specific files (.ios.ts, .native.ts) exist but the base file wins
+        const result = resolveImport(join(TS_RN, 'src/app.ts'), './utils', 'ts', TS_RN);
+        expect(result).not.toBeNull();
+        expect(result).toContain('utils.ts');
+        expect(result).not.toContain('.ios.');
+        expect(result).not.toContain('.native.');
+    });
+});

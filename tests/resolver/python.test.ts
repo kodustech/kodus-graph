@@ -229,3 +229,31 @@ describe('Python Django app imports', () => {
         rmSync(TMP_DJANGO, { recursive: true, force: true });
     });
 });
+
+/* ------------------------------------------------------------------ */
+/*  5. Python wildcard import with __all__                            */
+/* ------------------------------------------------------------------ */
+
+const TMP_WILDCARD = join(import.meta.dir, '../fixtures/py-wildcard-tmp');
+
+describe('Python wildcard import with __all__', () => {
+    test('setup', () => {
+        rmSync(TMP_WILDCARD, { recursive: true, force: true });
+        mkdirSync(join(TMP_WILDCARD, 'mylib'), { recursive: true });
+
+        writeFileSync(join(TMP_WILDCARD, 'mylib/__init__.py'), "__all__ = ['Foo', 'Bar']\nfrom .foo import Foo\nfrom .bar import Bar\n");
+        writeFileSync(join(TMP_WILDCARD, 'mylib/foo.py'), 'class Foo: pass\n');
+        writeFileSync(join(TMP_WILDCARD, 'mylib/bar.py'), 'class Bar: pass\n');
+        writeFileSync(join(TMP_WILDCARD, 'app.py'), 'from mylib import *\n');
+    });
+
+    test('wildcard import resolves to package __init__.py', () => {
+        const result = resolve(join(TMP_WILDCARD, 'app.py'), 'mylib', TMP_WILDCARD);
+        expect(result).not.toBeNull();
+        expect(result).toContain('__init__.py');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_WILDCARD, { recursive: true, force: true });
+    });
+});
