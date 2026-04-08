@@ -1,5 +1,6 @@
-import { existsSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
+import { cachedExists } from '../fs-cache';
 
 const STDLIB_PREFIXES = ['System.', 'System', 'Microsoft.', 'Newtonsoft.'];
 
@@ -17,7 +18,7 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
 
         for (const base of ['', 'src', 'lib', 'Source']) {
             const full = join(repoRoot, base, candidate);
-            if (existsSync(full)) {
+            if (cachedExists(full)) {
                 return resolvePath(full);
             }
         }
@@ -29,7 +30,7 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
 
         for (const base of ['', 'src', 'lib', 'Source']) {
             const full = join(repoRoot, base, pathPart);
-            if (existsSync(full) && statSync(full).isDirectory()) {
+            if (cachedExists(full) && statSync(full).isDirectory()) {
                 return resolvePath(full);
             }
         }

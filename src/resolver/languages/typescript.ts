@@ -8,9 +8,10 @@
  * - tsconfig path aliases
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { dirname, join, resolve as resolvePath } from 'path';
 import { log } from '../../shared/logger';
+import { cachedExists } from '../fs-cache';
 
 const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
@@ -21,13 +22,13 @@ const TS_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 function probeExtensions(base: string): string | null {
     for (const ext of TS_EXTENSIONS) {
         const candidate = base + ext;
-        if (existsSync(candidate)) {
+        if (cachedExists(candidate)) {
             return resolvePath(candidate);
         }
     }
     for (const ext of TS_EXTENSIONS) {
         const candidate = join(base, `index${ext}`);
-        if (existsSync(candidate)) {
+        if (cachedExists(candidate)) {
             return resolvePath(candidate);
         }
     }
@@ -45,7 +46,7 @@ function loadTsconfigCompilerOptions(repoRoot: string): { rootDirs?: string[] } 
 
     const tsconfigPath = join(repoRoot, 'tsconfig.json');
     let result: { rootDirs?: string[] } = {};
-    if (existsSync(tsconfigPath)) {
+    if (cachedExists(tsconfigPath)) {
         try {
             const content = readFileSync(tsconfigPath, 'utf-8');
             const cleaned = stripJsonComments(content);
@@ -81,7 +82,7 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
 
     // If the path has a non-TS/JS extension (e.g. .txt, .svg), try exact match
     if (/\.\w+$/.test(modulePath) && !TS_EXTENSIONS.some((ext) => modulePath.endsWith(ext))) {
-        if (existsSync(base)) {
+        if (cachedExists(base)) {
             return resolvePath(base);
         }
     }
@@ -201,7 +202,7 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
 
     for (const filename of ['tsconfig.json', 'tsconfig.base.json']) {
         const tsconfigPath = join(repoRoot, filename);
-        if (!existsSync(tsconfigPath)) {
+        if (!cachedExists(tsconfigPath)) {
             continue;
         }
 
@@ -250,18 +251,18 @@ export function resolveWithAliases(
                 const base = join(targetBase, rest);
 
                 for (const ext of TS_EXTENSIONS) {
-                    if (existsSync(base + ext)) {
+                    if (cachedExists(base + ext)) {
                         return resolvePath(base + ext);
                     }
                 }
                 for (const ext of TS_EXTENSIONS) {
                     const idx = join(base, `index${ext}`);
-                    if (existsSync(idx)) {
+                    if (cachedExists(idx)) {
                         return resolvePath(idx);
                     }
                 }
                 // Try exact match (for directories with index)
-                if (existsSync(base)) {
+                if (cachedExists(base)) {
                     return resolvePath(base);
                 }
             }

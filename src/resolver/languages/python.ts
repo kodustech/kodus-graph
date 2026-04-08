@@ -5,8 +5,8 @@
  * Walks up directories to find packages.
  */
 
-import { existsSync } from 'fs';
 import { dirname, join, resolve as resolvePath } from 'path';
+import { cachedExists } from '../fs-cache';
 
 /**
  * Resolve a Python dotted import to a file path.
@@ -32,7 +32,7 @@ export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: stri
 
         for (const candidate of candidates) {
             const full = join(base, candidate);
-            if (existsSync(full)) {
+            if (cachedExists(full)) {
                 return resolvePath(full);
             }
         }
@@ -46,7 +46,7 @@ export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: stri
     for (let i = 0; i < 10; i++) {
         for (const candidate of [`${parts}.py`, `${parts}/__init__.py`]) {
             const full = join(current, candidate);
-            if (existsSync(full)) {
+            if (cachedExists(full)) {
                 return resolvePath(full);
             }
         }

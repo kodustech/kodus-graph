@@ -4,8 +4,9 @@
  * Handles require_relative paths and Gemfile path: gems.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { dirname, join, resolve as resolvePath } from 'path';
+import { cachedExists } from '../fs-cache';
 
 /** Cache parsed Gemfile path gems per repo root. */
 const gemfileCache = new Map<string, string[]>();
@@ -21,7 +22,7 @@ function getGemPathLibDirs(repoRoot: string): string[] {
     const gemfilePath = join(repoRoot, 'Gemfile');
     const libDirs: string[] = [];
 
-    if (existsSync(gemfilePath)) {
+    if (cachedExists(gemfilePath)) {
         const content = readFileSync(gemfilePath, 'utf-8');
         // Match lines like: gem 'mylib', path: './libs/mylib'
         const regex = /^\s*gem\s+['"][^'"]+['"]\s*,\s*path:\s*['"]([^'"]+)['"]/gm;
@@ -47,20 +48,20 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
 
     // 1. Try relative resolution (require_relative style)
     const base = join(dirname(fromAbsFile), modulePath);
-    if (existsSync(`${base}.rb`)) {
+    if (cachedExists(`${base}.rb`)) {
         return resolvePath(`${base}.rb`);
     }
-    if (existsSync(base)) {
+    if (cachedExists(base)) {
         return resolvePath(base);
     }
 
     // 2. Try Gemfile path: gems
     for (const libDir of getGemPathLibDirs(repoRoot)) {
         const candidate = join(libDir, modulePath);
-        if (existsSync(`${candidate}.rb`)) {
+        if (cachedExists(`${candidate}.rb`)) {
             return resolvePath(`${candidate}.rb`);
         }
-        if (existsSync(candidate)) {
+        if (cachedExists(candidate)) {
             return resolvePath(candidate);
         }
     }

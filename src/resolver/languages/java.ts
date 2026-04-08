@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
+import { cachedExists, cachedReaddir } from '../fs-cache';
 
 const STDLIB_PREFIXES = ['java.', 'javax.', 'sun.', 'com.sun.', 'jdk.'];
 const SOURCE_ROOTS = ['src/main/java', 'src/main/kotlin', 'src', ''];
@@ -14,7 +15,7 @@ function collectSourceRoots(repoRoot: string): string[] {
     // Discover Gradle subprojects from settings.gradle / settings.gradle.kts
     for (const settingsFile of ['settings.gradle', 'settings.gradle.kts']) {
         const settingsPath = join(repoRoot, settingsFile);
-        if (!existsSync(settingsPath)) {
+        if (!cachedExists(settingsPath)) {
             continue;
         }
 
@@ -36,7 +37,7 @@ function collectSourceRoots(repoRoot: string): string[] {
 
     // Discover Maven subprojects from pom.xml
     const pomPath = join(repoRoot, 'pom.xml');
-    if (existsSync(pomPath)) {
+    if (cachedExists(pomPath)) {
         try {
             const content = readFileSync(pomPath, 'utf-8');
             const moduleRegex = /<module>([^<]+)<\/module>/g;
@@ -63,7 +64,7 @@ function findFile(repoRoot: string, relPathNoExt: string, sourceRoots: string[])
     for (const srcRoot of sourceRoots) {
         for (const ext of EXTENSIONS) {
             const candidate = join(repoRoot, srcRoot, relPathNoExt + ext);
-            if (existsSync(candidate)) {
+            if (cachedExists(candidate)) {
                 return resolvePath(candidate);
             }
         }
@@ -83,9 +84,9 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
         const packagePath = modulePath.slice(0, -2).replace(/\./g, '/');
         for (const srcRoot of sourceRoots) {
             const dirPath = join(repoRoot, srcRoot, packagePath);
-            if (existsSync(dirPath)) {
+            if (cachedExists(dirPath)) {
                 try {
-                    const files = readdirSync(dirPath).filter((f) => EXTENSIONS.some((ext) => f.endsWith(ext)));
+                    const files = cachedReaddir(dirPath).filter((f) => EXTENSIONS.some((ext) => f.endsWith(ext)));
                     if (files.length > 0) {
                         return resolvePath(join(dirPath, files[0]));
                     }

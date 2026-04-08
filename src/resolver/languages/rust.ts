@@ -1,19 +1,20 @@
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { basename, dirname, join, resolve as resolvePath } from 'path';
+import { cachedExists } from '../fs-cache';
 
 function probeRustPath(baseDir: string, relPath: string): string | null {
     const asFile = join(baseDir, `${relPath}.rs`);
-    if (existsSync(asFile)) {
+    if (cachedExists(asFile)) {
         return resolvePath(asFile);
     }
 
     const asMod = join(baseDir, relPath, 'mod.rs');
-    if (existsSync(asMod)) {
+    if (cachedExists(asMod)) {
         return resolvePath(asMod);
     }
 
     const asLib = join(baseDir, relPath, 'lib.rs');
-    if (existsSync(asLib)) {
+    if (cachedExists(asLib)) {
         return resolvePath(asLib);
     }
 
@@ -113,7 +114,7 @@ function findCrateDir(fromAbsFile: string): string | null {
     let dir = dirname(fromAbsFile);
     const root = resolvePath('/');
     while (dir !== root) {
-        if (existsSync(join(dir, 'Cargo.toml'))) {
+        if (cachedExists(join(dir, 'Cargo.toml'))) {
             return dir;
         }
         const parent = dirname(dir);
@@ -144,7 +145,7 @@ function findLocalPackageName(fromAbsFile: string): string | null {
     }
 
     const cargoPath = join(crateDir, 'Cargo.toml');
-    if (!existsSync(cargoPath)) {
+    if (!cachedExists(cargoPath)) {
         pkgNameCache.set(crateDir, null);
         return null;
     }
@@ -169,7 +170,7 @@ function findLocalPackageName(fromAbsFile: string): string | null {
 function parsePathDeps(crateDir: string): Map<string, string> {
     const result = new Map<string, string>();
     const cargoPath = join(crateDir, 'Cargo.toml');
-    if (!existsSync(cargoPath)) {
+    if (!cachedExists(cargoPath)) {
         return result;
     }
 

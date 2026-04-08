@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
+import { cachedExists, cachedReaddir } from '../fs-cache';
 
 const moduleCache = new Map<string, string>();
 const replaceCache = new Map<string, Map<string, string>>();
@@ -19,7 +20,7 @@ function getModuleName(repoRoot: string): string | null {
     }
 
     const goModPath = join(repoRoot, 'go.mod');
-    if (!existsSync(goModPath)) {
+    if (!cachedExists(goModPath)) {
         moduleCache.set(repoRoot, '');
         return null;
     }
@@ -48,7 +49,7 @@ function getReplaceMap(repoRoot: string): Map<string, string> {
 
     const result = new Map<string, string>();
     const goModPath = join(repoRoot, 'go.mod');
-    if (!existsSync(goModPath)) {
+    if (!cachedExists(goModPath)) {
         replaceCache.set(repoRoot, result);
         return result;
     }
@@ -83,7 +84,7 @@ function getWorkspaceModules(repoRoot: string): Map<string, string> {
 
     const result = new Map<string, string>();
     const goWorkPath = join(repoRoot, 'go.work');
-    if (!existsSync(goWorkPath)) {
+    if (!cachedExists(goWorkPath)) {
         workspaceCache.set(repoRoot, result);
         return result;
     }
@@ -141,9 +142,9 @@ function isStdlib(modulePath: string): boolean {
 
 /** Find the first .go file (non-test) in a directory, or check for a .go file at the path. */
 function findGoFile(absDir: string): string | null {
-    if (existsSync(absDir)) {
+    if (cachedExists(absDir)) {
         try {
-            const files = readdirSync(absDir).sort();
+            const files = cachedReaddir(absDir).sort();
             const goFile = files.find((f) => f.endsWith('.go') && !f.endsWith('_test.go'));
             if (goFile) {
                 return resolvePath(join(absDir, goFile));
@@ -153,7 +154,7 @@ function findGoFile(absDir: string): string | null {
         }
     }
 
-    if (existsSync(`${absDir}.go`)) {
+    if (cachedExists(`${absDir}.go`)) {
         return resolvePath(`${absDir}.go`);
     }
 

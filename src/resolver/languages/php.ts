@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
+import { cachedExists } from '../fs-cache';
 
 const psr4Cache = new Map<string, Map<string, string>>();
 
@@ -17,7 +18,7 @@ function loadPsr4(repoRoot: string): Map<string, string> {
     const map = new Map<string, string>();
     const composerPath = join(repoRoot, 'composer.json');
 
-    if (existsSync(composerPath)) {
+    if (cachedExists(composerPath)) {
         try {
             const content = readFileSync(composerPath, 'utf-8');
             const config = JSON.parse(content);
@@ -45,7 +46,7 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
             const rest = modulePath.slice(prefix.length);
             const relPath = `${rest.replace(/\\/g, '/')}.php`;
             const candidate = join(repoRoot, dir, relPath);
-            if (existsSync(candidate)) {
+            if (cachedExists(candidate)) {
                 return resolvePath(candidate);
             }
         }
@@ -54,7 +55,7 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
     const relPath = `${modulePath.replace(/\\/g, '/')}.php`;
     for (const base of ['', 'src', 'lib', 'app']) {
         const candidate = join(repoRoot, base, relPath);
-        if (existsSync(candidate)) {
+        if (cachedExists(candidate)) {
             return resolvePath(candidate);
         }
     }

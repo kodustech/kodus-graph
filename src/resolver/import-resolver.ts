@@ -5,9 +5,10 @@
  * falls back to tsconfig aliases for TypeScript/JavaScript.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
 import { log } from '../shared/logger';
+import { cachedExists } from './fs-cache';
 import { ensureWithinRoot } from '../shared/safe-path';
 import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolveGoImport } from './languages/go';
@@ -37,7 +38,7 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
  */
 function resolveHashImport(modulePath: string, repoRoot: string): string | null {
     const pkgPath = join(repoRoot, 'package.json');
-    if (!existsSync(pkgPath)) {
+    if (!cachedExists(pkgPath)) {
         return null;
     }
 
@@ -56,7 +57,7 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
             if (pattern === modulePath) {
                 // Exact match: "#utils" -> "./src/shared/utils.ts"
                 const resolved = resolvePath(repoRoot, target);
-                if (existsSync(resolved)) {
+                if (cachedExists(resolved)) {
                     return resolved;
                 }
             }
@@ -67,7 +68,7 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
                 if (modulePath.startsWith(prefix)) {
                     const rest = modulePath.slice(prefix.length); // "connection"
                     const resolved = resolvePath(repoRoot, (target as string).replace('*', rest));
-                    if (existsSync(resolved)) {
+                    if (cachedExists(resolved)) {
                         return resolved;
                     }
                 }
@@ -86,7 +87,7 @@ function resolveHashImport(modulePath: string, repoRoot: string): string | null 
  */
 function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | null {
     const rootPkgPath = join(repoRoot, 'package.json');
-    if (!existsSync(rootPkgPath)) {
+    if (!cachedExists(rootPkgPath)) {
         return null;
     }
 
@@ -103,7 +104,7 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
             if (ws.endsWith('/*')) {
                 // Glob pattern like "packages/*"
                 const parentDir = join(repoRoot, ws.slice(0, -2));
-                if (existsSync(parentDir)) {
+                if (cachedExists(parentDir)) {
                     const entries = readdirSync(parentDir, { withFileTypes: true });
                     for (const entry of entries) {
                         if (entry.isDirectory()) {
@@ -119,7 +120,7 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
         // Search each workspace package for a matching name + exports
         for (const pkgDir of pkgDirs) {
             const pkgJsonPath = join(pkgDir, 'package.json');
-            if (!existsSync(pkgJsonPath)) {
+            if (!cachedExists(pkgJsonPath)) {
                 continue;
             }
 
@@ -140,7 +141,7 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
                 const target = exports['.'];
                 if (typeof target === 'string') {
                     const resolved = resolvePath(pkgDir, target);
-                    if (existsSync(resolved)) {
+                    if (cachedExists(resolved)) {
                         return resolved;
                     }
                 }
@@ -150,7 +151,7 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
                 const target = exports[subpath];
                 if (typeof target === 'string') {
                     const resolved = resolvePath(pkgDir, target);
-                    if (existsSync(resolved)) {
+                    if (cachedExists(resolved)) {
                         return resolved;
                     }
                 }
