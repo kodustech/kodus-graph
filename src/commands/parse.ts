@@ -8,6 +8,7 @@ import { discoverFiles } from '../parser/discovery';
 import { resolveAllCalls } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
+import { buildReExportMap } from '../resolver/re-export-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -45,6 +46,9 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
   for (const c of rawGraph.classes) symbolTable.add(c.file, c.name, c.qualified);
   for (const i of rawGraph.interfaces) symbolTable.add(i.file, i.name, i.qualified);
 
+  // Pre-resolve re-exports so barrel imports follow through to actual definitions
+  const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);
+
   for (const imp of rawGraph.imports) {
     const langKey = imp.lang === 'python' ? 'python' : imp.lang === 'ruby' ? 'ruby' : 'typescript';
     const resolved = resolveImport(resolve(repoDir, imp.file), imp.module, langKey, repoDir, tsconfigAliases);
@@ -56,7 +60,22 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
       line: imp.line,
     });
     const target = resolvedRel || imp.module;
-    for (const name of imp.names) importMap.add(imp.file, name, target);
+    for (const name of imp.names) {
+      // If target is a barrel file, follow re-exports to find the actual definition
+      let finalTarget = target;
+      if (resolvedRel) {
+        const reExportedFiles = barrelMap.get(resolvedRel);
+        if (reExportedFiles) {
+          for (const reFile of reExportedFiles) {
+            if (symbolTable.lookupExact(reFile, name)) {
+              finalTarget = reFile;
+              break;
+            }
+          }
+        }
+      }
+      importMap.add(imp.file, name, finalTarget);
+    }
   }
 
   process.stderr.write(

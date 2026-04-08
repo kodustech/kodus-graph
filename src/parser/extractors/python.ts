@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../graph/types';
-import { NOISE } from '../../shared/filters';
+import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeContentHash } from '../../shared/file-hash';
 import { LANG_KINDS } from '../languages';
 
 export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
@@ -28,6 +29,7 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
       extends: extendsName,
       implements: '',
       qualified: `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -55,6 +57,7 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
         line_start: line,
         line_end: node.range().end.line,
         qualified: `${fp}::test:${name}`,
+        content_hash: computeContentHash(node.text()),
       });
     }
 
@@ -68,6 +71,7 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
       kind: name === '__init__' ? 'Constructor' : className ? 'Method' : 'Function',
       className,
       qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -106,22 +110,24 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
   }
 }
 
+/** Python-specific call extraction config for shared extractCalls(). */
+const PYTHON_CALL_CONFIG: CallExtractionConfig = {
+  selfPrefixes: ['self.'],
+  superPrefixes: ['super().'],
+  findEnclosingClass: (node) =>
+    node.ancestors().find((a: SgNode) => a.kind() === 'class_definition') ?? null,
+  getParentClass: (classNode) => {
+    const argList =
+      classNode.field('superclasses') ||
+      classNode.children().find((c: SgNode) => c.kind() === 'argument_list');
+    return argList?.children().find((c: SgNode) => c.kind() === 'identifier')?.text();
+  },
+};
+
 /**
  * Extract raw call sites from a Python AST.
- * Direct calls only — Python has no DI pattern.
+ * Detects self.X() and super().X() to preserve class resolution context.
  */
 export function extractCallsFromPython(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-  const rootNode = root.root();
-
-  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
-    const callee = m.getMatch('CALLEE')?.text();
-    if (!callee) continue;
-    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-    if (NOISE.has(callName)) continue;
-    calls.push({
-      source: fp,
-      callName,
-      line: m.range().start.line,
-    });
-  }
+  extractCalls(root.root(), fp, PYTHON_CALL_CONFIG, calls);
 }

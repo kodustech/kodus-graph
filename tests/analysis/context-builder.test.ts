@@ -116,6 +116,61 @@ describe('buildContextV2', () => {
     }
   });
 
+  it('should mark functions as new when oldGraph excludes changed files (same-branch fix)', () => {
+    // Simulates what context.ts does when it detects same-branch:
+    // oldGraph has NO nodes for changed files → diff sees everything as "added"
+    const oldGraphWithoutChangedFiles: GraphData = {
+      nodes: [
+        // Only nodes from unchanged files
+        {
+          kind: 'Function',
+          name: 'login',
+          qualified_name: 'src/ctrl.ts::login',
+          file_path: 'src/ctrl.ts',
+          line_start: 5,
+          line_end: 15,
+          language: 'typescript',
+          params: '(req: Request)',
+          return_type: 'Response',
+          is_test: false,
+          file_hash: 'b',
+        },
+      ],
+      edges: [],
+    };
+
+    const result = buildContextV2({
+      mergedGraph: graphData,
+      oldGraph: oldGraphWithoutChangedFiles,
+      changedFiles: ['src/auth.ts'],
+      minConfidence: 0.5,
+      maxDepth: 3,
+    });
+
+    // Functions in changed files should be marked as new (not unchanged)
+    expect(result.analysis.changed_functions[0].is_new).toBe(true);
+    expect(result.analysis.structural_diff.nodes.added.length).toBeGreaterThan(0);
+    expect(result.analysis.structural_diff.nodes.added.some(
+      n => n.qualified_name === 'src/auth.ts::authenticate'
+    )).toBe(true);
+  });
+
+  it('should NOT mark functions as new when identical oldGraph is provided (pre-fix behavior)', () => {
+    // When oldGraph has the same nodes as mergedGraph → everything is "unchanged"
+    // This is the broken behavior that context.ts now prevents for same-branch scenarios
+    const result = buildContextV2({
+      mergedGraph: graphData,
+      oldGraph: graphData,
+      changedFiles: ['src/auth.ts'],
+      minConfidence: 0.5,
+      maxDepth: 3,
+    });
+
+    // With identical graphs, nothing appears as new or modified
+    expect(result.analysis.changed_functions[0].is_new).toBe(false);
+    expect(result.analysis.changed_functions[0].diff_changes).toHaveLength(0);
+  });
+
   it('should compute structural diff when oldGraph is provided', () => {
     const oldGraph: GraphData = {
       nodes: [

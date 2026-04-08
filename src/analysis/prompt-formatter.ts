@@ -118,16 +118,56 @@ export function formatPrompt(output: ContextV2Output): string {
     lines.push('');
   }
 
-  // Structural diff summary
+  // Structural diff
   const diff = analysis.structural_diff;
-  if (diff.summary.added > 0 || diff.summary.removed > 0 || diff.summary.modified > 0) {
+  const hasNodeChanges = diff.summary.added > 0 || diff.summary.removed > 0 || diff.summary.modified > 0;
+  const hasEdgeChanges = diff.edges.added.length > 0 || diff.edges.removed.length > 0;
+
+  if (hasNodeChanges || hasEdgeChanges) {
     lines.push('## Structural Changes');
     lines.push('');
-    const parts: string[] = [];
-    if (diff.summary.added > 0) parts.push(`${diff.summary.added} added`);
-    if (diff.summary.removed > 0) parts.push(`${diff.summary.removed} removed`);
-    if (diff.summary.modified > 0) parts.push(`${diff.summary.modified} modified`);
-    lines.push(parts.join(', '));
+
+    if (hasNodeChanges) {
+      const parts: string[] = [];
+      if (diff.summary.added > 0) parts.push(`${diff.summary.added} added`);
+      if (diff.summary.removed > 0) parts.push(`${diff.summary.removed} removed`);
+      if (diff.summary.modified > 0) parts.push(`${diff.summary.modified} modified`);
+      lines.push(parts.join(', '));
+    }
+
+    if (diff.nodes.removed.length > 0) {
+      lines.push('');
+      lines.push('Removed:');
+      for (const n of diff.nodes.removed) {
+        const name = n.qualified_name.split('::').pop();
+        lines.push(`  - [${n.kind}] ${name}  [${n.file_path}:${n.line_start}]`);
+      }
+    }
+
+    if (diff.nodes.modified.length > 0) {
+      lines.push('');
+      lines.push('Modified:');
+      for (const m of diff.nodes.modified) {
+        const name = m.qualified_name.split('::').pop();
+        lines.push(`  - ${name} (${m.changes.join(', ')})`);
+      }
+    }
+
+    if (hasEdgeChanges) {
+      lines.push('');
+      lines.push('Dependency changes:');
+      for (const e of diff.edges.added) {
+        const src = e.source_qualified.split('::').pop();
+        const tgt = e.target_qualified.split('::').pop();
+        lines.push(`  + ${e.kind}: ${src} → ${tgt}`);
+      }
+      for (const e of diff.edges.removed) {
+        const src = e.source_qualified.split('::').pop();
+        const tgt = e.target_qualified.split('::').pop();
+        lines.push(`  - ${e.kind}: ${src} → ${tgt}`);
+      }
+    }
+
     lines.push('');
   }
 

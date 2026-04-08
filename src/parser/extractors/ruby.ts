@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../graph/types';
-import { NOISE } from '../../shared/filters';
+import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeContentHash } from '../../shared/file-hash';
 import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
 
@@ -23,6 +24,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
       extends: superclass,
       implements: '',
       qualified: `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -39,6 +41,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
       extends: '',
       implements: '',
       qualified: `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -63,6 +66,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
       kind: className ? 'Method' : 'Function',
       className,
       qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -88,6 +92,7 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
           line_start: m.range().start.line,
           line_end: m.range().end.line,
           qualified: `${fp}::test:${name}`,
+          content_hash: computeContentHash(m.text()),
         });
       }
     } catch (err) {
@@ -121,22 +126,22 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
   }
 }
 
+/** Ruby-specific call extraction config for shared extractCalls(). */
+function createRubyCallConfig(): CallExtractionConfig {
+  const kinds = LANG_KINDS.ruby;
+  return {
+    selfPrefixes: ['self.'],
+    superPrefixes: ['super'],
+    findEnclosingClass: (node) =>
+      node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module) ?? null,
+    getParentClass: (classNode) => classNode.field('superclass')?.text(),
+  };
+}
+
 /**
  * Extract raw call sites from a Ruby AST.
- * Direct calls only — Ruby has no DI pattern.
+ * Detects self.X() and super() to preserve class resolution context.
  */
 export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-  const rootNode = root.root();
-
-  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
-    const callee = m.getMatch('CALLEE')?.text();
-    if (!callee) continue;
-    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-    if (NOISE.has(callName)) continue;
-    calls.push({
-      source: fp,
-      callName,
-      line: m.range().start.line,
-    });
-  }
+  extractCalls(root.root(), fp, createRubyCallConfig(), calls);
 }

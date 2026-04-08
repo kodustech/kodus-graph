@@ -1,6 +1,7 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../graph/types';
-import { NOISE } from '../../shared/filters';
+import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeContentHash } from '../../shared/file-hash';
 import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
 
@@ -24,6 +25,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
           extends: '',
           implements: '',
           qualified: `${fp}::${name}`,
+          content_hash: computeContentHash(node.text()),
         });
       }
     } catch (err) {
@@ -58,6 +60,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
           kind: className ? 'Method' : 'Function',
           className,
           qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+          content_hash: computeContentHash(node.text()),
         });
       }
     } catch (err) {
@@ -66,22 +69,64 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
   }
 }
 
+/** Shared class-finder for languages using class/struct/impl AST kinds. */
+function findEnclosingClassGeneric(node: import('@ast-grep/napi').SgNode): import('@ast-grep/napi').SgNode | null {
+  return node.ancestors().find((a) => {
+    const k = String(a.kind());
+    return k.includes('class') || k.includes('struct') || k.includes('impl');
+  }) ?? null;
+}
+
+/** Per-language call extraction configs for self/super detection. */
+const GENERIC_CONFIGS: Record<string, CallExtractionConfig> = {
+  java: {
+    selfPrefixes: ['this.'],
+    superPrefixes: ['super.'],
+    findEnclosingClass: findEnclosingClassGeneric,
+    getParentClass: (classNode) => {
+      const sc = classNode.children().find((c) => c.kind() === 'superclass');
+      return sc?.children().find((c) => c.kind() === 'type_identifier')?.text();
+    },
+  },
+  csharp: {
+    selfPrefixes: ['this.'],
+    superPrefixes: ['base.'],
+    findEnclosingClass: findEnclosingClassGeneric,
+    getParentClass: (classNode) => {
+      const bl = classNode.children().find((c) => c.kind() === 'base_list');
+      return bl?.children().find((c) => c.kind() === 'identifier' || c.kind() === 'type_identifier')?.text();
+    },
+  },
+  rust: {
+    selfPrefixes: ['self.'],
+    superPrefixes: [],
+    findEnclosingClass: (node) =>
+      node.ancestors().find((a) => a.kind() === 'impl_item') ?? null,
+  },
+  go: {
+    selfPrefixes: [],
+    superPrefixes: [],
+    findEnclosingClass: findEnclosingClassGeneric,
+  },
+  php: {
+    selfPrefixes: [],
+    superPrefixes: [],
+    findEnclosingClass: findEnclosingClassGeneric,
+  },
+};
+
+/** Fallback config for unknown languages — no self/super detection. */
+const FALLBACK_CONFIG: CallExtractionConfig = {
+  selfPrefixes: [],
+  superPrefixes: [],
+  findEnclosingClass: findEnclosingClassGeneric,
+};
+
 /**
  * Extract raw call sites from a generic language AST.
- * Direct calls only.
+ * Uses per-language config for self/super detection.
  */
-export function extractCallsFromGeneric(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-  const rootNode = root.root();
-
-  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
-    const callee = m.getMatch('CALLEE')?.text();
-    if (!callee) continue;
-    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-    if (NOISE.has(callName)) continue;
-    calls.push({
-      source: fp,
-      callName,
-      line: m.range().start.line,
-    });
-  }
+export function extractCallsFromGeneric(root: SgRoot, fp: string, lang: string, calls: RawCallSite[]): void {
+  const config = GENERIC_CONFIGS[lang] ?? FALLBACK_CONFIG;
+  extractCalls(root.root(), fp, config, calls);
 }

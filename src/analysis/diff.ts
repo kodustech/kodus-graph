@@ -1,5 +1,6 @@
 import type { IndexedGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode } from '../graph/types';
+import { log } from '../shared/logger';
 
 export interface NodeChange {
   qualified_name: string;
@@ -45,6 +46,12 @@ export function computeStructuralDiff(
     if (changedSet.has(n.file_path)) newNodesMap.set(n.qualified_name, n);
   }
 
+  log.debug('diff: input', {
+    oldNodesInChanged: oldNodesInChanged.size,
+    newNodesInChanged: newNodesMap.size,
+    changedFiles,
+  });
+
   // Classify nodes
   const added: NodeChange[] = [];
   const removed: NodeChange[] = [];
@@ -74,7 +81,40 @@ export function computeStructuralDiff(
     } else {
       const newN = newNodesMap.get(qn)!;
       const changes: string[] = [];
-      if (n.line_start !== newN.line_start || n.line_end !== newN.line_end) changes.push('line_range');
+      // Detect real content changes vs. pure displacement.
+      // content_hash = SHA256 of the node's source text (position-independent).
+      if (n.content_hash && newN.content_hash) {
+        // Definitive: hash comparison catches ALL content changes,
+        // even same-line-count edits (e.g. `return 1` → `return 2`).
+        if (n.content_hash !== newN.content_hash) {
+          changes.push('body');
+          log.debug('diff: body change detected', {
+            node: qn,
+            oldHash: n.content_hash.substring(0, 8),
+            newHash: newN.content_hash.substring(0, 8),
+          });
+        } else {
+          log.debug('diff: hash match (displacement only)', {
+            node: qn,
+            oldLines: `${n.line_start}-${n.line_end}`,
+            newLines: `${newN.line_start}-${newN.line_end}`,
+          });
+        }
+      } else if (n.line_start !== newN.line_start || n.line_end !== newN.line_end) {
+        // Fallback (legacy data without content_hash): size heuristic.
+        const oldSize = n.line_end - n.line_start;
+        const newSize = newN.line_end - newN.line_start;
+        if (oldSize !== newSize) {
+          changes.push('line_range');
+          log.debug('diff: line_range fallback (no content_hash)', {
+            node: qn,
+            hasOldHash: !!n.content_hash,
+            hasNewHash: !!newN.content_hash,
+            oldSize,
+            newSize,
+          });
+        }
+      }
       if ((n.params || '') !== (newN.params || '')) changes.push('params');
       if ((n.return_type || '') !== (newN.return_type || '')) changes.push('return_type');
       if (changes.length > 0) modified.push({ qualified_name: qn, changes });
@@ -109,6 +149,15 @@ export function computeStructuralDiff(
     const risk = count >= 10 ? 'HIGH' : count >= 3 ? 'MEDIUM' : 'LOW';
     riskByFile[file] = { dependents: count, risk };
   }
+
+  log.info('diff: result', {
+    added: added.length,
+    removed: removed.length,
+    modified: modified.length,
+    edgesAdded: addedEdges.length,
+    edgesRemoved: removedEdges.length,
+    modifiedDetails: modified.map((m) => `${m.qualified_name} [${m.changes.join(',')}]`),
+  });
 
   return {
     changed_files: changedFiles,

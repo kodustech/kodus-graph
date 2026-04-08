@@ -77,9 +77,48 @@ describe('computeStructuralDiff', () => {
     expect(result.nodes.removed[0].qualified_name).toBe('src/a.ts::bar');
   });
 
-  it('should detect modified nodes (line range changed)', () => {
+  it('should detect body change when content_hash differs (real modification)', () => {
+    const oldNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: 'aaa' };
+    const newNode = { ...node('foo', 'src/a.ts', 1, 10), content_hash: 'bbb' };
+    const oldGraph = makeGraph([oldNode], []);
+    const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+    expect(result.nodes.modified).toHaveLength(1);
+    expect(result.nodes.modified[0].changes).toContain('body');
+  });
+
+  it('should detect body change even when line range is identical (same-line edit)', () => {
+    const oldNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: 'aaa' };
+    const newNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: 'bbb' }; // same lines, different content
+    const oldGraph = makeGraph([oldNode], []);
+    const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+    expect(result.nodes.modified).toHaveLength(1);
+    expect(result.nodes.modified[0].changes).toContain('body');
+  });
+
+  it('should NOT flag line_range when content_hash matches (pure displacement)', () => {
+    const hash = 'same_hash_abc';
+    const oldNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: hash };
+    const newNode = { ...node('foo', 'src/a.ts', 10, 14), content_hash: hash }; // moved but same content
+    const oldGraph = makeGraph([oldNode], []);
+    const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+    expect(result.nodes.modified).toHaveLength(0);
+  });
+
+  it('should fallback to size heuristic when content_hash is missing (legacy data)', () => {
+    // No content_hash on either node — falls back to size comparison
     const oldGraph = makeGraph([node('foo', 'src/a.ts', 1, 5)], []);
-    const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 1, 10)];
+    const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 10, 14)]; // size 4→4
+    const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
+
+    expect(result.nodes.modified).toHaveLength(0); // same size = displacement
+  });
+
+  it('should detect line_range via size fallback when content_hash missing and size differs', () => {
+    const oldGraph = makeGraph([node('foo', 'src/a.ts', 1, 5)], []);
+    const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 1, 10)]; // size 4→9
     const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
 
     expect(result.nodes.modified).toHaveLength(1);

@@ -26,6 +26,7 @@ export function buildGraphData(
       return_type: f.returnType || undefined,
       is_test: false,
       file_hash: fileHashes.get(f.file) || '',
+      content_hash: f.content_hash,
     });
   }
 
@@ -41,6 +42,7 @@ export function buildGraphData(
       language: detectLang(c.file),
       is_test: false,
       file_hash: fileHashes.get(c.file) || '',
+      content_hash: c.content_hash,
     });
   }
 
@@ -56,6 +58,7 @@ export function buildGraphData(
       language: detectLang(i.file),
       is_test: false,
       file_hash: fileHashes.get(i.file) || '',
+      content_hash: i.content_hash,
     });
   }
 
@@ -71,6 +74,7 @@ export function buildGraphData(
       language: detectLang(e.file),
       is_test: false,
       file_hash: fileHashes.get(e.file) || '',
+      content_hash: e.content_hash,
     });
   }
 
@@ -86,16 +90,51 @@ export function buildGraphData(
       language: detectLang(t.file),
       is_test: true,
       file_hash: fileHashes.get(t.file) || '',
+      content_hash: t.content_hash,
     });
   }
 
-  // CALLS edges
+  // Build file→functions index to resolve caller from line number
+  const functionsByFile = new Map<string, Array<{ qualified_name: string; line_start: number; line_end: number }>>();
+  for (const node of nodes) {
+    if (node.kind === 'Class' || node.kind === 'Interface' || node.kind === 'Enum') continue;
+    const entry = { qualified_name: node.qualified_name, line_start: node.line_start, line_end: node.line_end };
+    const list = functionsByFile.get(node.file_path);
+    if (list) list.push(entry);
+    else functionsByFile.set(node.file_path, [entry]);
+  }
+  // Sort descending by line_start so inner/nested functions match first
+  for (const list of functionsByFile.values()) {
+    list.sort((a, b) => b.line_start - a.line_start);
+  }
+
+  // CALLS edges — resolve caller function from call line number
   for (const ce of callEdges) {
+    const sourceFile = ce.source.includes('::') ? ce.source.split('::')[0] : ce.source;
+    let sourceQualified: string;
+
+    if (ce.source.includes('::')) {
+      sourceQualified = ce.source;
+    } else {
+      // Find the innermost function containing this call line
+      const fns = functionsByFile.get(ce.source);
+      let resolved: string | undefined;
+      if (fns) {
+        for (const fn of fns) {
+          if (ce.line >= fn.line_start && ce.line <= fn.line_end) {
+            resolved = fn.qualified_name;
+            break;
+          }
+        }
+      }
+      sourceQualified = resolved || `${ce.source}::unknown`;
+    }
+
     edges.push({
       kind: 'CALLS',
-      source_qualified: ce.source.includes('::') ? ce.source : `${ce.source}::unknown`,
+      source_qualified: sourceQualified,
       target_qualified: ce.target,
-      file_path: ce.source.includes('::') ? ce.source.split('::')[0] : ce.source,
+      file_path: sourceFile,
       line: ce.line,
       confidence: ce.confidence,
     });

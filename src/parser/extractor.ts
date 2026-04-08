@@ -32,6 +32,6 @@ export function extractCallsFromFile(root: SgRoot, filePath: string, lang: Lang 
   } else if (lang === 'ruby') {
     extractCallsFromRuby(root, filePath, calls);
   } else {
-    extractCallsFromGeneric(root, filePath, calls);
+    extractCallsFromGeneric(root, filePath, lang as string, calls);
   }
 }

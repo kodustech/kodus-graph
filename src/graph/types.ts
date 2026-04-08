@@ -19,6 +19,7 @@ export interface GraphNode {
   modifiers?: string;
   is_test: boolean;
   file_hash: string;
+  content_hash?: string;
 }
 
 // ── Graph edge (matches ast_edges table) ──
@@ -185,6 +186,7 @@ export interface RawFunction {
   kind: 'Function' | 'Method' | 'Constructor';
   className: string;
   qualified: string;
+  content_hash?: string;
 }
 
 export interface RawClass {
@@ -195,6 +197,7 @@ export interface RawClass {
   extends: string;
   implements: string;
   qualified: string;
+  content_hash?: string;
 }
 
 export interface RawInterface {
@@ -204,6 +207,7 @@ export interface RawInterface {
   line_end: number;
   methods: string[];
   qualified: string;
+  content_hash?: string;
 }
 
 export interface RawEnum {
@@ -212,6 +216,7 @@ export interface RawEnum {
   line_start: number;
   line_end: number;
   qualified: string;
+  content_hash?: string;
 }
 
 export interface RawTest {
@@ -220,6 +225,7 @@ export interface RawTest {
   line_start: number;
   line_end: number;
   qualified: string;
+  content_hash?: string;
 }
 
 export interface RawImport {
@@ -241,6 +247,7 @@ export interface RawCallSite {
   callName: string; // function or method name being called
   line: number; // line number of the call
   diField?: string; // if DI pattern (this.field.method), the field name
+  resolveInClass?: string; // class to resolve in: current class for self.X(), parent for super().X()
 }
 
 export interface RawCallEdge {

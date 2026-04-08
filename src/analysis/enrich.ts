@@ -50,14 +50,15 @@ export function enrichChangedFunctions(
       const callers: CallerRef[] = [];
       for (const edge of graph.reverseAdjacency.get(node.qualified_name) || []) {
         if (edge.kind !== 'CALLS') continue;
-        if ((edge.confidence ?? 0) < minConfidence) continue;
+        // null/undefined confidence = high confidence (edge came from DB or parser without scoring)
+        if ((edge.confidence ?? 1.0) < minConfidence) continue;
         const sourceNode = graph.byQualified.get(edge.source_qualified);
         callers.push({
           qualified_name: edge.source_qualified,
           name: sourceNode?.name || edge.source_qualified.split('::').pop() || 'unknown',
           file_path: sourceNode?.file_path || edge.file_path,
           line: edge.line,
-          confidence: edge.confidence || 0,
+          confidence: edge.confidence ?? 1.0,
         });
       }
 

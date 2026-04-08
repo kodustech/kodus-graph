@@ -77,6 +77,22 @@ export function resolveAllCalls(
       }
     }
 
+    // Class-aware resolution for self.X() and super().X()
+    if (call.resolveInClass) {
+      const classResolved = resolveInClass(call.callName, fp, call.resolveInClass, symbolTable);
+      if (classResolved) {
+        callEdges.push({
+          source: fp,
+          target: classResolved.target,
+          callName: call.callName,
+          line: call.line,
+          confidence: classResolved.confidence,
+        });
+        stats[classResolved.strategy]++;
+        continue;
+      }
+    }
+
     // Name-based cascade fallback
     const resolved = resolveByName(call.callName, fp, symbolTable, importMap);
     if (resolved) {
@@ -92,6 +108,26 @@ export function resolveAllCalls(
   }
 
   return { callEdges, stats };
+}
+
+// ── Class-aware resolution (self./super.) ──
+
+function resolveInClass(
+  callName: string,
+  currentFile: string,
+  className: string,
+  symbolTable: SymbolTable,
+): ResolveResult | null {
+  // Try same-file class method first (self.method() or super().method())
+  const inFile = symbolTable.lookupInFile(currentFile, callName, className);
+  if (inFile) return { target: inFile, confidence: 0.9, strategy: 'same' };
+
+  // Class might be in another file (imported parent class for super())
+  const candidates = symbolTable.lookupGlobal(callName);
+  const match = candidates.find((q) => q.includes(`::${className}.${callName}`));
+  if (match) return { target: match, confidence: 0.85, strategy: 'import' };
+
+  return null;
 }
 
 // ── DI resolution ──
@@ -153,13 +189,42 @@ function resolveByName(
     return { target: candidates[0], confidence: 0.5, strategy: 'unique' };
   }
 
-  // Strategy 4: Ambiguous (0.30)
+  // Strategy 4: Ambiguous (0.30) — pick closest candidate by directory proximity
   const candidates = symbolTable.lookupGlobal(callName);
   if (candidates.length > 1) {
-    return { target: callName, confidence: 0.3, strategy: 'ambiguous' };
+    const best = pickClosestCandidate(candidates, currentFile);
+    return { target: best, confidence: 0.3, strategy: 'ambiguous' };
   }
 
   return null;
+}
+
+// ── Proximity-based candidate selection ──
+
+/**
+ * Pick the candidate whose file path is closest to the caller's file.
+ * Counts shared leading path segments — more shared = closer.
+ */
+function pickClosestCandidate(candidates: string[], callerFile: string): string {
+  const callerParts = callerFile.split('/');
+  let best = candidates[0];
+  let bestScore = -1;
+
+  for (const candidate of candidates) {
+    const candidateFile = candidate.includes('::') ? candidate.split('::')[0] : candidate;
+    const parts = candidateFile.split('/');
+    let shared = 0;
+    for (let i = 0; i < Math.min(callerParts.length, parts.length); i++) {
+      if (callerParts[i] === parts[i]) shared++;
+      else break;
+    }
+    if (shared > bestScore) {
+      bestScore = shared;
+      best = candidate;
+    }
+  }
+
+  return best;
 }
 
 // ── Public wrapper for unit testing ──

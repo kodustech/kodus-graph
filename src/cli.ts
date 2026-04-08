@@ -13,7 +13,11 @@ import { executeUpdate } from './commands/update';
 
 const program = new Command();
 
-program.name('kodus-graph').description('Code graph builder for Kodus code review').version('0.2.1');
+import pkg from '../package.json';
+import { log } from './shared/logger';
+
+log.info(`kodus-graph v${pkg.version}`, { node: process.version, platform: process.platform });
+program.name('kodus-graph').description('Code graph builder for Kodus code review').version(pkg.version);
 
 program
   .command('parse')

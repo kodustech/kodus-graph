@@ -10,6 +10,7 @@ const GraphNodeSchema = z.object({
   language: z.string(),
   is_test: z.boolean(),
   file_hash: z.string(),
+  content_hash: z.string().optional(),
   parent_name: z.string().optional(),
   params: z.string().optional(),
   return_type: z.string().optional(),

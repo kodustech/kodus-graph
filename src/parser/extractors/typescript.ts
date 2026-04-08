@@ -1,6 +1,8 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import { Lang } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../graph/types';
+import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
 
@@ -52,6 +54,7 @@ export function extractTypeScript(
         extends: extendsName,
         implements: implementsName,
         qualified: `${fp}::${name}`,
+        content_hash: computeContentHash(node.text()),
       });
     }
   }
@@ -112,6 +115,7 @@ export function extractTypeScript(
         kind: 'Constructor',
         className,
         qualified: `${fp}::${className}.constructor`,
+        content_hash: computeContentHash(node.text()),
       });
     } else {
       graph.functions.push({
@@ -124,6 +128,7 @@ export function extractTypeScript(
         kind: className ? 'Method' : 'Function',
         className,
         qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+        content_hash: computeContentHash(node.text()),
       });
     }
   }
@@ -148,6 +153,7 @@ export function extractTypeScript(
       kind: 'Function',
       className: '',
       qualified: `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -172,6 +178,7 @@ export function extractTypeScript(
       kind: 'Function',
       className: '',
       qualified: `${fp}::${name}`,
+      content_hash: computeContentHash(node.text()),
     });
   }
 
@@ -198,6 +205,7 @@ export function extractTypeScript(
         line_end: node.range().end.line,
         methods,
         qualified: `${fp}::${name}`,
+        content_hash: computeContentHash(node.text()),
       });
     }
 
@@ -213,6 +221,7 @@ export function extractTypeScript(
         line_start: node.range().start.line,
         line_end: node.range().end.line,
         qualified: `${fp}::${name}`,
+        content_hash: computeContentHash(node.text()),
       });
     }
 
@@ -288,10 +297,32 @@ export function extractTypeScript(
         line_start: m.range().start.line,
         line_end: m.range().end.line,
         qualified: `${fp}::test:${name}`,
+        content_hash: computeContentHash(m.text()),
       });
     }
   }
 }
+
+/** TypeScript-specific call extraction config for shared extractCalls(). */
+const TS_CALL_CONFIG: CallExtractionConfig = {
+  selfPrefixes: ['this.'],
+  superPrefixes: ['super.'],
+  findEnclosingClass: (node) => {
+    const kinds = LANG_KINDS.typescript;
+    return node.ancestors().find(
+      (a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass,
+    ) ?? null;
+  },
+  getParentClass: (classNode) => {
+    const heritage = classNode.children().find((c: SgNode) => c.kind() === 'class_heritage');
+    const ext = heritage?.children().find((c: SgNode) => c.kind() === 'extends_clause');
+    return ext?.children().find(
+      (c: SgNode) => c.kind() === 'identifier' || c.kind() === 'type_identifier' || c.kind() === 'member_expression',
+    )?.text();
+  },
+  // Skip this.field.method — already handled by the DI pattern above
+  skipCallee: (callee) => callee.startsWith('this.') && callee.substring(5).includes('.'),
+};
 
 /**
  * Extract raw call sites from a TypeScript/JavaScript AST.
@@ -314,16 +345,6 @@ export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawC
     });
   }
 
-  // Direct calls: $CALLEE($$$ARGS)
-  for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
-    const callee = m.getMatch('CALLEE')?.text();
-    if (!callee || callee.startsWith('this.')) continue;
-    const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-    if (NOISE.has(callName)) continue;
-    calls.push({
-      source: fp,
-      callName,
-      line: m.range().start.line,
-    });
-  }
+  // Direct calls + self/super detection via shared function
+  extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);
 }

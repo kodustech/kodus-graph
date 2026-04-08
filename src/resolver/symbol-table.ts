@@ -9,6 +9,7 @@
 export interface SymbolTable {
   add(file: string, name: string, qualified: string): void;
   lookupExact(file: string, name: string): string | null;
+  lookupInFile(file: string, name: string, className: string): string | null;
   isUnique(name: string): boolean;
   lookupGlobal(name: string): string[];
   readonly size: number;
@@ -16,20 +17,31 @@ export interface SymbolTable {
 }
 
 export function createSymbolTable(): SymbolTable {
-  const byFile = new Map<string, Map<string, string>>();
+  const byFile = new Map<string, Map<string, string[]>>();
   const byName = new Map<string, string[]>();
 
   return {
     add(file, name, qualified) {
       if (!byFile.has(file)) byFile.set(file, new Map());
-      byFile.get(file)!.set(name, qualified);
+      const fileMap = byFile.get(file)!;
+      if (!fileMap.has(name)) fileMap.set(name, []);
+      fileMap.get(name)!.push(qualified);
 
       if (!byName.has(name)) byName.set(name, []);
       byName.get(name)!.push(qualified);
     },
 
     lookupExact(file, name) {
-      return byFile.get(file)?.get(name) ?? null;
+      const candidates = byFile.get(file)?.get(name);
+      if (!candidates || candidates.length === 0) return null;
+      // Only return if unambiguous within this file
+      return candidates.length === 1 ? candidates[0] : null;
+    },
+
+    lookupInFile(file, name, className) {
+      const candidates = byFile.get(file)?.get(name);
+      if (!candidates || candidates.length === 0) return null;
+      return candidates.find((q) => q.includes(`::${className}.${name}`)) ?? null;
     },
 
     isUnique(name) {
@@ -42,7 +54,9 @@ export function createSymbolTable(): SymbolTable {
 
     get size() {
       let count = 0;
-      for (const m of byFile.values()) count += m.size;
+      for (const m of byFile.values()) {
+        for (const arr of m.values()) count += arr.length;
+      }
       return count;
     },
 

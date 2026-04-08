@@ -157,7 +157,7 @@ describe('extractCallsFromGeneric', () => {
   async function extractCalls(source: string, lang: string = 'go', fp: string = 'src/test.go'): Promise<RawCallSite[]> {
     const root = await parseAsync(lang as any, source);
     const calls: RawCallSite[] = [];
-    extractCallsFromGeneric(root, fp, calls);
+    extractCallsFromGeneric(root, fp, lang, calls);
     return calls;
   }
 
