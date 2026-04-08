@@ -19,7 +19,7 @@ export interface GraphNode {
     return_type?: string;
     modifiers?: string;
     is_test: boolean;
-    file_hash: string;
+    file_hash?: string;
     content_hash?: string;
 }
 

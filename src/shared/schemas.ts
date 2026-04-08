@@ -9,7 +9,7 @@ const GraphNodeSchema = z.object({
     line_end: z.number(),
     language: z.string(),
     is_test: z.boolean(),
-    file_hash: z.string(),
+    file_hash: z.string().optional(),
     content_hash: z.string().optional(),
     parent_name: z.string().optional(),
     params: z.string().optional(),
@@ -27,6 +27,7 @@ const GraphEdgeSchema = z.object({
 });
 
 export const GraphInputSchema = z.object({
+    sha: z.string().optional(),
     nodes: z.array(GraphNodeSchema),
     edges: z.array(GraphEdgeSchema),
 });
