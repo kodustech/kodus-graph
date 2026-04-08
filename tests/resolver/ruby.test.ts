@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/ruby';
+import { resolve, resolveZeitwerk } from '../../src/resolver/languages/ruby';
 
 const TMP = join(import.meta.dir, '../fixtures/rb-basic-tmp');
 
@@ -62,5 +62,42 @@ describe('Ruby Gemfile path gem', () => {
 
     test('cleanup', () => {
         rmSync(TMP_GEMPATH, { recursive: true, force: true });
+    });
+});
+
+const TMP_ZEITWERK = join(import.meta.dir, '../fixtures/rb-zeitwerk-tmp');
+
+describe('Ruby Zeitwerk autoload', () => {
+    test('setup', () => {
+        rmSync(TMP_ZEITWERK, { recursive: true, force: true });
+        mkdirSync(join(TMP_ZEITWERK, 'app/models'), { recursive: true });
+        mkdirSync(join(TMP_ZEITWERK, 'app/services'), { recursive: true });
+        mkdirSync(join(TMP_ZEITWERK, 'app/controllers/admin'), { recursive: true });
+
+        writeFileSync(join(TMP_ZEITWERK, 'app/models/user.rb'), 'class User; end\n');
+        writeFileSync(join(TMP_ZEITWERK, 'app/services/auth_service.rb'), 'class AuthService; end\n');
+        writeFileSync(join(TMP_ZEITWERK, 'app/controllers/admin/users_controller.rb'), 'class Admin::UsersController; end\n');
+    });
+
+    test('resolves simple class name', () => {
+        const result = resolveZeitwerk('User', TMP_ZEITWERK);
+        expect(result).not.toBeNull();
+        expect(result).toContain('user.rb');
+    });
+
+    test('resolves CamelCase to snake_case', () => {
+        const result = resolveZeitwerk('AuthService', TMP_ZEITWERK);
+        expect(result).not.toBeNull();
+        expect(result).toContain('auth_service.rb');
+    });
+
+    test('resolves namespaced class (:: to /)', () => {
+        const result = resolveZeitwerk('Admin::UsersController', TMP_ZEITWERK);
+        expect(result).not.toBeNull();
+        expect(result).toContain('admin/users_controller.rb');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_ZEITWERK, { recursive: true, force: true });
     });
 });
