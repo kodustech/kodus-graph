@@ -13,8 +13,32 @@ import { dirname, join, resolve as resolvePath } from 'path';
  * Walks up from the importing file's directory to find the module.
  */
 export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: string): string | null {
-    if (!modulePath || modulePath.startsWith('.')) {
-        // Relative import -- not handled yet
+    if (!modulePath) {
+        return null;
+    }
+
+    if (modulePath.startsWith('.')) {
+        // Relative import: count leading dots, walk up directories
+        const dotMatch = modulePath.match(/^(\.+)/);
+        const dots = dotMatch![1].length;
+        const rest = modulePath.slice(dots).replace(/\./g, '/');
+
+        let base = dirname(fromAbsFile);
+        for (let d = 1; d < dots; d++) {
+            base = dirname(base);
+        }
+
+        const candidates = rest
+            ? [`${rest}.py`, `${rest}/__init__.py`]
+            : [`__init__.py`];
+
+        for (const candidate of candidates) {
+            const full = join(base, candidate);
+            if (existsSync(full)) {
+                return resolvePath(full);
+            }
+        }
+
         return null;
     }
 
