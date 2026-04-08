@@ -175,3 +175,27 @@ describe('Rust bin+lib same crate', () => {
         rmSync(TMP_BINLIB, { recursive: true, force: true });
     });
 });
+
+const TMP_PATH_ATTR = join(import.meta.dir, '../fixtures/rust-path-attr-tmp');
+
+describe('Rust #[path] attribute (documented limitation)', () => {
+    test('setup', () => {
+        rmSync(TMP_PATH_ATTR, { recursive: true, force: true });
+        mkdirSync(join(TMP_PATH_ATTR, 'src'), { recursive: true });
+
+        writeFileSync(join(TMP_PATH_ATTR, 'Cargo.toml'), '[package]\nname = "myapp"\nedition = "2021"\n');
+        writeFileSync(join(TMP_PATH_ATTR, 'src/lib.rs'), '#[path = "custom_impl.rs"]\nmod mymod;\n');
+        writeFileSync(join(TMP_PATH_ATTR, 'src/custom_impl.rs'), 'pub fn custom() {}\n');
+    });
+
+    test('cannot resolve #[path] attribute (known limitation — returns null)', () => {
+        // The resolver gets "crate::mymod" but the file is "custom_impl.rs" due to #[path]
+        // This requires AST-level analysis to resolve, which the import resolver doesn't do
+        const result = resolve(join(TMP_PATH_ATTR, 'src/lib.rs'), 'crate::mymod', TMP_PATH_ATTR);
+        expect(result).toBeNull(); // Known limitation: can't resolve #[path] override
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_PATH_ATTR, { recursive: true, force: true });
+    });
+});

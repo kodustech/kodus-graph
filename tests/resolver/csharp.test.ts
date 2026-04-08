@@ -105,3 +105,36 @@ describe('C# multi-project ProjectReference', () => {
         rmSync(TMP_MULTI, { recursive: true, force: true });
     });
 });
+
+const TMP_GLOBAL = join(import.meta.dir, '../fixtures/cs-global-usings-tmp');
+
+describe('C# global usings', () => {
+    test('setup', () => {
+        rmSync(TMP_GLOBAL, { recursive: true, force: true });
+        mkdirSync(join(TMP_GLOBAL, 'src/Models'), { recursive: true });
+        mkdirSync(join(TMP_GLOBAL, 'src/Services'), { recursive: true });
+
+        writeFileSync(join(TMP_GLOBAL, 'GlobalUsings.cs'), 'global using MyApp.Models;\n');
+        writeFileSync(
+            join(TMP_GLOBAL, 'src/Models/User.cs'),
+            'namespace MyApp.Models;\npublic class User {}\n',
+        );
+        writeFileSync(
+            join(TMP_GLOBAL, 'src/Services/Auth.cs'),
+            'namespace MyApp.Services;\npublic class Auth { User u; }\n',
+        );
+    });
+
+    test('resolves namespace from global using context', () => {
+        // The resolver should still resolve MyApp.Models to the directory/file
+        // This tests that the standard namespace resolution works for namespaces
+        // that would be available via global using
+        const result = resolve('', 'MyApp.Models', TMP_GLOBAL);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Models');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_GLOBAL, { recursive: true, force: true });
+    });
+});
