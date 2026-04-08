@@ -118,6 +118,33 @@ describe('Go workspace (go.work)', () => {
     });
 });
 
+const TMP_VENDOR = join(import.meta.dir, '../fixtures/go-vendor-tmp');
+
+describe('Go vendor directory', () => {
+    test('setup', () => {
+        rmSync(TMP_VENDOR, { recursive: true, force: true });
+        mkdirSync(join(TMP_VENDOR, 'vendor/github.com/thirdparty/lib'), { recursive: true });
+        mkdirSync(join(TMP_VENDOR, 'pkg'), { recursive: true });
+
+        writeFileSync(join(TMP_VENDOR, 'go.mod'), 'module github.com/acme/vendored\n\ngo 1.21\n');
+        writeFileSync(join(TMP_VENDOR, 'vendor/github.com/thirdparty/lib/lib.go'), 'package lib\n');
+        writeFileSync(join(TMP_VENDOR, 'main.go'), 'package main\n');
+        clearCache();
+    });
+
+    test('resolves vendored dependency', () => {
+        const result = resolve('', 'github.com/thirdparty/lib', TMP_VENDOR);
+        expect(result).not.toBeNull();
+        expect(result).toContain('vendor');
+        expect(result).toContain('lib.go');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_VENDOR, { recursive: true, force: true });
+        clearCache();
+    });
+});
+
 describe('Go CGo sentinel', () => {
     test('import "C" returns null', () => {
         clearCache();

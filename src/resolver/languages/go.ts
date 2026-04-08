@@ -195,5 +195,10 @@ export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: stri
         }
     }
 
+    // 4. Try vendor directory
+    const vendorDir = join(repoRoot, 'vendor', modulePath);
+    const vendorResult = findGoFile(vendorDir);
+    if (vendorResult) return vendorResult;
+
     return null;
 }
