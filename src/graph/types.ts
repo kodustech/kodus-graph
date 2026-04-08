@@ -7,6 +7,7 @@ export type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED
 // ── Graph node (matches ast_nodes table) ──
 export interface GraphNode {
     kind: NodeKind;
+    ast_kind?: string;
     name: string;
     qualified_name: string;
     file_path: string;
@@ -184,6 +185,7 @@ export interface RawFunction {
     params: string;
     returnType: string;
     kind: 'Function' | 'Method' | 'Constructor';
+    ast_kind: string;
     className: string;
     qualified: string;
     content_hash?: string;
@@ -195,7 +197,8 @@ export interface RawClass {
     line_start: number;
     line_end: number;
     extends: string;
-    implements: string;
+    implements: string[];
+    ast_kind: string;
     qualified: string;
     content_hash?: string;
 }
@@ -206,6 +209,7 @@ export interface RawInterface {
     line_start: number;
     line_end: number;
     methods: string[];
+    ast_kind: string;
     qualified: string;
     content_hash?: string;
 }
@@ -215,6 +219,7 @@ export interface RawEnum {
     file: string;
     line_start: number;
     line_end: number;
+    ast_kind: string;
     qualified: string;
     content_hash?: string;
 }
@@ -224,6 +229,7 @@ export interface RawTest {
     file: string;
     line_start: number;
     line_end: number;
+    ast_kind: string;
     qualified: string;
     content_hash?: string;
 }
