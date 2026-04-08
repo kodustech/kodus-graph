@@ -201,3 +201,37 @@ describe('Java Kotlin interop', () => {
         rmSync(TMP_KOTLIN, { recursive: true, force: true });
     });
 });
+
+const TMP_SRCSET = join(import.meta.dir, '../fixtures/java-srcset-tmp');
+
+describe('Java Gradle custom sourceSets', () => {
+    test('setup', () => {
+        rmSync(TMP_SRCSET, { recursive: true, force: true });
+        mkdirSync(join(TMP_SRCSET, 'app/src/generated/java/com/example/gen'), { recursive: true });
+
+        writeFileSync(join(TMP_SRCSET, 'settings.gradle'), "include ':app'\n");
+        writeFileSync(join(TMP_SRCSET, 'app/build.gradle'), [
+            'sourceSets {',
+            '    main {',
+            '        java {',
+            "            srcDirs = ['src/main/java', 'src/generated/java']",
+            '        }',
+            '    }',
+            '}',
+        ].join('\n'));
+        writeFileSync(
+            join(TMP_SRCSET, 'app/src/generated/java/com/example/gen/Generated.java'),
+            'package com.example.gen;\npublic class Generated {}\n',
+        );
+    });
+
+    test('resolves class in custom sourceSet directory', () => {
+        const result = resolve('', 'com.example.gen.Generated', TMP_SRCSET);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Generated.java');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_SRCSET, { recursive: true, force: true });
+    });
+});

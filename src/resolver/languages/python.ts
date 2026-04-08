@@ -5,6 +5,7 @@
  * Walks up directories to find packages.
  */
 
+import { readFileSync } from 'fs';
 import { dirname, join, resolve as resolvePath } from 'path';
 import { cachedExists } from '../fs-cache';
 
@@ -55,6 +56,89 @@ export function resolve(fromAbsFile: string, modulePath: string, _repoRoot: stri
             break;
         }
         current = parent;
+    }
+
+    // Fallback: check setup.cfg for package_dir directive (e.g., package_dir = = src)
+    const setupCfgResult = resolveViaSetupCfg(parts, _repoRoot);
+    if (setupCfgResult) {
+        return setupCfgResult;
+    }
+
+    // Fallback: check pyproject.toml for package-dir (e.g., [tool.setuptools.package-dir] "" = "src")
+    const pyprojectResult = resolveViaPyprojectPackageDir(parts, _repoRoot);
+    if (pyprojectResult) {
+        return pyprojectResult;
+    }
+
+    return null;
+}
+
+/**
+ * Try resolving via setup.cfg package_dir directive.
+ * Looks for patterns like:
+ *   [options]
+ *   package_dir =
+ *       = src
+ * which means the root package directory is "src/".
+ */
+function resolveViaSetupCfg(relPath: string, repoRoot: string): string | null {
+    const setupCfgPath = join(repoRoot, 'setup.cfg');
+    if (!cachedExists(setupCfgPath)) {
+        return null;
+    }
+
+    try {
+        const content = readFileSync(setupCfgPath, 'utf-8');
+
+        // Look for package_dir under [options]
+        // Common patterns:
+        //   package_dir =
+        //       = src
+        //   package_dir = = src
+        const packageDirRegex = /package_dir\s*=\s*(?:\n\s+)?=\s*(\S+)/;
+        const match = packageDirRegex.exec(content);
+        if (match) {
+            const srcDir = match[1];
+            for (const candidate of [`${relPath}.py`, `${relPath}/__init__.py`]) {
+                const full = join(repoRoot, srcDir, candidate);
+                if (cachedExists(full)) {
+                    return resolvePath(full);
+                }
+            }
+        }
+    } catch {
+        // setup.cfg read failed, continue
+    }
+
+    return null;
+}
+
+/**
+ * Try resolving via pyproject.toml [tool.setuptools.package-dir] directive.
+ */
+function resolveViaPyprojectPackageDir(relPath: string, repoRoot: string): string | null {
+    const pyprojectPath = join(repoRoot, 'pyproject.toml');
+    if (!cachedExists(pyprojectPath)) {
+        return null;
+    }
+
+    try {
+        const content = readFileSync(pyprojectPath, 'utf-8');
+
+        // Look for [tool.setuptools.package-dir] section with "" = "src" or similar
+        const packageDirRegex = /\[tool\.setuptools\.package-dir\]\s*\n\s*""\s*=\s*"(\S+)"/;
+        const match = packageDirRegex.exec(content);
+        if (match) {
+            const srcDir = match[1];
+            for (const candidate of [`${relPath}.py`, `${relPath}/__init__.py`]) {
+                const full = join(repoRoot, srcDir, candidate);
+                if (cachedExists(full)) {
+                    return resolvePath(full);
+                }
+            }
+        }
+    } catch {
+        // pyproject.toml read failed, continue
     }
 
     return null;

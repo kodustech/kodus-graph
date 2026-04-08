@@ -214,3 +214,34 @@ describe('Python wildcard import with __all__', () => {
         rmSync(TMP_WILDCARD, { recursive: true, force: true });
     });
 });
+
+const TMP_SETUPCFG = join(import.meta.dir, '../fixtures/py-setupcfg-tmp');
+
+describe('Python setup.cfg package_dir', () => {
+    test('setup', () => {
+        rmSync(TMP_SETUPCFG, { recursive: true, force: true });
+        mkdirSync(join(TMP_SETUPCFG, 'src/mylib'), { recursive: true });
+
+        writeFileSync(join(TMP_SETUPCFG, 'setup.cfg'), [
+            '[options]',
+            'package_dir =',
+            '    = src',
+        ].join('\n'));
+        writeFileSync(join(TMP_SETUPCFG, 'src/mylib/__init__.py'), '');
+        writeFileSync(join(TMP_SETUPCFG, 'src/mylib/core.py'), 'class Core: pass\n');
+    });
+
+    test('resolves import with setup.cfg src layout', () => {
+        const result = resolve(
+            join(TMP_SETUPCFG, 'test_app.py'),
+            'mylib.core',
+            TMP_SETUPCFG,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('src/mylib/core.py');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_SETUPCFG, { recursive: true, force: true });
+    });
+});

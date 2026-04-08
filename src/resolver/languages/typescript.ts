@@ -200,8 +200,29 @@ function stripJsonComments(str: string): string {
 export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
     const aliases = new Map<string, string[]>();
 
+    loadTsconfigPathsInto(repoRoot, aliases);
+
+    return aliases;
+}
+
+/**
+ * Parse a tsconfig.json (and tsconfig.base.json) in the given directory
+ * and add its path aliases to the provided map.
+ */
+function loadTsconfigPathsInto(
+    dir: string,
+    aliases: Map<string, string[]>,
+    visited?: Set<string>,
+): void {
+    const seen = visited ?? new Set<string>();
+    const absDir = resolvePath(dir);
+    if (seen.has(absDir)) {
+        return;
+    }
+    seen.add(absDir);
+
     for (const filename of ['tsconfig.json', 'tsconfig.base.json']) {
-        const tsconfigPath = join(repoRoot, filename);
+        const tsconfigPath = join(dir, filename);
         if (!cachedExists(tsconfigPath)) {
             continue;
         }
@@ -212,25 +233,38 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
             const config = JSON.parse(cleaned);
             const paths = config?.compilerOptions?.paths;
             const baseUrl = config?.compilerOptions?.baseUrl || '.';
-            const baseDir = join(repoRoot, baseUrl);
+            const baseDir = join(dir, baseUrl);
 
             if (paths) {
                 for (const [alias, targets] of Object.entries(paths)) {
                     // Convert alias pattern: "@libs/*" -> prefix "@libs/"
                     const prefix = alias.replace('/*', '/').replace('*', '');
-                    const resolvedTargets = (targets as string[]).map((t) => {
-                        const targetPath = t.replace('/*', '').replace('*', '');
-                        return join(baseDir, targetPath);
-                    });
-                    aliases.set(prefix, resolvedTargets);
+                    if (!aliases.has(prefix)) {
+                        const resolvedTargets = (targets as string[]).map((t) => {
+                            const targetPath = t.replace('/*', '').replace('*', '');
+                            return join(baseDir, targetPath);
+                        });
+                        aliases.set(prefix, resolvedTargets);
+                    }
+                }
+            }
+
+            // Follow project references to discover aliases from referenced projects
+            const references = config?.references;
+            if (Array.isArray(references)) {
+                for (const ref of references) {
+                    if (ref && typeof ref.path === 'string') {
+                        const refDir = resolvePath(dir, ref.path);
+                        if (cachedExists(refDir)) {
+                            loadTsconfigPathsInto(refDir, aliases, seen);
+                        }
+                    }
                 }
             }
         } catch (err) {
             log.warn('Failed to parse tsconfig', { file: tsconfigPath, error: String(err) });
         }
     }
-
-    return aliases;
 }
 
 /**

@@ -35,6 +35,72 @@ function collectSourceRoots(repoRoot: string): string[] {
         break; // only read first settings file found
     }
 
+    // Discover custom sourceSets from build.gradle / build.gradle.kts in subprojects
+    const gradleFiles: { dir: string; file: string }[] = [];
+
+    // Collect build.gradle files: root + discovered subproject dirs
+    for (const buildFile of ['build.gradle', 'build.gradle.kts']) {
+        if (cachedExists(join(repoRoot, buildFile))) {
+            gradleFiles.push({ dir: '', file: buildFile });
+        }
+    }
+
+    // Also check subproject directories already discovered above
+    const subDirs = new Set<string>();
+    for (const r of roots) {
+        // Extract the subproject directory (everything before src/...)
+        const srcIdx = r.indexOf('/src');
+        if (srcIdx > 0) {
+            subDirs.add(r.slice(0, srcIdx));
+        }
+    }
+    for (const sub of subDirs) {
+        for (const buildFile of ['build.gradle', 'build.gradle.kts']) {
+            const buildPath = join(repoRoot, sub, buildFile);
+            if (cachedExists(buildPath)) {
+                gradleFiles.push({ dir: sub, file: join(sub, buildFile) });
+            }
+        }
+    }
+
+    for (const { dir, file } of gradleFiles) {
+        try {
+            const content = readFileSync(join(repoRoot, file), 'utf-8');
+
+            // Match: srcDirs = ['path1', 'path2']
+            const srcDirsArrayRegex = /srcDirs\s*=\s*\[([^\]]+)\]/g;
+            let sdMatch: RegExpExecArray | null = srcDirsArrayRegex.exec(content);
+            while (sdMatch !== null) {
+                const entries = sdMatch[1];
+                const pathRegex = /['"]([^'"]+)['"]/g;
+                let pathMatch: RegExpExecArray | null = pathRegex.exec(entries);
+                while (pathMatch !== null) {
+                    const srcDir = pathMatch[1];
+                    const root = dir ? join(dir, srcDir) : srcDir;
+                    if (!roots.includes(root)) {
+                        roots.push(root);
+                    }
+                    pathMatch = pathRegex.exec(entries);
+                }
+                sdMatch = srcDirsArrayRegex.exec(content);
+            }
+
+            // Match: srcDir 'path' or srcDir "path"
+            const srcDirSingleRegex = /srcDir\s+['"]([^'"]+)['"]/g;
+            let singleMatch: RegExpExecArray | null = srcDirSingleRegex.exec(content);
+            while (singleMatch !== null) {
+                const srcDir = singleMatch[1];
+                const root = dir ? join(dir, srcDir) : srcDir;
+                if (!roots.includes(root)) {
+                    roots.push(root);
+                }
+                singleMatch = srcDirSingleRegex.exec(content);
+            }
+        } catch {
+            // build.gradle read failed, continue
+        }
+    }
+
     // Discover Maven subprojects from pom.xml
     const pomPath = join(repoRoot, 'pom.xml');
     if (cachedExists(pomPath)) {

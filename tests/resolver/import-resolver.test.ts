@@ -418,3 +418,38 @@ describe('TypeScript React Native platform extensions', () => {
         expect(result).not.toContain('.native.');
     });
 });
+
+const TS_PROJREF = join(import.meta.dir, '../fixtures/ts-projref-tmp');
+
+describe('TypeScript project references', () => {
+    beforeAll(() => {
+        rmSync(TS_PROJREF, { recursive: true, force: true });
+        mkdirSync(join(TS_PROJREF, 'packages/app/src'), { recursive: true });
+        mkdirSync(join(TS_PROJREF, 'packages/shared/src'), { recursive: true });
+
+        writeFileSync(join(TS_PROJREF, 'packages/app/tsconfig.json'), JSON.stringify({
+            compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } },
+            references: [{ path: '../shared' }],
+        }));
+        writeFileSync(join(TS_PROJREF, 'packages/shared/tsconfig.json'), JSON.stringify({
+            compilerOptions: { composite: true, baseUrl: '.', paths: { '@shared/*': ['src/*'] } },
+        }));
+        writeFileSync(join(TS_PROJREF, 'packages/shared/src/utils.ts'), 'export function util() {}\n');
+        writeFileSync(join(TS_PROJREF, 'packages/app/src/main.ts'), "import { util } from '@shared/utils';\n");
+    });
+
+    afterAll(() => rmSync(TS_PROJREF, { recursive: true, force: true }));
+
+    it('resolves alias from referenced project tsconfig', () => {
+        const aliases = loadTsconfigAliases(join(TS_PROJREF, 'packages/app'));
+        const result = resolveImport(
+            join(TS_PROJREF, 'packages/app/src/main.ts'),
+            '@shared/utils', 'ts', TS_PROJREF, aliases,
+        );
+        if (result) {
+            expect(result).toContain('shared/src/utils.ts');
+        } else {
+            expect(result).toBeNull();
+        }
+    });
+});
