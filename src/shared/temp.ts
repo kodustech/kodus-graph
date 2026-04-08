@@ -11,7 +11,7 @@ import { join } from 'path';
  * Caller is responsible for cleanup (rmSync(dir, { recursive: true, force: true })).
  */
 export function createSecureTempFile(prefix: string): { dir: string; filePath: string } {
-  const dir = mkdtempSync(join(tmpdir(), `kodus-graph-${prefix}-`));
-  const filePath = join(dir, `${randomBytes(8).toString('hex')}.json`);
-  return { dir, filePath };
+    const dir = mkdtempSync(join(tmpdir(), `kodus-graph-${prefix}-`));
+    const filePath = join(dir, `${randomBytes(8).toString('hex')}.json`);
+    return { dir, filePath };
 }

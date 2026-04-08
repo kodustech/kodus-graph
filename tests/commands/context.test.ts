@@ -8,73 +8,73 @@ import { executeParse } from '../../src/commands/parse';
 import '../../src/parser/languages';
 
 describe('executeContext', () => {
-  const fixtureDir = resolve('tests/fixtures/sample-repo');
-  const parsePath = '/tmp/kodus-graph-test-ctx-parse.json';
-  const outPath = '/tmp/kodus-graph-test-context.json';
+    const fixtureDir = resolve('tests/fixtures/sample-repo');
+    const parsePath = '/tmp/kodus-graph-test-ctx-parse.json';
+    const outPath = '/tmp/kodus-graph-test-context.json';
 
-  it('should produce V2 context with graph and analysis sections', async () => {
-    await executeParse({
-      repoDir: fixtureDir,
-      all: true,
-      out: parsePath,
+    it('should produce V2 context with graph and analysis sections', async () => {
+        await executeParse({
+            repoDir: fixtureDir,
+            all: true,
+            out: parsePath,
+        });
+
+        await executeContext({
+            repoDir: fixtureDir,
+            files: ['src/auth.ts'],
+            graph: parsePath,
+            out: outPath,
+            minConfidence: 0.5,
+            maxDepth: 3,
+            format: 'json',
+        });
+
+        const output = JSON.parse(readFileSync(outPath, 'utf-8'));
+        expect(output).toHaveProperty('graph');
+        expect(output).toHaveProperty('analysis');
+        expect(output.graph).toHaveProperty('nodes');
+        expect(output.graph).toHaveProperty('edges');
+        expect(output.analysis).toHaveProperty('changed_functions');
+        expect(output.analysis).toHaveProperty('structural_diff');
+        expect(output.analysis).toHaveProperty('blast_radius');
+        expect(output.analysis).toHaveProperty('affected_flows');
+        expect(output.analysis).toHaveProperty('inheritance');
+        expect(output.analysis).toHaveProperty('test_gaps');
+        expect(output.analysis).toHaveProperty('risk');
+        expect(output.analysis.metadata.changed_functions_count).toBeGreaterThan(0);
+
+        rmSync(parsePath, { force: true });
+        rmSync(outPath, { force: true });
     });
 
-    await executeContext({
-      repoDir: fixtureDir,
-      files: ['src/auth.ts'],
-      graph: parsePath,
-      out: outPath,
-      minConfidence: 0.5,
-      maxDepth: 3,
-      format: 'json',
+    it('should produce prompt text with --format prompt', async () => {
+        const promptPath = '/tmp/kodus-graph-test-prompt.txt';
+
+        await executeParse({
+            repoDir: fixtureDir,
+            all: true,
+            out: parsePath,
+        });
+
+        await executeContext({
+            repoDir: fixtureDir,
+            files: ['src/auth.ts'],
+            graph: parsePath,
+            out: promptPath,
+            minConfidence: 0.5,
+            maxDepth: 3,
+            format: 'prompt',
+        });
+
+        const text = readFileSync(promptPath, 'utf-8');
+        expect(text).toContain('# Code Review Context');
+        expect(text).toContain('Risk:');
+        expect(text).toContain('## Changed Functions');
+        expect(text).toContain('authenticate');
+        expect(text).toContain('Callers:');
+        expect(text).toContain('Test coverage:');
+
+        rmSync(parsePath, { force: true });
+        rmSync(promptPath, { force: true });
     });
-
-    const output = JSON.parse(readFileSync(outPath, 'utf-8'));
-    expect(output).toHaveProperty('graph');
-    expect(output).toHaveProperty('analysis');
-    expect(output.graph).toHaveProperty('nodes');
-    expect(output.graph).toHaveProperty('edges');
-    expect(output.analysis).toHaveProperty('changed_functions');
-    expect(output.analysis).toHaveProperty('structural_diff');
-    expect(output.analysis).toHaveProperty('blast_radius');
-    expect(output.analysis).toHaveProperty('affected_flows');
-    expect(output.analysis).toHaveProperty('inheritance');
-    expect(output.analysis).toHaveProperty('test_gaps');
-    expect(output.analysis).toHaveProperty('risk');
-    expect(output.analysis.metadata.changed_functions_count).toBeGreaterThan(0);
-
-    rmSync(parsePath, { force: true });
-    rmSync(outPath, { force: true });
-  });
-
-  it('should produce prompt text with --format prompt', async () => {
-    const promptPath = '/tmp/kodus-graph-test-prompt.txt';
-
-    await executeParse({
-      repoDir: fixtureDir,
-      all: true,
-      out: parsePath,
-    });
-
-    await executeContext({
-      repoDir: fixtureDir,
-      files: ['src/auth.ts'],
-      graph: parsePath,
-      out: promptPath,
-      minConfidence: 0.5,
-      maxDepth: 3,
-      format: 'prompt',
-    });
-
-    const text = readFileSync(promptPath, 'utf-8');
-    expect(text).toContain('# Code Review Context');
-    expect(text).toContain('Risk:');
-    expect(text).toContain('## Changed Functions');
-    expect(text).toContain('authenticate');
-    expect(text).toContain('Callers:');
-    expect(text).toContain('Test coverage:');
-
-    rmSync(parsePath, { force: true });
-    rmSync(promptPath, { force: true });
-  });
 });

@@ -15,9 +15,9 @@ import { relative, resolve } from 'path';
 import { resolveImport } from './import-resolver';
 
 interface RawReExport {
-  module: string;
-  file: string;
-  line: number;
+    module: string;
+    file: string;
+    line: number;
 }
 
 /**
@@ -26,41 +26,47 @@ interface RawReExport {
  * Follows one level of re-exports (covers >95% of real-world barrel patterns).
  */
 export function buildReExportMap(
-  reExports: RawReExport[],
-  repoDir: string,
-  tsconfigAliases?: Map<string, string[]>,
+    reExports: RawReExport[],
+    repoDir: string,
+    tsconfigAliases?: Map<string, string[]>,
 ): Map<string, string[]> {
-  const barrelMap = new Map<string, string[]>();
+    const barrelMap = new Map<string, string[]>();
 
-  for (const re of reExports) {
-    const absFrom = resolve(repoDir, re.file);
-    const resolved = resolveImport(absFrom, re.module, 'typescript', repoDir, tsconfigAliases);
-    if (!resolved) continue;
-
-    const resolvedRel = relative(repoDir, resolved);
-    const list = barrelMap.get(re.file);
-    if (list) {
-      if (!list.includes(resolvedRel)) list.push(resolvedRel);
-    } else {
-      barrelMap.set(re.file, [resolvedRel]);
-    }
-  }
-
-  // Follow one extra level: if a re-export target is itself a barrel, flatten
-  for (const [barrel, targets] of barrelMap) {
-    const extra: string[] = [];
-    for (const target of targets) {
-      const nested = barrelMap.get(target);
-      if (nested) {
-        for (const n of nested) {
-          if (n !== barrel && !targets.includes(n) && !extra.includes(n)) {
-            extra.push(n);
-          }
+    for (const re of reExports) {
+        const absFrom = resolve(repoDir, re.file);
+        const resolved = resolveImport(absFrom, re.module, 'typescript', repoDir, tsconfigAliases);
+        if (!resolved) {
+            continue;
         }
-      }
-    }
-    if (extra.length > 0) targets.push(...extra);
-  }
 
-  return barrelMap;
+        const resolvedRel = relative(repoDir, resolved);
+        const list = barrelMap.get(re.file);
+        if (list) {
+            if (!list.includes(resolvedRel)) {
+                list.push(resolvedRel);
+            }
+        } else {
+            barrelMap.set(re.file, [resolvedRel]);
+        }
+    }
+
+    // Follow one extra level: if a re-export target is itself a barrel, flatten
+    for (const [barrel, targets] of barrelMap) {
+        const extra: string[] = [];
+        for (const target of targets) {
+            const nested = barrelMap.get(target);
+            if (nested) {
+                for (const n of nested) {
+                    if (n !== barrel && !targets.includes(n) && !extra.includes(n)) {
+                        extra.push(n);
+                    }
+                }
+            }
+        }
+        if (extra.length > 0) {
+            targets.push(...extra);
+        }
+    }
+
+    return barrelMap;
 }

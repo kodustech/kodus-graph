@@ -1,2 +1,12 @@
+[install]
+peer = false
+optional = true
+
+[install.scopes]
+# Block lifecycle scripts from dependencies (supply chain protection)
+
+[install.lifecycle]
+ignore = true
+
 [test]
 timeout = 30000

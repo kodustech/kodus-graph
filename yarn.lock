@@ -170,7 +170,7 @@
   resolved "https://registry.npmjs.org/@biomejs/cli-win32-x64/-/cli-win32-x64-2.4.10.tgz#fcd5c63f96f7342e55cd66df25f3d20a12cbf621"
   integrity sha512-aW/JU5GuyH4uxMrNYpoC2kjaHlyJGLgIa3XkhPEZI0uKhZhJZU8BuEyJmvgzSPQNGozBwWjC972RaNdcJ9KyJg==
 
-"@types/bun@latest":
+"@types/bun@^1.3.11":
   version "1.3.11"
   resolved "https://registry.npmjs.org/@types/bun/-/bun-1.3.11.tgz#621d278054d66c524e1137eff95831081183d466"
   integrity sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg==

@@ -7,21 +7,23 @@
  */
 
 export interface ImportMap {
-  add(file: string, name: string, targetFile: string): void;
-  lookup(file: string, name: string): string | null;
+    add(file: string, name: string, targetFile: string): void;
+    lookup(file: string, name: string): string | null;
 }
 
 export function createImportMap(): ImportMap {
-  const map = new Map<string, Map<string, string>>();
+    const map = new Map<string, Map<string, string>>();
 
-  return {
-    add(file, name, targetFile) {
-      if (!map.has(file)) map.set(file, new Map());
-      map.get(file)!.set(name, targetFile);
-    },
+    return {
+        add(file, name, targetFile) {
+            if (!map.has(file)) {
+                map.set(file, new Map());
+            }
+            map.get(file)!.set(name, targetFile);
+        },
 
-    lookup(file, name) {
-      return map.get(file)?.get(name) ?? null;
-    },
-  };
+        lookup(file, name) {
+            return map.get(file)?.get(name) ?? null;
+        },
+    };
 }

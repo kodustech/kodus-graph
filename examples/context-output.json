@@ -1,0 +1,683 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "kind": "Method",
+        "name": "getProfile",
+        "qualified_name": "src/user.service.ts::UserService.getProfile",
+        "file_path": "src/user.service.ts",
+        "line_start": 1,
+        "line_end": 3,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "812161c35b8ddf7e0108f138224f08298d03211a7b5697b6ce683f6e8e91555b",
+        "content_hash": "1429446d602c5f2dac86b86ba8b84b932bc2c032ee1eb1e6c35e68c09aa7df4e",
+        "parent_name": "UserService",
+        "params": "(userId: number)",
+        "return_type": "Promise<Profile>"
+      },
+      {
+        "kind": "Constructor",
+        "name": "AuthController.constructor",
+        "qualified_name": "src/controller.ts::AuthController.constructor",
+        "file_path": "src/controller.ts",
+        "line_start": 4,
+        "line_end": 7,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "b3efa29415716f1ea22d6247e699e96c347856d6ba37752178c0f9c8a6e48cf2",
+        "content_hash": "813be258320164c25be9d1d2da3c53d5db513991cb01bbafd4e882010dd22e62",
+        "parent_name": "AuthController",
+        "params": "(\n    private readonly authService: AuthService,\n    private readonly userService: UserService,\n  )"
+      },
+      {
+        "kind": "Method",
+        "name": "login",
+        "qualified_name": "src/controller.ts::AuthController.login",
+        "file_path": "src/controller.ts",
+        "line_start": 9,
+        "line_end": 12,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "b3efa29415716f1ea22d6247e699e96c347856d6ba37752178c0f9c8a6e48cf2",
+        "content_hash": "f8d1878536827f9372ac45cd039ed484f959f3b74646a4fe2dfc2f0c989f0c75",
+        "parent_name": "AuthController",
+        "params": "(req: Request)",
+        "return_type": "Promise<Response>"
+      },
+      {
+        "kind": "Function",
+        "name": "findUser",
+        "qualified_name": "src/db.ts::findUser",
+        "file_path": "src/db.ts",
+        "line_start": 0,
+        "line_end": 2,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "3709c3b9e7d13f288436d11607397672c1bd71930ee58583936c81fa512ce54f",
+        "content_hash": "e1c23d205f61473f9f25f7d984d00239049996966d1feec8e4a9a774764017b9",
+        "params": "(id: number)",
+        "return_type": "Promise<User | null>"
+      },
+      {
+        "kind": "Function",
+        "name": "saveUser",
+        "qualified_name": "src/db.ts::saveUser",
+        "file_path": "src/db.ts",
+        "line_start": 4,
+        "line_end": 4,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "3709c3b9e7d13f288436d11607397672c1bd71930ee58583936c81fa512ce54f",
+        "content_hash": "c692bfaaf80164098d1126fd11914034731f6384f41c58f5e7c24cd69d8574b3",
+        "params": "(user: User)",
+        "return_type": "Promise<void>"
+      },
+      {
+        "kind": "Class",
+        "name": "UserService",
+        "qualified_name": "src/user.service.ts::UserService",
+        "file_path": "src/user.service.ts",
+        "line_start": 0,
+        "line_end": 4,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "812161c35b8ddf7e0108f138224f08298d03211a7b5697b6ce683f6e8e91555b",
+        "content_hash": "6f918c30b8354011c4f0a56816160430bdcec5d2f70f0388b0fcc151961f1b4e"
+      },
+      {
+        "kind": "Class",
+        "name": "AuthController",
+        "qualified_name": "src/controller.ts::AuthController",
+        "file_path": "src/controller.ts",
+        "line_start": 3,
+        "line_end": 13,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "b3efa29415716f1ea22d6247e699e96c347856d6ba37752178c0f9c8a6e48cf2",
+        "content_hash": "d1af9f5d21a9bfcded01aadd26878227a265cc7726c38f3f0ad2ddb65a20b8ab"
+      },
+      {
+        "kind": "Test",
+        "name": "AuthService",
+        "qualified_name": "tests/auth.test.ts::test:AuthService",
+        "file_path": "tests/auth.test.ts",
+        "line_start": 2,
+        "line_end": 12,
+        "language": "typescript",
+        "is_test": true,
+        "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+        "content_hash": "27a5760e1484f2780ba1056b833f0dc9111f4e7e332ca63d61ad5995310ab49a"
+      },
+      {
+        "kind": "Test",
+        "name": "should authenticate valid user",
+        "qualified_name": "tests/auth.test.ts::test:should authenticate valid user",
+        "file_path": "tests/auth.test.ts",
+        "line_start": 3,
+        "line_end": 6,
+        "language": "typescript",
+        "is_test": true,
+        "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+        "content_hash": "a05fd413d73d474cacb0f096940838e7c08a91b4e7ef99bd3e75c7bf3b6bdd13"
+      },
+      {
+        "kind": "Test",
+        "name": "verifyToken returns true for non-empty",
+        "qualified_name": "tests/auth.test.ts::test:verifyToken returns true for non-empty",
+        "file_path": "tests/auth.test.ts",
+        "line_start": 8,
+        "line_end": 11,
+        "language": "typescript",
+        "is_test": true,
+        "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+        "content_hash": "fc57696babdd2781291da0e8a38a411f84de6ef5357a98b85834109e72e2319c"
+      },
+      {
+        "kind": "Constructor",
+        "name": "AuthService.constructor",
+        "qualified_name": "src/auth.ts::AuthService.constructor",
+        "file_path": "src/auth.ts",
+        "line_start": 8,
+        "line_end": 8,
+        "language": "typescript",
+        "parent_name": "AuthService",
+        "params": "(private readonly config: AuthConfig)",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "7c4569d532c69328ec6f1354f2139fbda05369536465e12b89523c55c5234549"
+      },
+      {
+        "kind": "Method",
+        "name": "authenticate",
+        "qualified_name": "src/auth.ts::AuthService.authenticate",
+        "file_path": "src/auth.ts",
+        "line_start": 10,
+        "line_end": 14,
+        "language": "typescript",
+        "parent_name": "AuthService",
+        "params": "(ctx: Context)",
+        "return_type": "Promise<Result>",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "6b0fbc161c5b356dee65c673faf5fffb48c2372583074f84a2af9a1ffa1e87cf"
+      },
+      {
+        "kind": "Method",
+        "name": "verifyToken",
+        "qualified_name": "src/auth.ts::AuthService.verifyToken",
+        "file_path": "src/auth.ts",
+        "line_start": 16,
+        "line_end": 18,
+        "language": "typescript",
+        "parent_name": "AuthService",
+        "params": "(token: string)",
+        "return_type": "boolean",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "805832f70ee62e8958a486b6af63dc7cbbfb5a6352051937f9fc7a65e607f92f"
+      },
+      {
+        "kind": "Function",
+        "name": "hashPassword",
+        "qualified_name": "src/auth.ts::hashPassword",
+        "file_path": "src/auth.ts",
+        "line_start": 21,
+        "line_end": 23,
+        "language": "typescript",
+        "params": "(password: string)",
+        "return_type": "string",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "35dfdf6bf22a2d7b67129eaea4625f17bbfc922c88548ebb26bdd36ffaaec8b3"
+      },
+      {
+        "kind": "Function",
+        "name": "validateEmail",
+        "qualified_name": "src/auth.ts::validateEmail",
+        "file_path": "src/auth.ts",
+        "line_start": 25,
+        "line_end": 27,
+        "language": "typescript",
+        "params": "(email: string)",
+        "return_type": "boolean",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "cf5e26647fb5296b40576c2563e934f9c8450a97bdc48639ce0263c254102e3c"
+      },
+      {
+        "kind": "Class",
+        "name": "AuthService",
+        "qualified_name": "src/auth.ts::AuthService",
+        "file_path": "src/auth.ts",
+        "line_start": 7,
+        "line_end": 19,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "72d835e026126f79a2b2c538e6388c4aed73c4903c0a3f5498209cd25db0ead8"
+      },
+      {
+        "kind": "Interface",
+        "name": "AuthConfig",
+        "qualified_name": "src/auth.ts::AuthConfig",
+        "file_path": "src/auth.ts",
+        "line_start": 2,
+        "line_end": 5,
+        "language": "typescript",
+        "is_test": false,
+        "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
+        "content_hash": "23cf2fcb9b456e6fc979dce6cc18f4d302607f5fc29a00643d3ad8ab1768ca9f"
+      }
+    ],
+    "edges": [
+      {
+        "kind": "CALLS",
+        "source_qualified": "tests/auth.test.ts::test:verifyToken returns true for non-empty",
+        "target_qualified": "src/auth.ts::AuthService.verifyToken",
+        "file_path": "tests/auth.test.ts",
+        "line": 10,
+        "confidence": 0.5
+      },
+      {
+        "kind": "CALLS",
+        "source_qualified": "src/controller.ts::AuthController.login",
+        "target_qualified": "src/auth.ts::AuthService.authenticate",
+        "file_path": "src/controller.ts",
+        "line": 10,
+        "confidence": 0.95
+      },
+      {
+        "kind": "IMPORTS",
+        "source_qualified": "tests/auth.test.ts",
+        "target_qualified": "src/auth.ts",
+        "file_path": "tests/auth.test.ts",
+        "line": 0
+      },
+      {
+        "kind": "IMPORTS",
+        "source_qualified": "src/controller.ts",
+        "target_qualified": "src/auth.ts",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "IMPORTS",
+        "source_qualified": "src/controller.ts",
+        "target_qualified": "src/user.service.ts",
+        "file_path": "src/controller.ts",
+        "line": 1
+      },
+      {
+        "kind": "TESTED_BY",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "tests/auth.test.ts",
+        "file_path": "tests/auth.test.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/user.service.ts",
+        "target_qualified": "src/user.service.ts::UserService.getProfile",
+        "file_path": "src/user.service.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/controller.ts",
+        "target_qualified": "src/controller.ts::AuthController.constructor",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/controller.ts",
+        "target_qualified": "src/controller.ts::AuthController.login",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/db.ts",
+        "target_qualified": "src/db.ts::findUser",
+        "file_path": "src/db.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/db.ts",
+        "target_qualified": "src/db.ts::saveUser",
+        "file_path": "src/db.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/user.service.ts",
+        "target_qualified": "src/user.service.ts::UserService",
+        "file_path": "src/user.service.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/controller.ts",
+        "target_qualified": "src/controller.ts::AuthController",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "CALLS",
+        "source_qualified": "src/auth.ts::AuthService.authenticate",
+        "target_qualified": "src/db.ts::findUser",
+        "file_path": "src/auth.ts",
+        "line": 11,
+        "confidence": 0.7
+      },
+      {
+        "kind": "IMPORTS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/db.ts",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::AuthService.constructor",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::AuthService.authenticate",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::AuthService.verifyToken",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::hashPassword",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::validateEmail",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
+        "kind": "CONTAINS",
+        "source_qualified": "src/auth.ts",
+        "target_qualified": "src/auth.ts::AuthService",
+        "file_path": "src/auth.ts",
+        "line": 0
+      }
+    ],
+    "metadata": {
+      "repo_dir": "",
+      "files_parsed": 1,
+      "total_nodes": 17,
+      "total_edges": 21,
+      "duration_ms": 0,
+      "parse_errors": 0,
+      "extract_errors": 0
+    }
+  },
+  "analysis": {
+    "changed_functions": [
+      {
+        "qualified_name": "src/auth.ts::AuthService.authenticate",
+        "name": "authenticate",
+        "kind": "Method",
+        "signature": "authenticate(ctx: Context) -> Promise<Result>",
+        "file_path": "src/auth.ts",
+        "line_start": 10,
+        "line_end": 14,
+        "callers": [
+          {
+            "qualified_name": "src/controller.ts::AuthController.login",
+            "name": "login",
+            "file_path": "src/controller.ts",
+            "line": 10,
+            "confidence": 0.95
+          }
+        ],
+        "callees": [
+          {
+            "qualified_name": "src/db.ts::findUser",
+            "name": "findUser",
+            "file_path": "src/db.ts",
+            "signature": "findUser(id: number) -> Promise<User | null>"
+          }
+        ],
+        "has_test_coverage": true,
+        "diff_changes": [],
+        "is_new": true,
+        "in_flows": [
+          "src/controller.ts::AuthController.login"
+        ]
+      },
+      {
+        "qualified_name": "src/auth.ts::AuthService.verifyToken",
+        "name": "verifyToken",
+        "kind": "Method",
+        "signature": "verifyToken(token: string) -> boolean",
+        "file_path": "src/auth.ts",
+        "line_start": 16,
+        "line_end": 18,
+        "callers": [
+          {
+            "qualified_name": "tests/auth.test.ts::test:verifyToken returns true for non-empty",
+            "name": "verifyToken returns true for non-empty",
+            "file_path": "tests/auth.test.ts",
+            "line": 10,
+            "confidence": 0.5
+          }
+        ],
+        "callees": [],
+        "has_test_coverage": true,
+        "diff_changes": [],
+        "is_new": true,
+        "in_flows": [
+          "tests/auth.test.ts::test:verifyToken returns true for non-empty"
+        ]
+      },
+      {
+        "qualified_name": "src/auth.ts::hashPassword",
+        "name": "hashPassword",
+        "kind": "Function",
+        "signature": "hashPassword(password: string) -> string",
+        "file_path": "src/auth.ts",
+        "line_start": 21,
+        "line_end": 23,
+        "callers": [],
+        "callees": [],
+        "has_test_coverage": true,
+        "diff_changes": [],
+        "is_new": true,
+        "in_flows": []
+      },
+      {
+        "qualified_name": "src/auth.ts::validateEmail",
+        "name": "validateEmail",
+        "kind": "Function",
+        "signature": "validateEmail(email: string) -> boolean",
+        "file_path": "src/auth.ts",
+        "line_start": 25,
+        "line_end": 27,
+        "callers": [],
+        "callees": [],
+        "has_test_coverage": true,
+        "diff_changes": [],
+        "is_new": true,
+        "in_flows": []
+      }
+    ],
+    "structural_diff": {
+      "changed_files": [
+        "src/auth.ts"
+      ],
+      "summary": {
+        "added": 7,
+        "removed": 0,
+        "modified": 0
+      },
+      "nodes": {
+        "added": [
+          {
+            "qualified_name": "src/auth.ts::AuthService.constructor",
+            "kind": "Constructor",
+            "file_path": "src/auth.ts",
+            "line_start": 8,
+            "line_end": 8
+          },
+          {
+            "qualified_name": "src/auth.ts::AuthService.authenticate",
+            "kind": "Method",
+            "file_path": "src/auth.ts",
+            "line_start": 10,
+            "line_end": 14
+          },
+          {
+            "qualified_name": "src/auth.ts::AuthService.verifyToken",
+            "kind": "Method",
+            "file_path": "src/auth.ts",
+            "line_start": 16,
+            "line_end": 18
+          },
+          {
+            "qualified_name": "src/auth.ts::hashPassword",
+            "kind": "Function",
+            "file_path": "src/auth.ts",
+            "line_start": 21,
+            "line_end": 23
+          },
+          {
+            "qualified_name": "src/auth.ts::validateEmail",
+            "kind": "Function",
+            "file_path": "src/auth.ts",
+            "line_start": 25,
+            "line_end": 27
+          },
+          {
+            "qualified_name": "src/auth.ts::AuthService",
+            "kind": "Class",
+            "file_path": "src/auth.ts",
+            "line_start": 7,
+            "line_end": 19
+          },
+          {
+            "qualified_name": "src/auth.ts::AuthConfig",
+            "kind": "Interface",
+            "file_path": "src/auth.ts",
+            "line_start": 2,
+            "line_end": 5
+          }
+        ],
+        "removed": [],
+        "modified": []
+      },
+      "edges": {
+        "added": [
+          {
+            "kind": "CALLS",
+            "source_qualified": "src/auth.ts::AuthService.authenticate",
+            "target_qualified": "src/db.ts::findUser"
+          },
+          {
+            "kind": "IMPORTS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/db.ts"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::AuthService.constructor"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::AuthService.authenticate"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::AuthService.verifyToken"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::hashPassword"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::validateEmail"
+          },
+          {
+            "kind": "CONTAINS",
+            "source_qualified": "src/auth.ts",
+            "target_qualified": "src/auth.ts::AuthService"
+          }
+        ],
+        "removed": []
+      },
+      "risk_by_file": {
+        "src/auth.ts": {
+          "dependents": 0,
+          "risk": "LOW"
+        }
+      }
+    },
+    "blast_radius": {
+      "total_functions": 9,
+      "total_files": 3,
+      "by_depth": {
+        "1": [
+          "src/controller.ts::AuthController.login",
+          "tests/auth.test.ts::test:verifyToken returns true for non-empty"
+        ]
+      }
+    },
+    "affected_flows": [
+      {
+        "entry_point": "src/controller.ts::AuthController.login",
+        "type": "http",
+        "touches_changed": [
+          "src/auth.ts::AuthService.authenticate"
+        ],
+        "depth": 2,
+        "path": [
+          "src/controller.ts::AuthController.login",
+          "src/auth.ts::AuthService.authenticate",
+          "src/db.ts::findUser"
+        ]
+      },
+      {
+        "entry_point": "tests/auth.test.ts::test:verifyToken returns true for non-empty",
+        "type": "test",
+        "touches_changed": [
+          "src/auth.ts::AuthService.verifyToken"
+        ],
+        "depth": 1,
+        "path": [
+          "tests/auth.test.ts::test:verifyToken returns true for non-empty",
+          "src/auth.ts::AuthService.verifyToken"
+        ]
+      }
+    ],
+    "inheritance": [
+      {
+        "qualified_name": "src/auth.ts::AuthService",
+        "file_path": "src/auth.ts",
+        "implements": [],
+        "children": []
+      }
+    ],
+    "test_gaps": [],
+    "risk": {
+      "level": "LOW",
+      "score": 0.17,
+      "factors": {
+        "blast_radius": {
+          "weight": 0.35,
+          "value": 0.45,
+          "detail": "9 functions, 3 files"
+        },
+        "test_gaps": {
+          "weight": 0.3,
+          "value": 0,
+          "detail": "0/4 untested"
+        },
+        "complexity": {
+          "weight": 0.2,
+          "value": 0.07,
+          "detail": "avg 4 lines"
+        },
+        "inheritance": {
+          "weight": 0.15,
+          "value": 0,
+          "detail": "no inheritance"
+        }
+      }
+    },
+    "metadata": {
+      "changed_functions_count": 4,
+      "total_callers": 2,
+      "total_callees": 1,
+      "untested_count": 0,
+      "affected_flows_count": 2,
+      "duration_ms": 2,
+      "min_confidence": 0.5
+    }
+  }
+}

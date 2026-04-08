@@ -17,16 +17,16 @@ import { resolve as resolveRustImport } from './languages/rust';
 import { loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
 
 const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
-  ts: resolveTsImport,
-  javascript: resolveTsImport,
-  typescript: resolveTsImport,
-  python: resolvePyImport,
-  ruby: resolveRbImport,
-  go: resolveGoImport,
-  java: resolveJavaImport,
-  rust: resolveRustImport,
-  csharp: resolveCsImport,
-  php: resolvePhpImport,
+    ts: resolveTsImport,
+    javascript: resolveTsImport,
+    typescript: resolveTsImport,
+    python: resolvePyImport,
+    ruby: resolveRbImport,
+    go: resolveGoImport,
+    java: resolveJavaImport,
+    rust: resolveRustImport,
+    csharp: resolveCsImport,
+    php: resolvePhpImport,
 };
 
 /**
@@ -40,33 +40,39 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
  * @returns Absolute path to the resolved file, or null if unresolvable
  */
 export function resolveImport(
-  fromAbsFile: string,
-  modulePath: string,
-  lang: string,
-  repoRoot: string,
-  tsconfigAliases?: Map<string, string[]>,
+    fromAbsFile: string,
+    modulePath: string,
+    lang: string,
+    repoRoot: string,
+    tsconfigAliases?: Map<string, string[]>,
 ): string | null {
-  const resolver = RESOLVERS[lang];
-  if (!resolver) return null;
-
-  let result = resolver(fromAbsFile, modulePath, repoRoot);
-
-  // Fallback: tsconfig aliases for TS/JS
-  if (!result && (lang === 'ts' || lang === 'javascript' || lang === 'typescript') && tsconfigAliases?.size) {
-    result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
-  }
-
-  // Validate resolved path is within repo root
-  if (result) {
-    try {
-      ensureWithinRoot(result, repoRoot);
-    } catch {
-      log.warn('Import resolves outside repository root', { from: fromAbsFile, module: modulePath, resolved: result });
-      return null;
+    const resolver = RESOLVERS[lang];
+    if (!resolver) {
+        return null;
     }
-  }
 
-  return result;
+    let result = resolver(fromAbsFile, modulePath, repoRoot);
+
+    // Fallback: tsconfig aliases for TS/JS
+    if (!result && (lang === 'ts' || lang === 'javascript' || lang === 'typescript') && tsconfigAliases?.size) {
+        result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
+    }
+
+    // Validate resolved path is within repo root
+    if (result) {
+        try {
+            ensureWithinRoot(result, repoRoot);
+        } catch {
+            log.warn('Import resolves outside repository root', {
+                from: fromAbsFile,
+                module: modulePath,
+                resolved: result,
+            });
+            return null;
+        }
+    }
+
+    return result;
 }
 
 export { loadTsconfigAliases };

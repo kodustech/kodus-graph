@@ -6,12 +6,13 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "declaration": true,
-    "sourceMap": true,
+    "isolatedModules": true,
+
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": ".",
+    "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist", "tests/fixtures"]
 }

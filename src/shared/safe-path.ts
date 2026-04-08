@@ -7,25 +7,25 @@ import { relative, resolve } from 'path';
  * Throws if the path escapes the root.
  */
 export function ensureWithinRoot(filePath: string, repoRoot: string): string {
-  let absRoot: string;
-  try {
-    absRoot = realpathSync(resolve(repoRoot));
-  } catch {
-    absRoot = resolve(repoRoot);
-  }
+    let absRoot: string;
+    try {
+        absRoot = realpathSync(resolve(repoRoot));
+    } catch {
+        absRoot = resolve(repoRoot);
+    }
 
-  let absPath: string;
-  try {
-    absPath = realpathSync(resolve(absRoot, filePath));
-  } catch {
-    // File doesn't exist yet or is unreadable — use resolve without symlink follow
-    absPath = resolve(absRoot, filePath);
-  }
+    let absPath: string;
+    try {
+        absPath = realpathSync(resolve(absRoot, filePath));
+    } catch {
+        // File doesn't exist yet or is unreadable — use resolve without symlink follow
+        absPath = resolve(absRoot, filePath);
+    }
 
-  const rel = relative(absRoot, absPath);
-  if (rel.startsWith('..') || resolve(absRoot, rel) !== absPath) {
-    throw new Error(`Path escapes repository root: ${filePath}`);
-  }
+    const rel = relative(absRoot, absPath);
+    if (rel.startsWith('..') || resolve(absRoot, rel) !== absPath) {
+        throw new Error(`Path escapes repository root: ${filePath}`);
+    }
 
-  return absPath;
+    return absPath;
 }

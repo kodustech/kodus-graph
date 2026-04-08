@@ -6,20 +6,22 @@ import type { GraphData, MainGraphInput } from './types';
  * Keeps everything else from the main graph intact.
  */
 export function mergeGraphs(
-  mainGraph: MainGraphInput | null,
-  localParse: GraphData,
-  changedFiles: string[],
+    mainGraph: MainGraphInput | null,
+    localParse: GraphData,
+    changedFiles: string[],
 ): GraphData {
-  if (!mainGraph) return localParse;
+    if (!mainGraph) {
+        return localParse;
+    }
 
-  const changedSet = new Set(changedFiles);
+    const changedSet = new Set(changedFiles);
 
-  // Keep main graph nodes/edges NOT in changed files
-  const mainNodes = mainGraph.nodes.filter((n) => !changedSet.has(n.file_path));
-  const mainEdges = mainGraph.edges.filter((e) => !changedSet.has(e.file_path));
+    // Keep main graph nodes/edges NOT in changed files
+    const mainNodes = mainGraph.nodes.filter((n) => !changedSet.has(n.file_path));
+    const mainEdges = mainGraph.edges.filter((e) => !changedSet.has(e.file_path));
 
-  return {
-    nodes: [...mainNodes, ...localParse.nodes],
-    edges: [...mainEdges, ...localParse.edges],
-  };
+    return {
+        nodes: [...mainNodes, ...localParse.nodes],
+        edges: [...mainEdges, ...localParse.edges],
+    };
 }
