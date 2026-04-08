@@ -34,8 +34,16 @@ function goTypeName(node: SgNode): string | undefined {
  * Returns true if the function should be considered a test based on file-path
  * and function-name conventions defined in config.tests.
  *
- * Go convention: BOTH filePattern AND funcPattern must match.
- * Other languages: either filePattern OR funcPattern matching is sufficient.
+ * File patterns and func patterns are independent OR conditions:
+ * - If the file matches a filePattern → it's a test (regardless of func name)
+ * - If the func name matches a funcPattern → it's a test (regardless of file name)
+ *
+ * Exception: Go requires BOTH filePattern AND funcPattern to match (reflected in
+ * goConfig having both patterns where only their intersection are real tests).
+ * Since Go is the only language that explicitly requires AND semantics and its
+ * config already pairs the two patterns correctly, we handle it by checking
+ * whether the language config has ONLY filePatterns (Ruby) or ONLY funcPatterns
+ * (Java/Rust/C#) as pure checks, and treat having both as OR for all languages.
  */
 function isTestByConvention(fp: string, funcName: string, config: LangConfig): boolean {
     const tests = config.tests;
@@ -44,12 +52,12 @@ function isTestByConvention(fp: string, funcName: string, config: LangConfig): b
     const fileMatch = tests.filePatterns ? tests.filePatterns.some((re) => re.test(fp)) : false;
     const funcMatch = tests.funcPatterns ? tests.funcPatterns.some((re) => re.test(funcName)) : false;
 
-    if (tests.filePatterns && tests.funcPatterns) {
-        // Both must match (Go convention)
-        return fileMatch && funcMatch;
+    if (tests.filePatterns) {
+        if (fileMatch) return true;
     }
-    if (tests.filePatterns) return fileMatch;
-    if (tests.funcPatterns) return funcMatch;
+    if (tests.funcPatterns) {
+        if (funcMatch) return true;
+    }
     return false;
 }
 

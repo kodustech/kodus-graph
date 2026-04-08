@@ -112,9 +112,7 @@ describe('extractGeneric – Java', () => {
         expect(userService).toBeDefined();
         expect(userService!.ast_kind).toBe('class_declaration');
         expect(userService!.extends).toBe('BaseService');
-        // Note: implements is extracted from direct type_identifier children of super_interfaces;
-        // in this AST they are nested inside type_list, so implements comes back empty.
-        expect(Array.isArray(userService!.implements)).toBe(true);
+        expect(userService!.implements).toContain('Greetable');
     });
 
     test('extracts Greetable interface from Sample.java', async () => {
@@ -318,15 +316,16 @@ describe('extractGeneric – PHP', () => {
         expect(userService!.implements).toContain('Greetable');
     });
 
-    test('PHP does not extract interfaces (no interface config key in phpConfig)', async () => {
+    test('extracts Loggable interface from Sample.php', async () => {
         const fp = join(FIXTURES, 'php/Sample.php');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
         extractGeneric(root, fp, 'php', new Set(), graph);
 
-        // phpConfig has no interface entry, so Loggable is not extracted as an interface
-        expect(graph.interfaces.length).toBe(0);
+        expect(graph.interfaces.length).toBeGreaterThanOrEqual(1);
+        const loggable = graph.interfaces.find((i) => i.name === 'Loggable');
+        expect(loggable).toBeDefined();
     });
 
     test('extracts standalone helperFunction from Sample.php', async () => {
@@ -349,17 +348,19 @@ describe('extractGeneric – PHP', () => {
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
 
-    test('testGetName is extracted as a function (not a test) when file does not match Test.php$ pattern', async () => {
+    test('testGetName is extracted as a test (func matches ^test pattern)', async () => {
         const fp = join(FIXTURES, 'php/Sample.php');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
         extractGeneric(root, fp, 'php', new Set(), graph);
 
-        // PHP test detection requires BOTH filePattern (Test.php$) AND funcPattern (^test) to match.
-        // Sample.php does not match Test.php$, so testGetName ends up in functions, not tests.
+        // PHP test detection uses OR: funcPattern (^test) matches testGetName even
+        // though the file does not match Test.php$, so testGetName is in tests.
+        expect(graph.tests.length).toBeGreaterThanOrEqual(1);
+        const testGetName = graph.tests.find((t) => t.name === 'testGetName');
+        expect(testGetName).toBeDefined();
+        // It is also still present in functions (tests are dual-listed)
         expect(graph.functions.some((f) => f.name === 'testGetName')).toBe(true);
-        // Tests list is empty for this file
-        expect(graph.tests.length).toBe(0);
     });
 });

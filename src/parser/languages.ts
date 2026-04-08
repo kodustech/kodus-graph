@@ -150,8 +150,11 @@ const javaConfig: LangConfig = {
         },
         implements: (node: SgNode) => {
             const superInterfaces = node.children().find((c: SgNode) => c.kind() === 'super_interfaces');
-            if (!superInterfaces) return undefined;
-            return superInterfaces
+            if (!superInterfaces) return [];
+            // type_identifiers may be direct children or nested in a type_list
+            const typeList = superInterfaces.children().find((c: SgNode) => c.kind() === 'type_list');
+            const container = typeList || superInterfaces;
+            return container
                 .children()
                 .filter((c: SgNode) => c.kind() === 'type_identifier')
                 .map((c: SgNode) => c.text());
@@ -208,6 +211,7 @@ const csharpConfig: LangConfig = {
 
 const phpConfig: LangConfig = {
     class: ['class_declaration'],
+    interface: ['interface_declaration'],
     method: ['method_declaration'],
     function: ['function_definition'],
     import: ['namespace_use_declaration'],
