@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { basename, dirname, join, resolve as resolvePath } from 'path';
 
 function probeRustPath(baseDir: string, relPath: string): string | null {
@@ -44,5 +44,131 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
         return probeRustPath(dirname(fromAbsFile), rest);
     }
 
+    // Try workspace path dependency resolution
+    const firstSep = modulePath.indexOf('::');
+    if (firstSep !== -1) {
+        const crateName = modulePath.slice(0, firstSep);
+        const rest = modulePath.slice(firstSep + 2).replace(/::/g, '/');
+        const depPath = resolveWorkspacePathDep(fromAbsFile, crateName);
+        if (depPath) {
+            const srcDir = join(depPath, 'src');
+            // Try the full path first, then progressively strip trailing segments
+            // (they may be items like functions/structs inside a module file)
+            const segments = rest.split('/');
+            for (let i = segments.length; i >= 1; i--) {
+                const partial = segments.slice(0, i).join('/');
+                const result = probeRustPath(srcDir, partial);
+                if (result) return result;
+            }
+        }
+    }
+
     return null;
+}
+
+/** Cache: crate dir → parsed {depName → resolved absolute path} */
+const pathDepCache = new Map<string, Map<string, string>>();
+
+/**
+ * Walk up from `fromAbsFile` to find the nearest Cargo.toml,
+ * parse its [dependencies] for `path = "..."` entries,
+ * and return the absolute path of the dependency crate if it matches `depName`.
+ */
+function resolveWorkspacePathDep(fromAbsFile: string, depName: string): string | null {
+    const crateDir = findCrateDir(fromAbsFile);
+    if (!crateDir) return null;
+
+    let deps = pathDepCache.get(crateDir);
+    if (!deps) {
+        deps = parsePathDeps(crateDir);
+        pathDepCache.set(crateDir, deps);
+    }
+
+    return deps.get(depName) ?? null;
+}
+
+/**
+ * Walk up from a file to find the nearest directory containing Cargo.toml.
+ */
+function findCrateDir(fromAbsFile: string): string | null {
+    let dir = dirname(fromAbsFile);
+    const root = resolvePath('/');
+    while (dir !== root) {
+        if (existsSync(join(dir, 'Cargo.toml'))) {
+            return dir;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return null;
+}
+
+/**
+ * Parse Cargo.toml in `crateDir` for path dependencies.
+ * Returns a map of dependency name → resolved absolute directory.
+ *
+ * Handles both inline table and multi-line table forms:
+ *   shared = { path = "../shared" }
+ *   [dependencies.shared]
+ *   path = "../shared"
+ */
+function parsePathDeps(crateDir: string): Map<string, string> {
+    const result = new Map<string, string>();
+    const cargoPath = join(crateDir, 'Cargo.toml');
+    if (!existsSync(cargoPath)) return result;
+
+    const content = readFileSync(cargoPath, 'utf-8');
+    const lines = content.split('\n');
+
+    let inDepsSection = false;
+    let depsTableDep: string | null = null; // for [dependencies.foo] style
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Detect section headers
+        if (trimmed.startsWith('[')) {
+            // Check for [dependencies.foo] form
+            const subMatch = trimmed.match(/^\[dependencies\.(\S+)\]$/);
+            if (subMatch) {
+                depsTableDep = subMatch[1];
+                inDepsSection = false;
+                continue;
+            }
+
+            depsTableDep = null;
+
+            if (trimmed === '[dependencies]') {
+                inDepsSection = true;
+                continue;
+            }
+
+            // Any other section header ends [dependencies]
+            inDepsSection = false;
+            continue;
+        }
+
+        // Inside [dependencies.foo], look for path = "..."
+        if (depsTableDep) {
+            const pathMatch = trimmed.match(/^path\s*=\s*"([^"]+)"/);
+            if (pathMatch) {
+                const resolved = resolvePath(crateDir, pathMatch[1]);
+                result.set(depsTableDep, resolved);
+            }
+            continue;
+        }
+
+        // Inside [dependencies], look for inline table with path
+        if (inDepsSection && trimmed.length > 0 && !trimmed.startsWith('#')) {
+            // name = { path = "..." ... }
+            const inlineMatch = trimmed.match(/^(\S+)\s*=\s*\{[^}]*path\s*=\s*"([^"]+)"[^}]*\}/);
+            if (inlineMatch) {
+                const resolved = resolvePath(crateDir, inlineMatch[2]);
+                result.set(inlineMatch[1], resolved);
+            }
+        }
+    }
+
+    return result;
 }
