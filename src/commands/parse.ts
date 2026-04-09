@@ -57,7 +57,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);
 
     for (const imp of rawGraph.imports) {
-        const langKey = imp.lang === 'python' ? 'python' : imp.lang === 'ruby' ? 'ruby' : 'typescript';
+        const langKey = imp.lang;
         const resolved = resolveImport(resolve(repoDir, imp.file), imp.module, langKey, repoDir, tsconfigAliases);
         const resolvedRel = resolved ? relative(repoDir, resolved) : null;
         importEdges.push({
