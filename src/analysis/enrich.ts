@@ -102,7 +102,7 @@ export function enrichChangedFunctions(
             const isNew = addedSet.has(node.qualified_name);
             const modifiedNode = modifiedMap.get(node.qualified_name);
             const diffChanges = isNew ? [] : modifiedNode?.changes || [];
-            const contractDiffs: ContractDiff[] = isNew ? [] : modifiedNode?.contract_diffs ?? [];
+            const contractDiffs: ContractDiff[] = isNew ? [] : (modifiedNode?.contract_diffs ?? []);
 
             // Caller impact
             let callerImpact: string | undefined;

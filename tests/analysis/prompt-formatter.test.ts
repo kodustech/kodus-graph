@@ -143,7 +143,7 @@ describe('formatPrompt', () => {
                     target_qualified: 'src/order.ts::processOrder',
                     file_path: 'src/batch.ts',
                     line: 3,
-                    confidence: 0.90,
+                    confidence: 0.9,
                 },
             ],
         };

@@ -167,13 +167,8 @@ describe('computeStructuralDiff', () => {
     });
 
     it('should include contract_diffs for return_type change', () => {
-        const oldGraph = makeGraph(
-            [node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string' })],
-            [],
-        );
-        const newNodes: GraphNode[] = [
-            node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string | null' }),
-        ];
+        const oldGraph = makeGraph([node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string' })], []);
+        const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string | null' })];
         const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
 
         expect(result.nodes.modified).toHaveLength(1);
@@ -183,13 +178,8 @@ describe('computeStructuralDiff', () => {
     });
 
     it('should detect modifiers change', () => {
-        const oldGraph = makeGraph(
-            [node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'public' })],
-            [],
-        );
-        const newNodes: GraphNode[] = [
-            node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'private' }),
-        ];
+        const oldGraph = makeGraph([node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'public' })], []);
+        const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'private' })];
         const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
 
         expect(result.nodes.modified).toHaveLength(1);

@@ -91,7 +91,19 @@ const diff: DiffResult = {
     nodes: {
         added: [],
         removed: [],
-        modified: [{ qualified_name: 'src/auth.ts::authenticate', changes: ['params'], contract_diffs: [{ field: 'params' as const, old_value: '(ctx: Context)', new_value: '(ctx: Context, opts: Options)' }] }],
+        modified: [
+            {
+                qualified_name: 'src/auth.ts::authenticate',
+                changes: ['params'],
+                contract_diffs: [
+                    {
+                        field: 'params' as const,
+                        old_value: '(ctx: Context)',
+                        new_value: '(ctx: Context, opts: Options)',
+                    },
+                ],
+            },
+        ],
     },
     edges: { added: [], removed: [] },
     risk_by_file: { 'src/auth.ts': { dependents: 1, risk: 'LOW' } },
@@ -394,7 +406,7 @@ describe('enrichChangedFunctions', () => {
                     target_qualified: 'src/order.ts::processOrder',
                     file_path: 'src/batch.ts',
                     line: 3,
-                    confidence: 0.90,
+                    confidence: 0.9,
                 },
             ],
         };
@@ -405,14 +417,16 @@ describe('enrichChangedFunctions', () => {
             nodes: {
                 added: [],
                 removed: [],
-                modified: [{
-                    qualified_name: 'src/order.ts::processOrder',
-                    changes: ['body', 'params', 'return_type'],
-                    contract_diffs: [
-                        { field: 'params', old_value: '(id: number)', new_value: '(id: number, priority: number)' },
-                        { field: 'return_type', old_value: 'string', new_value: 'string | null' },
-                    ],
-                }],
+                modified: [
+                    {
+                        qualified_name: 'src/order.ts::processOrder',
+                        changes: ['body', 'params', 'return_type'],
+                        contract_diffs: [
+                            { field: 'params', old_value: '(id: number)', new_value: '(id: number, priority: number)' },
+                            { field: 'return_type', old_value: 'string', new_value: 'string | null' },
+                        ],
+                    },
+                ],
             },
             edges: { added: [], removed: [] },
             risk_by_file: {},
@@ -462,13 +476,15 @@ describe('enrichChangedFunctions', () => {
             nodes: {
                 added: [],
                 removed: [],
-                modified: [{
-                    qualified_name: 'src/util.ts::helper',
-                    changes: ['params'],
-                    contract_diffs: [
-                        { field: 'params', old_value: '(x: number)', new_value: '(x: number, y: string)' },
-                    ],
-                }],
+                modified: [
+                    {
+                        qualified_name: 'src/util.ts::helper',
+                        changes: ['params'],
+                        contract_diffs: [
+                            { field: 'params', old_value: '(x: number)', new_value: '(x: number, y: string)' },
+                        ],
+                    },
+                ],
             },
             edges: { added: [], removed: [] },
             risk_by_file: {},
@@ -504,13 +520,15 @@ describe('enrichChangedFunctions', () => {
             changed_files: ['src/new.ts'],
             summary: { added: 1, removed: 0, modified: 0 },
             nodes: {
-                added: [{
-                    qualified_name: 'src/new.ts::brandNew',
-                    kind: 'Function',
-                    file_path: 'src/new.ts',
-                    line_start: 1,
-                    line_end: 10,
-                }],
+                added: [
+                    {
+                        qualified_name: 'src/new.ts::brandNew',
+                        kind: 'Function',
+                        file_path: 'src/new.ts',
+                        line_start: 1,
+                        line_end: 10,
+                    },
+                ],
                 removed: [],
                 modified: [],
             },

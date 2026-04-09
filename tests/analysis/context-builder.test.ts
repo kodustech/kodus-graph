@@ -278,9 +278,7 @@ describe('buildContextV2', () => {
 
         // Only authenticate is modified (params change); validate is unchanged
         expect(result.analysis.structural_diff.nodes.modified.length).toBe(1);
-        expect(result.analysis.structural_diff.nodes.modified[0].qualified_name).toBe(
-            'src/auth.ts::authenticate',
-        );
+        expect(result.analysis.structural_diff.nodes.modified[0].qualified_name).toBe('src/auth.ts::authenticate');
 
         // Blast radius seeds = trulyChangedQN, which is just [authenticate]
         // So total_functions includes authenticate + helper (reached via reverse CALLS)

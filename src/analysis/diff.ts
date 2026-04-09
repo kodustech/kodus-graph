@@ -134,11 +134,19 @@ export function computeStructuralDiff(
             }
             if ((n.return_type || '') !== (newN.return_type || '')) {
                 changes.push('return_type');
-                contractDiffs.push({ field: 'return_type', old_value: n.return_type || 'void', new_value: newN.return_type || 'void' });
+                contractDiffs.push({
+                    field: 'return_type',
+                    old_value: n.return_type || 'void',
+                    new_value: newN.return_type || 'void',
+                });
             }
             if ((n.modifiers || '') !== (newN.modifiers || '')) {
                 changes.push('modifiers');
-                contractDiffs.push({ field: 'modifiers', old_value: n.modifiers || '', new_value: newN.modifiers || '' });
+                contractDiffs.push({
+                    field: 'modifiers',
+                    old_value: n.modifiers || '',
+                    new_value: newN.modifiers || '',
+                });
             }
             if (changes.length > 0) {
                 modified.push({ qualified_name: qn, changes, contract_diffs: contractDiffs });

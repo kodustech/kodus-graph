@@ -9,7 +9,7 @@ import { extractCallsFromFile, extractFromFile } from './extractor';
 import { getLanguage } from './languages';
 
 const INITIAL_BATCH = 50;
-const MEMORY_THRESHOLD_RATIO = 0.70;
+const MEMORY_THRESHOLD_RATIO = 0.7;
 
 export async function parseBatch(
     files: string[],
