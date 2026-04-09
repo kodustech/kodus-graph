@@ -1,3 +1,5 @@
+import type { ContractDiff } from '../analysis/diff';
+
 // ── Node kinds (aligned with Postgres ast_nodes.kind) ──
 export type NodeKind = 'Function' | 'Method' | 'Constructor' | 'Class' | 'Interface' | 'Enum' | 'Test';
 
@@ -146,6 +148,8 @@ export interface EnrichedFunction {
     callees: CalleeRef[];
     has_test_coverage: boolean;
     diff_changes: string[];
+    contract_diffs: ContractDiff[];
+    caller_impact?: string;
     is_new: boolean;
     in_flows: string[];
 }

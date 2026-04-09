@@ -1,6 +1,6 @@
 import type { IndexedGraph } from '../graph/loader';
 import type { CalleeRef, CallerRef, EnrichedFunction } from '../graph/types';
-import type { DiffResult } from './diff';
+import type { ContractDiff, DiffResult } from './diff';
 import type { Flow } from './flows';
 
 export function enrichChangedFunctions(
@@ -15,7 +15,7 @@ export function enrichChangedFunctions(
 
     // Pre-index diff results
     const addedSet = new Set(diff.nodes.added.map((n) => n.qualified_name));
-    const modifiedMap = new Map(diff.nodes.modified.map((m) => [m.qualified_name, m.changes]));
+    const modifiedMap = new Map(diff.nodes.modified.map((m) => [m.qualified_name, m]));
 
     // Pre-index TESTED_BY
     const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
@@ -100,7 +100,20 @@ export function enrichChangedFunctions(
 
             // Diff
             const isNew = addedSet.has(node.qualified_name);
-            const diffChanges = isNew ? [] : modifiedMap.get(node.qualified_name) || [];
+            const modifiedNode = modifiedMap.get(node.qualified_name);
+            const diffChanges = isNew ? [] : modifiedNode?.changes || [];
+            const contractDiffs: ContractDiff[] = isNew ? [] : modifiedNode?.contract_diffs ?? [];
+
+            // Caller impact
+            let callerImpact: string | undefined;
+            if (contractDiffs.length > 0 && callers.length > 0) {
+                const impacts: string[] = [];
+                const paramsDiff = contractDiffs.find((d) => d.field === 'params');
+                const returnDiff = contractDiffs.find((d) => d.field === 'return_type');
+                if (paramsDiff) impacts.push(`${callers.length} callers may need param update`);
+                if (returnDiff) impacts.push(`${callers.length} callers may assume old return type`);
+                callerImpact = impacts.length > 0 ? impacts.join('; ') : undefined;
+            }
 
             return {
                 qualified_name: node.qualified_name,
@@ -114,6 +127,8 @@ export function enrichChangedFunctions(
                 callees,
                 has_test_coverage: testedFiles.has(node.file_path),
                 diff_changes: diffChanges,
+                contract_diffs: contractDiffs,
+                caller_impact: callerImpact,
                 is_new: isNew,
                 in_flows: flowsByFunction.get(node.qualified_name) || [],
             };

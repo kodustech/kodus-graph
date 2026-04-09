@@ -27,7 +27,14 @@ export function formatPrompt(output: ContextV2Output): string {
             if (fn.is_new) {
                 lines.push('Status: new');
             } else if (fn.diff_changes.length > 0) {
-                lines.push(`Status: modified (${fn.diff_changes.join(', ')})`);
+                lines.push('Status: modified');
+                lines.push(`  Changes: ${fn.diff_changes.join(', ')}`);
+                for (const cd of fn.contract_diffs) {
+                    lines.push(`  - ${cd.field}: ${cd.old_value} -> ${cd.new_value}`);
+                }
+                if (fn.caller_impact) {
+                    lines.push(`  Impact: ${fn.caller_impact}`);
+                }
             } else {
                 lines.push('Status: unchanged');
             }

@@ -85,6 +85,107 @@ describe('formatPrompt', () => {
         expect(text).toContain('AuthService extends BaseService');
     });
 
+    it('should format contract diffs in prompt output', () => {
+        const graphWithContract: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'processOrder',
+                    qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts',
+                    line_start: 10,
+                    line_end: 30,
+                    language: 'typescript',
+                    params: '(id: number, priority: number)',
+                    return_type: 'string | null',
+                    is_test: false,
+                    file_hash: 'x',
+                },
+                {
+                    kind: 'Function',
+                    name: 'handleRequest',
+                    qualified_name: 'src/handler.ts::handleRequest',
+                    file_path: 'src/handler.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    params: '(req: Request)',
+                    return_type: 'Response',
+                    is_test: false,
+                    file_hash: 'y',
+                },
+                {
+                    kind: 'Function',
+                    name: 'runBatch',
+                    qualified_name: 'src/batch.ts::runBatch',
+                    file_path: 'src/batch.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    params: '(items: string[])',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'z',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/handler.ts::handleRequest',
+                    target_qualified: 'src/order.ts::processOrder',
+                    file_path: 'src/handler.ts',
+                    line: 5,
+                    confidence: 0.95,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/batch.ts::runBatch',
+                    target_qualified: 'src/order.ts::processOrder',
+                    file_path: 'src/batch.ts',
+                    line: 3,
+                    confidence: 0.90,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithContract,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'processOrder',
+                        qualified_name: 'src/order.ts::processOrder',
+                        file_path: 'src/order.ts',
+                        line_start: 10,
+                        line_end: 25,
+                        language: 'typescript',
+                        params: '(id: number)',
+                        return_type: 'string',
+                        is_test: false,
+                        file_hash: 'x',
+                        content_hash: 'old_hash',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/order.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // Should contain new format with Changes line
+        expect(text).toContain('Status: modified');
+        expect(text).toContain('  Changes:');
+        // Should contain contract diff details
+        expect(text).toContain('- params: (id: number) -> (id: number, priority: number)');
+        expect(text).toContain('- return_type: string -> string | null');
+        // Should contain impact line
+        expect(text).toContain('Impact: 2 callers may need param update; 2 callers may assume old return type');
+    });
+
     it('should handle empty changed functions', () => {
         const output = buildContextV2({
             mergedGraph: graphData,
