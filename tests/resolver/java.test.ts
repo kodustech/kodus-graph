@@ -202,6 +202,48 @@ describe('Java Kotlin interop', () => {
     });
 });
 
+const TMP_NESTED_MAVEN = join(import.meta.dir, '../fixtures/java-nested-maven-tmp');
+
+describe('Java nested Maven multi-module', () => {
+    test('setup', () => {
+        rmSync(TMP_NESTED_MAVEN, { recursive: true, force: true });
+        mkdirSync(join(TMP_NESTED_MAVEN, 'core/sub/src/main/java/com/example/sub'), { recursive: true });
+        mkdirSync(join(TMP_NESTED_MAVEN, 'core/src/main/java/com/example/core'), { recursive: true });
+
+        writeFileSync(join(TMP_NESTED_MAVEN, 'pom.xml'), [
+            '<project><modules><module>core</module></modules></project>',
+        ].join('\n'));
+        writeFileSync(join(TMP_NESTED_MAVEN, 'core/pom.xml'), [
+            '<project><modules><module>sub</module></modules></project>',
+        ].join('\n'));
+        writeFileSync(join(TMP_NESTED_MAVEN, 'core/sub/pom.xml'), '<project></project>\n');
+        writeFileSync(
+            join(TMP_NESTED_MAVEN, 'core/sub/src/main/java/com/example/sub/Deep.java'),
+            'package com.example.sub;\npublic class Deep {}\n',
+        );
+        writeFileSync(
+            join(TMP_NESTED_MAVEN, 'core/src/main/java/com/example/core/Service.java'),
+            'package com.example.core;\npublic class Service {}\n',
+        );
+    });
+
+    test('resolves class in nested Maven submodule', () => {
+        const result = resolve('', 'com.example.sub.Deep', TMP_NESTED_MAVEN);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Deep.java');
+    });
+
+    test('resolves class in first-level module', () => {
+        const result = resolve('', 'com.example.core.Service', TMP_NESTED_MAVEN);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Service.java');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_NESTED_MAVEN, { recursive: true, force: true });
+    });
+});
+
 const TMP_SRCSET = join(import.meta.dir, '../fixtures/java-srcset-tmp');
 
 describe('Java Gradle custom sourceSets', () => {

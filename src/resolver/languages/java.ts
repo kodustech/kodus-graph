@@ -101,23 +101,8 @@ function collectSourceRoots(repoRoot: string): string[] {
         }
     }
 
-    // Discover Maven subprojects from pom.xml
-    const pomPath = join(repoRoot, 'pom.xml');
-    if (cachedExists(pomPath)) {
-        try {
-            const content = readFileSync(pomPath, 'utf-8');
-            const moduleRegex = /<module>([^<]+)<\/module>/g;
-            let mvnMatch: RegExpExecArray | null = moduleRegex.exec(content);
-            while (mvnMatch !== null) {
-                const subDir = mvnMatch[1];
-                roots.push(join(subDir, 'src/main/java'));
-                roots.push(join(subDir, 'src/main/kotlin'));
-                mvnMatch = moduleRegex.exec(content);
-            }
-        } catch {
-            // pom.xml read failed, continue
-        }
-    }
+    // Discover Maven subprojects from pom.xml (recursive)
+    discoverMavenModules(repoRoot, '', roots, 0);
 
     return roots;
 }
@@ -136,6 +121,56 @@ function findFile(repoRoot: string, relPathNoExt: string, sourceRoots: string[])
         }
     }
     return null;
+}
+
+const MAX_MAVEN_DEPTH = 5;
+
+/**
+ * Recursively discover Maven modules from pom.xml files.
+ * Each module's pom.xml may declare its own <module> elements,
+ * forming a tree (e.g. Keycloak: root → services → sub-service).
+ */
+function discoverMavenModules(
+    repoRoot: string,
+    relDir: string,
+    roots: string[],
+    depth: number,
+): void {
+    if (depth > MAX_MAVEN_DEPTH) {
+        return;
+    }
+
+    const pomPath = join(repoRoot, relDir, 'pom.xml');
+    if (!cachedExists(pomPath)) {
+        return;
+    }
+
+    try {
+        const content = readFileSync(pomPath, 'utf-8');
+        const moduleRegex = /<module>([^<]+)<\/module>/g;
+        let mvnMatch: RegExpExecArray | null = moduleRegex.exec(content);
+        while (mvnMatch !== null) {
+            const moduleName = mvnMatch[1];
+            const moduleDir = relDir ? join(relDir, moduleName) : moduleName;
+
+            // Add source roots for this module
+            const javaRoot = join(moduleDir, 'src/main/java');
+            if (!roots.includes(javaRoot)) {
+                roots.push(javaRoot);
+            }
+            const kotlinRoot = join(moduleDir, 'src/main/kotlin');
+            if (!roots.includes(kotlinRoot)) {
+                roots.push(kotlinRoot);
+            }
+
+            // Recurse into the module's own pom.xml
+            discoverMavenModules(repoRoot, moduleDir, roots, depth + 1);
+
+            mvnMatch = moduleRegex.exec(content);
+        }
+    } catch {
+        // pom.xml read failed, continue
+    }
 }
 
 export function resolve(_fromAbsFile: string, modulePath: string, repoRoot: string): string | null {
