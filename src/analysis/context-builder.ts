@@ -69,9 +69,10 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         ...structuralDiff.nodes.removed.map((n) => n.qualified_name),
     ]);
 
-    // In fallback mode (no oldGraph), ALL functions are "added" by structural diff.
+    // When baseline is absent or empty, ALL functions are "added" by structural diff.
     // If we have actual diff hunks, filter to only functions whose lines overlap with real changes.
-    if (!oldGraph && opts.diffHunks && opts.diffHunks.size > 0) {
+    const isEmptyBaseline = !oldGraph || (oldGraph.nodes.length === 0 && oldGraph.edges.length === 0);
+    if (isEmptyBaseline && opts.diffHunks && opts.diffHunks.size > 0) {
         const before = trulyChangedQN.size;
         for (const qn of [...trulyChangedQN]) {
             const node = indexed.byQualified.get(qn);
@@ -79,6 +80,12 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
                 trulyChangedQN.delete(qn);
             }
         }
+        // Also filter structuralDiff so enrichChangedFunctions sees the same reduced set
+        structuralDiff.nodes.added = structuralDiff.nodes.added.filter((n) => trulyChangedQN.has(n.qualified_name));
+        structuralDiff.nodes.modified = structuralDiff.nodes.modified.filter((n) =>
+            trulyChangedQN.has(n.qualified_name),
+        );
+
         log.info('context: diff-hunk filter applied (fallback mode)', {
             before,
             after: trulyChangedQN.size,

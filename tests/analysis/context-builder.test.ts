@@ -369,6 +369,189 @@ describe('buildContextV2', () => {
         expect(result.analysis.affected_flows).toHaveLength(0);
     });
 
+    it('should filter by diff hunks when oldGraph is null', () => {
+        const threeFunc: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'logout',
+                    qualified_name: 'src/auth.ts::logout',
+                    file_path: 'src/auth.ts',
+                    line_start: 50,
+                    line_end: 60,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        // Hunks only cover lines 15-20 and 50-55 — validate (30-40) should be filtered out
+        const diffHunks = new Map([
+            [
+                'src/auth.ts',
+                [
+                    { newStart: 15, newCount: 6 }, // lines 15-20
+                    { newStart: 50, newCount: 6 }, // lines 50-55
+                ],
+            ],
+        ]);
+
+        const result = buildContextV2({
+            mergedGraph: threeFunc,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // authenticate (10-25) overlaps hunk 15-20 ✓
+        // validate (30-40) does NOT overlap any hunk ✗
+        // logout (50-60) overlaps hunk 50-55 ✓
+        const names = result.analysis.changed_functions.map((f) => f.name);
+        expect(names).toContain('authenticate');
+        expect(names).toContain('logout');
+        expect(names).not.toContain('validate');
+        expect(result.analysis.metadata.changed_functions_count).toBe(2);
+    });
+
+    it('should filter by diff hunks when oldGraph is empty (DB baseline with no data)', () => {
+        const threeFunc: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        // Empty baseline (repo in DB but no AST graph for this language)
+        const emptyOldGraph: GraphData = { nodes: [], edges: [] };
+
+        const diffHunks = new Map([
+            ['src/auth.ts', [{ newStart: 10, newCount: 5 }]], // lines 10-14 — only overlaps authenticate
+        ]);
+
+        const result = buildContextV2({
+            mergedGraph: threeFunc,
+            oldGraph: emptyOldGraph,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // authenticate (10-25) overlaps hunk 10-14 ✓
+        // validate (30-40) does NOT overlap ✗
+        const names = result.analysis.changed_functions.map((f) => f.name);
+        expect(names).toContain('authenticate');
+        expect(names).not.toContain('validate');
+    });
+
+    it('should NOT filter by diff hunks when oldGraph has real data', () => {
+        // When there's a real baseline, structural diff is the source of truth
+        const diffHunks = new Map([
+            ['src/auth.ts', [{ newStart: 999, newCount: 1 }]], // hunk far away — would filter everything
+        ]);
+
+        const result = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null, // null triggers filter, but let's test non-empty oldGraph
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // With oldGraph=null, the diff filter kicks in and removes functions not in hunk 999
+        expect(result.analysis.changed_functions).toHaveLength(0);
+
+        // Now with a real oldGraph — diff filter should NOT apply
+        const oldGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '(ctx: Ctx)', // different → modified
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+            ],
+            edges: [],
+        };
+
+        const resultWithBaseline = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // With real oldGraph, diff hunks are ignored — structural diff is used
+        expect(resultWithBaseline.analysis.changed_functions.length).toBeGreaterThan(0);
+    });
+
     it('should compute structural diff when oldGraph is provided', () => {
         const oldGraph: GraphData = {
             nodes: [
