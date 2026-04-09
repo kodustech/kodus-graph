@@ -163,7 +163,10 @@ export function buildGraphData(
                     }
                 }
             }
-            sourceQualified = resolved || `${ce.source}::unknown`;
+            if (!resolved) {
+                continue; // Skip top-level calls with no enclosing function
+            }
+            sourceQualified = resolved;
         }
 
         edges.push({

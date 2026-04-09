@@ -259,7 +259,8 @@ describe('buildGraphData', () => {
         const result = buildGraphData(raw, callEdges, [], 'src', new Map());
         const callEdge = result.edges.find((e) => e.kind === 'CALLS');
 
-        expect(callEdge?.source_qualified).toBe('src/a.py::unknown');
+        // Top-level calls with no enclosing function are skipped (no ::unknown edges)
+        expect(callEdge).toBeUndefined();
     });
 
     it('should resolve method calls within class methods (Python-style)', () => {
