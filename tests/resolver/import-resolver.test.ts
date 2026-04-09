@@ -582,3 +582,48 @@ describe('TypeScript vite alias resolution', () => {
         expect(result).toContain('utils.ts');
     });
 });
+
+const TS_WS_OBJ = join(import.meta.dir, '../fixtures/ts-workspace-object-tmp');
+
+describe('TypeScript workspace object format', () => {
+    beforeAll(() => {
+        rmSync(TS_WS_OBJ, { recursive: true, force: true });
+        mkdirSync(join(TS_WS_OBJ, 'packages/core/src'), { recursive: true });
+        mkdirSync(join(TS_WS_OBJ, 'packages/app/src'), { recursive: true });
+
+        // Object-form workspaces (used by Grafana, Yarn classic)
+        writeFileSync(join(TS_WS_OBJ, 'package.json'), JSON.stringify({
+            workspaces: { packages: ['packages/*'] },
+        }));
+        writeFileSync(join(TS_WS_OBJ, 'packages/core/package.json'), JSON.stringify({
+            name: '@myorg/core',
+            main: 'src/index.ts',
+        }));
+        writeFileSync(join(TS_WS_OBJ, 'packages/core/src/index.ts'), 'export function core() {}\n');
+        writeFileSync(join(TS_WS_OBJ, 'packages/core/src/utils.ts'), 'export function util() {}\n');
+        writeFileSync(join(TS_WS_OBJ, 'packages/app/package.json'), JSON.stringify({
+            dependencies: { '@myorg/core': '*' },
+        }));
+        writeFileSync(join(TS_WS_OBJ, 'packages/app/src/main.ts'), "import { core } from '@myorg/core';\n");
+    });
+
+    afterAll(() => rmSync(TS_WS_OBJ, { recursive: true, force: true }));
+
+    it('resolves workspace with object-form workspaces field', () => {
+        const result = resolveImport(
+            join(TS_WS_OBJ, 'packages/app/src/main.ts'),
+            '@myorg/core', 'ts', TS_WS_OBJ,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('core/src/index.ts');
+    });
+
+    it('resolves subpath in object-form workspace', () => {
+        const result = resolveImport(
+            join(TS_WS_OBJ, 'packages/app/src/main.ts'),
+            '@myorg/core/src/utils', 'ts', TS_WS_OBJ,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('utils.ts');
+    });
+});

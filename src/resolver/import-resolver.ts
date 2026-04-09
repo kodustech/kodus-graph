@@ -120,14 +120,19 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
 
     try {
         const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf-8'));
-        const workspaces: string[] | undefined = rootPkg?.workspaces;
-        if (!Array.isArray(workspaces)) {
+        let workspaceGlobs: string[] | undefined;
+        if (Array.isArray(rootPkg?.workspaces)) {
+            workspaceGlobs = rootPkg.workspaces;
+        } else if (rootPkg?.workspaces?.packages && Array.isArray(rootPkg.workspaces.packages)) {
+            workspaceGlobs = rootPkg.workspaces.packages;
+        }
+        if (!workspaceGlobs) {
             return null;
         }
 
         // Collect all workspace package directories
         const pkgDirs: string[] = [];
-        for (const ws of workspaces) {
+        for (const ws of workspaceGlobs) {
             if (ws.endsWith('/*')) {
                 // Glob pattern like "packages/*"
                 const parentDir = join(repoRoot, ws.slice(0, -2));
