@@ -28,6 +28,7 @@ program
     .option('--include <glob...>', 'Include only files matching glob (repeatable)')
     .option('--exclude <glob...>', 'Exclude files matching glob (repeatable)')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
+    .option('--max-memory <mb>', 'Maximum memory usage in MB (default: 768)', (v) => parseInt(v, 10))
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -43,6 +44,7 @@ program
             include: opts.include,
             exclude: opts.exclude,
             skipTests: opts.skipTests ?? false,
+            maxMemoryMB: opts.maxMemory,
         });
     });
 

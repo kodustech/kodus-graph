@@ -8,12 +8,13 @@ import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
 import { getLanguage } from './languages';
 
-const BATCH_SIZE = 50;
+const INITIAL_BATCH = 50;
+const MEMORY_THRESHOLD_RATIO = 0.70;
 
 export async function parseBatch(
     files: string[],
     repoRoot: string,
-    options?: { skipTests?: boolean },
+    options?: { skipTests?: boolean; maxMemoryMB?: number },
 ): Promise<ParseBatchResult> {
     const graph: RawGraph = {
         functions: [],
@@ -29,9 +30,11 @@ export async function parseBatch(
     const seen = new Set<string>();
     let parseErrors = 0;
     let extractErrors = 0;
+    let batchSize = INITIAL_BATCH;
+    const maxMemBytes = (options?.maxMemoryMB ?? 768) * 1024 * 1024;
 
-    for (let i = 0; i < files.length; i += BATCH_SIZE) {
-        const batch = files.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < files.length; i += batchSize) {
+        const batch = files.slice(i, i + batchSize);
 
         const promises = batch.map(async (filePath) => {
             const lang = getLanguage(extname(filePath));
@@ -82,6 +85,19 @@ export async function parseBatch(
         });
 
         await Promise.all(promises);
+
+        // Dynamic batch sizing: reduce if memory pressure detected
+        const rss = process.memoryUsage().rss;
+        if (rss > maxMemBytes * MEMORY_THRESHOLD_RATIO) {
+            const oldBatch = batchSize;
+            batchSize = Math.max(5, Math.floor(batchSize / 2));
+            log.warn('Memory pressure detected, reducing batch size', {
+                rssMB: Math.round(rss / 1024 / 1024),
+                maxMB: Math.round(maxMemBytes / 1024 / 1024),
+                oldBatchSize: oldBatch,
+                newBatchSize: batchSize,
+            });
+        }
     }
 
     if (options?.skipTests) {

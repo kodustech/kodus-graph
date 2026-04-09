@@ -193,6 +193,14 @@ export function buildGraphData(
     // Derived edges
     const derived = deriveEdges(raw, importEdges, symbolTable, importMap);
 
+    // Release raw graph arrays — no longer needed after deriveEdges
+    (raw as any).functions = [];
+    (raw as any).classes = [];
+    (raw as any).interfaces = [];
+    (raw as any).enums = [];
+    (raw as any).tests = [];
+    (raw as any).rawCalls = [];
+
     for (const e of derived.inherits) {
         edges.push({
             kind: 'INHERITS',

@@ -20,4 +20,13 @@ describe('parseBatch', () => {
         expect(result.classes.length).toBeGreaterThan(0);
         expect(result.imports.length).toBeGreaterThan(0);
     });
+
+    it('should accept maxMemoryMB option without error', async () => {
+        const fixtureDir = resolve('tests/fixtures/sample-repo');
+        const files = [resolve(fixtureDir, 'src/auth.ts')];
+
+        const result = await parseBatch(files, fixtureDir, { maxMemoryMB: 512 });
+
+        expect(result.functions.length).toBeGreaterThan(0);
+    });
 });
