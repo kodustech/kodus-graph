@@ -37,9 +37,18 @@ export function enrichChangedFunctions(
 
     // Filter functions in changed files
     const changedFunctions = graph.nodes.filter((n) => {
-        if (!changedSet.has(n.file_path)) return false;
-        if (n.is_test || n.kind === 'Constructor' || n.kind === 'Class' || n.kind === 'Interface' || n.kind === 'Enum')
+        if (!changedSet.has(n.file_path)) {
             return false;
+        }
+        if (
+            n.is_test ||
+            n.kind === 'Constructor' ||
+            n.kind === 'Class' ||
+            n.kind === 'Interface' ||
+            n.kind === 'Enum'
+        ) {
+            return false;
+        }
         if (onlyChanged) {
             return addedSet.has(n.qualified_name) || modifiedMap.has(n.qualified_name);
         }
@@ -110,8 +119,12 @@ export function enrichChangedFunctions(
                 const impacts: string[] = [];
                 const paramsDiff = contractDiffs.find((d) => d.field === 'params');
                 const returnDiff = contractDiffs.find((d) => d.field === 'return_type');
-                if (paramsDiff) impacts.push(`${callers.length} callers may need param update`);
-                if (returnDiff) impacts.push(`${callers.length} callers may assume old return type`);
+                if (paramsDiff) {
+                    impacts.push(`${callers.length} callers may need param update`);
+                }
+                if (returnDiff) {
+                    impacts.push(`${callers.length} callers may assume old return type`);
+                }
                 callerImpact = impacts.length > 0 ? impacts.join('; ') : undefined;
             }
 
