@@ -254,6 +254,12 @@ export function resolveImport(
         return null;
     }
 
+    // Strip webpack/rollup loader syntax: !!loader1!loader2!actual/path
+    // The actual import path is always the last segment after the final '!'
+    if (modulePath.includes('!')) {
+        modulePath = modulePath.split('!').pop() || modulePath;
+    }
+
     // TS/JS-specific fallbacks: tsconfig aliases, bundler aliases, #imports, workspace exports.
     // These are Node.js/npm ecosystem features that don't apply to other languages.
     // Other languages handle their own workspace/monorepo patterns inside their resolvers

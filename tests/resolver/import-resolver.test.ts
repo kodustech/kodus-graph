@@ -649,3 +649,63 @@ describe('Import resolver robustness', () => {
         expect(result).toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Edge cases: npm packages with .js in name, webpack loader prefixes
+// ---------------------------------------------------------------------------
+
+describe('Import resolver edge cases', () => {
+    it('returns null for npm package with .js in name (ical.js)', () => {
+        const result = resolveImport('/tmp/app.ts', 'ical.js', 'ts', '/tmp');
+        expect(result).toBeNull();
+    });
+
+    it('returns null for npm package with .js in name (fuse.js)', () => {
+        const result = resolveImport('/tmp/app.ts', 'fuse.js', 'ts', '/tmp');
+        expect(result).toBeNull();
+    });
+
+    it('strips webpack loader prefix and resolves underlying path', () => {
+        const tmp = join(import.meta.dir, '../fixtures/ts-loader-tmp');
+        rmSync(tmp, { recursive: true, force: true });
+        mkdirSync(join(tmp, 'src/components'), { recursive: true });
+        writeFileSync(join(tmp, 'src/components/Button.tsx'), 'export function Button() {}\n');
+
+        const result = resolveImport(
+            join(tmp, 'src/app.ts'),
+            '!!type-loader!./components/Button',
+            'ts', tmp,
+        );
+        // Should resolve to the actual file (stripping loader prefix) — NOT a path containing '!'
+        expect(result).not.toBeNull();
+        expect(result).toContain('Button.tsx');
+        expect(result!).not.toContain('!');
+
+        rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it('returns null for webpack loader with non-existent underlying path', () => {
+        const result = resolveImport('/tmp/app.ts', '!!raw-loader!./data.txt', 'ts', '/tmp');
+        // Should not crash — returns null because ./data.txt doesn't exist
+        expect(result).toBeNull();
+    });
+
+    it('strips single-bang webpack loader prefix', () => {
+        const tmp = join(import.meta.dir, '../fixtures/ts-loader-single-tmp');
+        rmSync(tmp, { recursive: true, force: true });
+        mkdirSync(join(tmp, 'src'), { recursive: true });
+        writeFileSync(join(tmp, 'src/styles.css'), 'body {}\n');
+
+        const result = resolveImport(
+            join(tmp, 'src/app.ts'),
+            'css-loader!./styles.css',
+            'ts', tmp,
+        );
+        // ./styles.css exists, so after stripping loader it should resolve
+        expect(result).not.toBeNull();
+        expect(result).toContain('styles.css');
+        expect(result!).not.toContain('!');
+
+        rmSync(tmp, { recursive: true, force: true });
+    });
+});
