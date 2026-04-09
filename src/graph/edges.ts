@@ -56,7 +56,12 @@ function resolveTypeName(
         const candidates = symbolTable?.lookupGlobal(name) ?? [];
         const match = candidates.find((q) => q.startsWith(importedFrom + '::'));
         if (match) return match;
-        // Fallback: construct qualified name from import target
+        // If importedFrom is not a local file (not in graph), it's an external package — skip
+        const isLocal = graph.classes.some((c) => c.file === importedFrom) ||
+            graph.interfaces.some((i) => i.file === importedFrom) ||
+            graph.functions.some((f) => f.file === importedFrom);
+        if (!isLocal) return null;
+        // Fallback: construct qualified name from local import target
         return `${importedFrom}::${name}`;
     }
 
