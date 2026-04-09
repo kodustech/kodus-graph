@@ -96,7 +96,7 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
         } catch {}
     }
 
-    const newGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);
+    const newGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
     process.stderr.write(`[3/4] Re-parsed ${absFiles.length} files (${newGraphData.nodes.length} nodes)\n`);
 
     // Compute diff

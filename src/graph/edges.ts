@@ -37,17 +37,70 @@ export function extractTestStem(testFile: string): string | null {
     return cleaned;
 }
 
-export function deriveEdges(graph: RawGraph, importEdges: ImportEdge[]): DerivedEdges {
-    // INHERITS: class extends another class
-    const inherits = graph.classes
-        .filter((c) => c.extends)
-        .map((c) => ({ source: c.qualified, target: c.extends, file: c.file }));
+/**
+ * Resolve a bare type name (e.g. "User", "IAuthService") to its qualified name
+ * using import map, same-file lookup, and global symbol table.
+ * Returns null if the name cannot be resolved (external class/interface).
+ */
+function resolveTypeName(
+    name: string,
+    file: string,
+    graph: RawGraph,
+    symbolTable?: { lookupGlobal(name: string): string[] },
+    importMap?: { lookup(file: string, name: string): string | null },
+): string | null {
+    // 1. Check import map — was it imported in this file?
+    const importedFrom = importMap?.lookup(file, name);
+    if (importedFrom) {
+        // Look up the qualified name in the imported file
+        const candidates = symbolTable?.lookupGlobal(name) ?? [];
+        const match = candidates.find((q) => q.startsWith(importedFrom + '::'));
+        if (match) return match;
+        // Fallback: construct qualified name from import target
+        return `${importedFrom}::${name}`;
+    }
 
-    // IMPLEMENTS: class implements interface(s)
+    // 2. Check same file — class or interface defined in same file
+    const sameFileClass = graph.classes.find((other) => other.name === name && other.file === file);
+    if (sameFileClass) return sameFileClass.qualified;
+    const sameFileInterface = graph.interfaces.find((other) => other.name === name && other.file === file);
+    if (sameFileInterface) return sameFileInterface.qualified;
+
+    // 3. Check global symbol table — unique match only
+    const globalCandidates = symbolTable?.lookupGlobal(name) ?? [];
+    if (globalCandidates.length === 1) return globalCandidates[0];
+
+    // 4. External class/interface (React.Component, Error, etc.) — unresolvable
+    return null;
+}
+
+export function deriveEdges(
+    graph: RawGraph,
+    importEdges: ImportEdge[],
+    symbolTable?: { lookupGlobal(name: string): string[] },
+    importMap?: { lookup(file: string, name: string): string | null },
+): DerivedEdges {
+    // INHERITS: class extends another class — resolve to qualified names
+    const inherits: DerivedEdge[] = [];
+    for (const c of graph.classes) {
+        if (!c.extends) continue;
+
+        const resolved = resolveTypeName(c.extends, c.file, graph, symbolTable, importMap);
+        if (resolved) {
+            inherits.push({ source: c.qualified, target: resolved, file: c.file });
+        }
+        // Skip unresolvable external classes (React.Component, Error, etc.)
+    }
+
+    // IMPLEMENTS: class implements interface(s) — resolve to qualified names
     const implements_: DerivedEdge[] = [];
     for (const c of graph.classes) {
         for (const iface of c.implements) {
-            implements_.push({ source: c.qualified, target: iface, file: c.file });
+            const resolved = resolveTypeName(iface, c.file, graph, symbolTable, importMap);
+            if (resolved) {
+                implements_.push({ source: c.qualified, target: resolved, file: c.file });
+            }
+            // Skip unresolvable external interfaces
         }
     }
 

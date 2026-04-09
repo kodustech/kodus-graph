@@ -143,7 +143,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         } catch {}
     }
 
-    const newGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);
+    const newGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
     process.stderr.write(`[4/5] Built new graph fragment (${newGraphData.nodes.length} nodes)\n`);
 
     // Merge: keep old nodes/edges NOT in changed/deleted files, add new ones

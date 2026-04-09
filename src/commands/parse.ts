@@ -107,7 +107,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     const parseErrors = rawGraph.parseErrors;
     const extractErrors = rawGraph.extractErrors;
-    const graphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);
+    const graphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
     process.stderr.write(`[5/5] Built graph: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges\n`);
 
     // Release intermediaries — no longer needed after buildGraphData

@@ -406,6 +406,16 @@ describe('buildGraphData', () => {
             ],
             classes: [
                 {
+                    name: 'User',
+                    file: 'src/a.ts',
+                    line_start: 7,
+                    line_end: 9,
+                    extends: '',
+                    implements: [],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/a.ts::User',
+                },
+                {
                     name: 'Admin',
                     file: 'src/a.ts',
                     line_start: 10,
@@ -428,7 +438,7 @@ describe('buildGraphData', () => {
         const result = buildGraphData(raw, [], [], 'src', new Map());
 
         expect(result.edges.some((e) => e.kind === 'CONTAINS')).toBe(true);
-        expect(result.edges.some((e) => e.kind === 'INHERITS')).toBe(true);
+        expect(result.edges.some((e) => e.kind === 'INHERITS' && e.target_qualified === 'src/a.ts::User')).toBe(true);
     });
 
     it('should filter out CALLS edges to external packages', () => {

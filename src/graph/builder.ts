@@ -7,6 +7,8 @@ export function buildGraphData(
     importEdges: ImportEdge[],
     _repoDir: string,
     fileHashes: Map<string, string>,
+    symbolTable?: { lookupGlobal(name: string): string[] },
+    importMap?: { lookup(file: string, name: string): string | null },
 ): GraphData {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
@@ -179,7 +181,7 @@ export function buildGraphData(
     }
 
     // Derived edges
-    const derived = deriveEdges(raw, importEdges);
+    const derived = deriveEdges(raw, importEdges, symbolTable, importMap);
 
     for (const e of derived.inherits) {
         edges.push({

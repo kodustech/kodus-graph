@@ -115,7 +115,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
         }
     }
 
-    const localGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes);
+    const localGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
 
     // Merge with main graph (or use local only)
     const mergedGraph = mainGraph ? mergeGraphs(mainGraph, localGraphData, opts.files) : localGraphData;

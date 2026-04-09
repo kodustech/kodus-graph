@@ -32,7 +32,44 @@ describe('extractTestStem', () => {
 });
 
 describe('deriveEdges', () => {
-    it('should derive INHERITS edges from class extends', () => {
+    it('should derive INHERITS edges for same-file classes', () => {
+        const graph: RawGraph = {
+            functions: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            classes: [
+                {
+                    name: 'User',
+                    file: 'src/admin.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    extends: '',
+                    implements: [],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/admin.ts::User',
+                },
+                {
+                    name: 'Admin',
+                    file: 'src/admin.ts',
+                    line_start: 12,
+                    line_end: 25,
+                    extends: 'User',
+                    implements: [],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/admin.ts::Admin',
+                },
+            ],
+        };
+        const result = deriveEdges(graph, []);
+        expect(result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/admin.ts::User')).toBe(true);
+    });
+
+    it('should resolve INHERITS via import map', () => {
         const graph: RawGraph = {
             functions: [],
             interfaces: [],
@@ -55,8 +92,47 @@ describe('deriveEdges', () => {
                 },
             ],
         };
+        const mockImportMap = {
+            lookup(file: string, name: string): string | null {
+                if (file === 'src/admin.ts' && name === 'User') return 'src/user.ts';
+                return null;
+            },
+        };
+        const mockSymbolTable = {
+            lookupGlobal(name: string): string[] {
+                if (name === 'User') return ['src/user.ts::User'];
+                return [];
+            },
+        };
+        const result = deriveEdges(graph, [], mockSymbolTable, mockImportMap);
+        expect(result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/user.ts::User')).toBe(true);
+    });
+
+    it('should skip INHERITS edges for unresolvable external classes', () => {
+        const graph: RawGraph = {
+            functions: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            classes: [
+                {
+                    name: 'MyComponent',
+                    file: 'src/my.tsx',
+                    line_start: 1,
+                    line_end: 10,
+                    extends: 'React.Component',
+                    implements: [],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/my.tsx::MyComponent',
+                },
+            ],
+        };
         const result = deriveEdges(graph, []);
-        expect(result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'User')).toBe(true);
+        expect(result.inherits).toHaveLength(0);
     });
 
     it('should derive TESTED_BY edges from test file imports', () => {
@@ -201,7 +277,46 @@ describe('deriveEdges', () => {
         expect(result.contains.some((e) => e.source === 'src/a.ts' && e.target === 'src/a.ts::foo')).toBe(true);
     });
 
-    it('should derive IMPLEMENTS edges from class implements', () => {
+    it('should derive IMPLEMENTS edges for same-file interfaces', () => {
+        const graph: RawGraph = {
+            functions: [],
+            interfaces: [
+                {
+                    name: 'IAuthService',
+                    file: 'src/auth.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    methods: [],
+                    ast_kind: 'interface_declaration',
+                    qualified: 'src/auth.ts::IAuthService',
+                },
+            ],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            classes: [
+                {
+                    name: 'AuthService',
+                    file: 'src/auth.ts',
+                    line_start: 12,
+                    line_end: 50,
+                    extends: '',
+                    implements: ['IAuthService'],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/auth.ts::AuthService',
+                },
+            ],
+        };
+        const result = deriveEdges(graph, []);
+        expect(
+            result.implements.some((e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/auth.ts::IAuthService'),
+        ).toBe(true);
+    });
+
+    it('should resolve IMPLEMENTS via symbol table (unique global)', () => {
         const graph: RawGraph = {
             functions: [],
             interfaces: [],
@@ -224,9 +339,42 @@ describe('deriveEdges', () => {
                 },
             ],
         };
-        const result = deriveEdges(graph, []);
+        const mockSymbolTable = {
+            lookupGlobal(name: string): string[] {
+                if (name === 'IAuthService') return ['src/interfaces.ts::IAuthService'];
+                return [];
+            },
+        };
+        const result = deriveEdges(graph, [], mockSymbolTable);
         expect(
-            result.implements.some((e) => e.source === 'src/auth.ts::AuthService' && e.target === 'IAuthService'),
+            result.implements.some((e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/interfaces.ts::IAuthService'),
         ).toBe(true);
+    });
+
+    it('should skip IMPLEMENTS edges for unresolvable external interfaces', () => {
+        const graph: RawGraph = {
+            functions: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            classes: [
+                {
+                    name: 'MyService',
+                    file: 'src/service.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    extends: '',
+                    implements: ['Serializable'],
+                    ast_kind: 'class_declaration',
+                    qualified: 'src/service.ts::MyService',
+                },
+            ],
+        };
+        const result = deriveEdges(graph, []);
+        expect(result.implements).toHaveLength(0);
     });
 });
