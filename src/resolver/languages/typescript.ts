@@ -38,6 +38,192 @@ function probeExtensions(base: string): string | null {
 /** Cache for parsed tsconfig.json (keyed by repoRoot). */
 const tsconfigCache = new Map<string, { rootDirs?: string[] }>();
 
+/** Cache for parsed bundler aliases (keyed by repoRoot). */
+const bundlerAliasCache = new Map<string, Map<string, string[]>>();
+
+/**
+ * Load aliases from webpack.config.ts/js and vite.config.ts/js.
+ * These are NOT in tsconfig — many large projects use bundler aliases instead.
+ *
+ * Parses simple alias patterns from resolve.alias blocks.
+ * Returns Map<prefix, absoluteDir> — same format as tsconfig aliases.
+ */
+export function loadBundlerAliases(repoRoot: string): Map<string, string[]> {
+    const cached = bundlerAliasCache.get(repoRoot);
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    const aliases = new Map<string, string[]>();
+
+    const configFiles = [
+        'webpack.config.js',
+        'webpack.config.ts',
+        'vite.config.js',
+        'vite.config.ts',
+    ];
+
+    for (const configFile of configFiles) {
+        const configPath = join(repoRoot, configFile);
+        if (!cachedExists(configPath)) {
+            continue;
+        }
+
+        try {
+            const content = readFileSync(configPath, 'utf-8');
+            parseBundlerAliases(content, repoRoot, aliases);
+        } catch {
+            // config file read failed, continue
+        }
+    }
+
+    bundlerAliasCache.set(repoRoot, aliases);
+    return aliases;
+}
+
+/**
+ * Parse alias definitions from a webpack or vite config file content.
+ * Handles:
+ * - path.join(__dirname, 'a', 'b') and path.resolve(__dirname, 'a', 'b')
+ * - Simple string literal values: 'key': '/path/to/dir'
+ * - Variable references like path.join(varName, 'sub') where varName is defined
+ *   earlier as const varName = path.join(__dirname, ...)
+ */
+function parseBundlerAliases(
+    content: string,
+    repoRoot: string,
+    aliases: Map<string, string[]>,
+): void {
+    // First, extract top-level variable definitions like:
+    //   const staticPrefix = path.join(__dirname, 'static')
+    const varDefs = new Map<string, string>();
+    const varDefRegex = /(?:const|let|var)\s+(\w+)\s*=\s*path\.(?:join|resolve)\s*\(\s*__dirname\s*,\s*([^)]+)\)/g;
+    let varMatch = varDefRegex.exec(content);
+    while (varMatch !== null) {
+        const varName = varMatch[1];
+        const argsStr = varMatch[2];
+        const segments = extractStringArgs(argsStr);
+        if (segments.length > 0) {
+            varDefs.set(varName, join(repoRoot, ...segments));
+        }
+        varMatch = varDefRegex.exec(content);
+    }
+
+    // Find the alias block — look for alias: { ... } or alias: [ ... ]
+    // We search for "alias:" or "alias :" possibly inside resolve: { ... }
+    const aliasBlockRegex = /alias\s*:\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/gs;
+    let aliasMatch = aliasBlockRegex.exec(content);
+
+    while (aliasMatch !== null) {
+        const aliasBlock = aliasMatch[1];
+        parseAliasEntries(aliasBlock, repoRoot, varDefs, aliases);
+        aliasMatch = aliasBlockRegex.exec(content);
+    }
+}
+
+/**
+ * Parse individual alias entries from inside an alias block.
+ */
+function parseAliasEntries(
+    block: string,
+    repoRoot: string,
+    varDefs: Map<string, string>,
+    aliases: Map<string, string[]>,
+): void {
+    // Match entries like:
+    //   key: path.join(__dirname, 'a', 'b'),
+    //   'key': path.join(__dirname, 'a', 'b'),
+    //   "key": path.resolve(__dirname, 'a'),
+    //   key: path.join(varName, 'sub'),
+    //   key: 'literal/path',
+    //   'key': 'literal/path',
+
+    // Pattern for key (unquoted identifier or quoted string)
+    const keyPattern = /(?:'([^']+)'|"([^"]+)"|(\w+))\s*:\s*/g;
+
+    let keyMatch = keyPattern.exec(block);
+    while (keyMatch !== null) {
+        const key = keyMatch[1] ?? keyMatch[2] ?? keyMatch[3];
+        const valueStart = keyMatch.index + keyMatch[0].length;
+        const restOfBlock = block.slice(valueStart);
+
+        const resolvedDir = resolveAliasValue(restOfBlock, repoRoot, varDefs);
+
+        if (resolvedDir !== null && !aliases.has(key + '/') && !aliases.has(key)) {
+            // Use key + '/' as prefix for path-based aliases (like tsconfig aliases)
+            // but if the key already ends with special chars like ~, use as-is
+            const prefix = key.endsWith('/') ? key : key + '/';
+            aliases.set(prefix, [resolvedDir]);
+            // Also set exact match (for bare imports like 'sentry' → 'sentry/')
+            if (!aliases.has(key) && key !== prefix) {
+                aliases.set(key, [resolvedDir]);
+            }
+        }
+
+        keyMatch = keyPattern.exec(block);
+    }
+}
+
+/**
+ * Try to resolve an alias value expression to an absolute directory.
+ */
+function resolveAliasValue(
+    expr: string,
+    repoRoot: string,
+    varDefs: Map<string, string>,
+): string | null {
+    // path.join(__dirname, 'a', 'b') or path.resolve(__dirname, 'a', 'b')
+    const pathDirnameRegex = /^path\.(?:join|resolve)\s*\(\s*__dirname\s*,\s*([^)]+)\)/;
+    const dirnameMatch = pathDirnameRegex.exec(expr);
+    if (dirnameMatch) {
+        const segments = extractStringArgs(dirnameMatch[1]);
+        if (segments.length > 0) {
+            return join(repoRoot, ...segments);
+        }
+    }
+
+    // path.join(varName, 'a', 'b') or path.resolve(varName, 'a')
+    const pathVarRegex = /^path\.(?:join|resolve)\s*\(\s*(\w+)\s*(?:,\s*([^)]+))?\)/;
+    const varMatch = pathVarRegex.exec(expr);
+    if (varMatch) {
+        const varName = varMatch[1];
+        if (varName !== '__dirname' && varDefs.has(varName)) {
+            const baseDir = varDefs.get(varName)!;
+            if (varMatch[2]) {
+                const segments = extractStringArgs(varMatch[2]);
+                if (segments.length > 0) {
+                    return join(baseDir, ...segments);
+                }
+            }
+            return baseDir;
+        }
+    }
+
+    // Simple string literal: 'path/to/dir' or "path/to/dir"
+    const stringLiteralRegex = /^['"]([^'"]+)['"]/;
+    const strMatch = stringLiteralRegex.exec(expr);
+    if (strMatch) {
+        return join(repoRoot, strMatch[1]);
+    }
+
+    return null;
+}
+
+/**
+ * Extract string literal arguments from a comma-separated argument list.
+ * e.g. "'static', 'app'" → ['static', 'app']
+ */
+function extractStringArgs(argsStr: string): string[] {
+    const segments: string[] = [];
+    const argRegex = /['"]([^'"]+)['"]/g;
+    let m = argRegex.exec(argsStr);
+    while (m !== null) {
+        segments.push(m[1]);
+        m = argRegex.exec(argsStr);
+    }
+    return segments;
+}
+
 function loadTsconfigCompilerOptions(repoRoot: string): { rootDirs?: string[] } {
     const cached = tsconfigCache.get(repoRoot);
     if (cached !== undefined) {

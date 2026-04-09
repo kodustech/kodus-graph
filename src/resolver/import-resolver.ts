@@ -18,7 +18,7 @@ import { resolve as resolvePhpImport } from './languages/php';
 import { resolve as resolvePyImport } from './languages/python';
 import { resolve as resolveRbImport } from './languages/ruby';
 import { resolve as resolveRustImport } from './languages/rust';
-import { loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
+import { loadBundlerAliases, loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
 
 const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
     ts: resolveTsImport,
@@ -260,6 +260,14 @@ export function resolveImport(
     // Fallback: tsconfig aliases for TS/JS
     if (!result && isTs && tsconfigAliases?.size) {
         result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
+    }
+
+    // Fallback: bundler aliases (webpack/vite) for TS/JS bare specifiers
+    if (!result && isTs && !modulePath.startsWith('.')) {
+        const bundlerAliases = loadBundlerAliases(repoRoot);
+        if (bundlerAliases.size > 0) {
+            result = resolveWithAliases(modulePath, bundlerAliases, repoRoot);
+        }
     }
 
     // Fallback: monorepo workspace exports for TS/JS bare specifiers

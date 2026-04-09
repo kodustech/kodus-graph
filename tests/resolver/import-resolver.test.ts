@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
+import { clearFsCache } from '../../src/resolver/fs-cache';
 import { resolve as resolveTsImport } from '../../src/resolver/languages/typescript';
 
 const fixtureDir = resolve('tests/fixtures/sample-repo');
@@ -505,5 +506,79 @@ describe('TypeScript workspace package without exports (naked)', () => {
         );
         expect(result).not.toBeNull();
         expect(result).toContain('packages/lib/logger.tsx');
+    });
+});
+
+const TS_WEBPACK = join(import.meta.dir, '../fixtures/ts-webpack-alias-tmp');
+
+describe('TypeScript webpack alias resolution', () => {
+    beforeAll(() => {
+        clearFsCache();
+        rmSync(TS_WEBPACK, { recursive: true, force: true });
+        mkdirSync(join(TS_WEBPACK, 'static/app/components'), { recursive: true });
+        mkdirSync(join(TS_WEBPACK, 'src'), { recursive: true });
+
+        writeFileSync(join(TS_WEBPACK, 'static/app/components/Button.tsx'), 'export function Button() {}\n');
+        writeFileSync(join(TS_WEBPACK, 'src/main.ts'), "import { Button } from 'app/components/Button';\n");
+
+        // Simple webpack config with alias
+        writeFileSync(join(TS_WEBPACK, 'webpack.config.js'), [
+            "const path = require('path');",
+            "module.exports = {",
+            "  resolve: {",
+            "    alias: {",
+            "      app: path.join(__dirname, 'static', 'app'),",
+            "    },",
+            "  },",
+            "};",
+        ].join('\n'));
+    });
+
+    afterAll(() => rmSync(TS_WEBPACK, { recursive: true, force: true }));
+
+    it('resolves import via webpack alias', () => {
+        const result = resolveImport(
+            join(TS_WEBPACK, 'src/main.ts'),
+            'app/components/Button', 'ts', TS_WEBPACK,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('Button.tsx');
+    });
+});
+
+const TS_VITE_ALIAS = join(import.meta.dir, '../fixtures/ts-vite-alias-tmp');
+
+describe('TypeScript vite alias resolution', () => {
+    beforeAll(() => {
+        clearFsCache();
+        rmSync(TS_VITE_ALIAS, { recursive: true, force: true });
+        mkdirSync(join(TS_VITE_ALIAS, 'src/lib'), { recursive: true });
+
+        writeFileSync(join(TS_VITE_ALIAS, 'src/lib/utils.ts'), 'export function util() {}\n');
+        writeFileSync(join(TS_VITE_ALIAS, 'src/main.ts'), "import { util } from '~/lib/utils';\n");
+
+        writeFileSync(join(TS_VITE_ALIAS, 'vite.config.ts'), [
+            "import { defineConfig } from 'vite';",
+            "import path from 'path';",
+            "",
+            "export default defineConfig({",
+            "  resolve: {",
+            "    alias: {",
+            "      '~': path.resolve(__dirname, 'src'),",
+            "    },",
+            "  },",
+            "});",
+        ].join('\n'));
+    });
+
+    afterAll(() => rmSync(TS_VITE_ALIAS, { recursive: true, force: true }));
+
+    it('resolves import via vite alias', () => {
+        const result = resolveImport(
+            join(TS_VITE_ALIAS, 'src/main.ts'),
+            '~/lib/utils', 'ts', TS_VITE_ALIAS,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('utils.ts');
     });
 });
