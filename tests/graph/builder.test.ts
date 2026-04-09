@@ -107,6 +107,18 @@ describe('buildGraphData', () => {
                     className: '',
                     qualified: 'src/a.ts::myFunction',
                 },
+                {
+                    name: 'helper',
+                    file: 'src/b.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/b.ts::helper',
+                },
             ],
             classes: [],
             interfaces: [],
@@ -154,6 +166,30 @@ describe('buildGraphData', () => {
                     className: '',
                     qualified: 'src/a.ts::inner',
                 },
+                {
+                    name: 'helper',
+                    file: 'src/b.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/b.ts::helper',
+                },
+                {
+                    name: 'other',
+                    file: 'src/b.ts',
+                    line_start: 7,
+                    line_end: 12,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/b.ts::other',
+                },
             ],
             classes: [],
             interfaces: [],
@@ -192,6 +228,18 @@ describe('buildGraphData', () => {
                     ast_kind: 'function_definition',
                     className: '',
                     qualified: 'src/a.py::myFunction',
+                },
+                {
+                    name: 'init',
+                    file: 'src/b.py',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_definition',
+                    className: '',
+                    qualified: 'src/b.py::init',
                 },
             ],
             classes: [],
@@ -306,6 +354,18 @@ describe('buildGraphData', () => {
                     className: 'ServiceB',
                     qualified: 'src/service.ts::ServiceB.methodB',
                 },
+                {
+                    name: 'query',
+                    file: 'src/db.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    params: '(sql: string)',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/db.ts::query',
+                },
             ],
             classes: [],
             interfaces: [],
@@ -369,5 +429,56 @@ describe('buildGraphData', () => {
 
         expect(result.edges.some((e) => e.kind === 'CONTAINS')).toBe(true);
         expect(result.edges.some((e) => e.kind === 'INHERITS')).toBe(true);
+    });
+
+    it('should filter out CALLS edges to external packages', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'handler',
+                    file: 'src/page.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/page.ts::handler',
+                },
+                {
+                    name: 'helper',
+                    file: 'src/utils.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/utils.ts::helper',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+        const callEdges: RawCallEdge[] = [
+            // Internal call — should be kept
+            { source: 'src/page.ts', target: 'src/utils.ts::helper', callName: 'helper', line: 3, confidence: 0.9 },
+            // External call — should be filtered out
+            { source: 'src/page.ts', target: 'next/navigation::useRouter', callName: 'useRouter', line: 5, confidence: 0.5 },
+        ];
+
+        const result = buildGraphData(raw, callEdges, [], 'src', new Map());
+        const calls = result.edges.filter((e) => e.kind === 'CALLS');
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].target_qualified).toBe('src/utils.ts::helper');
     });
 });

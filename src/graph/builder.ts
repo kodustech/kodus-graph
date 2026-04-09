@@ -99,6 +99,14 @@ export function buildGraphData(
         });
     }
 
+    // Build a set of all parsed file paths for validation (filter external targets)
+    const parsedFiles = new Set<string>();
+    for (const f of raw.functions) parsedFiles.add(f.file);
+    for (const c of raw.classes) parsedFiles.add(c.file);
+    for (const i of raw.interfaces) parsedFiles.add(i.file);
+    for (const e of raw.enums) parsedFiles.add(e.file);
+    for (const t of raw.tests) parsedFiles.add(t.file);
+
     // Build file→functions index to resolve caller from line number
     const functionsByFile = new Map<string, Array<{ qualified_name: string; line_start: number; line_end: number }>>();
     for (const node of nodes) {
@@ -120,6 +128,12 @@ export function buildGraphData(
 
     // CALLS edges — resolve caller function from call line number
     for (const ce of callEdges) {
+        // Skip calls to external packages (target file not in repo)
+        const targetFile = ce.target.split('::')[0];
+        if (targetFile && !parsedFiles.has(targetFile)) {
+            continue;
+        }
+
         const sourceFile = ce.source.includes('::') ? ce.source.split('::')[0] : ce.source;
         let sourceQualified: string;
 
