@@ -8,8 +8,10 @@ import type {
     GraphNode,
     ParseMetadata,
 } from '../graph/types';
+import { log } from '../shared/logger';
 import { computeBlastRadius } from './blast-radius';
 import { computeStructuralDiff, type DiffResult } from './diff';
+import { type DiffHunk, overlapsWithDiff } from './diff-lines';
 import { enrichChangedFunctions } from './enrich';
 import { detectFlows } from './flows';
 import { extractInheritance } from './inheritance';
@@ -41,6 +43,8 @@ interface BuildContextV2Options {
     minConfidence: number;
     maxDepth: number;
     skipTests?: boolean;
+    /** Parsed diff hunks per file — used to filter changed functions in fallback mode (no oldGraph) */
+    diffHunks?: Map<string, DiffHunk[]>;
 }
 
 export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
@@ -64,6 +68,23 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         ...structuralDiff.nodes.modified.map((n) => n.qualified_name),
         ...structuralDiff.nodes.removed.map((n) => n.qualified_name),
     ]);
+
+    // In fallback mode (no oldGraph), ALL functions are "added" by structural diff.
+    // If we have actual diff hunks, filter to only functions whose lines overlap with real changes.
+    if (!oldGraph && opts.diffHunks && opts.diffHunks.size > 0) {
+        const before = trulyChangedQN.size;
+        for (const qn of [...trulyChangedQN]) {
+            const node = indexed.byQualified.get(qn);
+            if (node && !overlapsWithDiff(node.file_path, node.line_start, node.line_end, opts.diffHunks)) {
+                trulyChangedQN.delete(qn);
+            }
+        }
+        log.info('context: diff-hunk filter applied (fallback mode)', {
+            before,
+            after: trulyChangedQN.size,
+            filtered: before - trulyChangedQN.size,
+        });
+    }
 
     const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });

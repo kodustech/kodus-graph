@@ -77,6 +77,7 @@ program
     .requiredOption('--files <paths...>', 'Changed files')
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
+    .option('--diff <path>', 'Path to unified diff file (filters changed functions in fallback mode)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
     .option('--max-depth <n>', 'Blast radius BFS depth', '3')
@@ -96,6 +97,7 @@ program
             repoDir: opts.repoDir,
             files: opts.files,
             graph: opts.graph,
+            diff: opts.diff,
             out: opts.out,
             minConfidence: Number.parseFloat(opts.minConfidence),
             maxDepth: Number.parseInt(opts.maxDepth, 10),

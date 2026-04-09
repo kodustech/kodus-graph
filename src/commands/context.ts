@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
+import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
 import { formatPrompt } from '../analysis/prompt-formatter';
 import { mergeGraphs } from '../graph/merger';
 import type { GraphData, MainGraphInput } from '../graph/types';
@@ -14,6 +15,7 @@ interface ContextOptions {
     repoDir: string;
     files: string[];
     graph?: string;
+    diff?: string;
     out: string;
     minConfidence: number;
     maxDepth: number;
@@ -113,6 +115,25 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             mergedGraph = { nodes: parseResult.nodes, edges: parseResult.edges };
         }
 
+        // Parse diff hunks if provided (used in fallback mode to filter changed functions)
+        let diffHunks: Map<string, DiffHunk[]> | undefined;
+        if (opts.diff) {
+            try {
+                const diffContent = readFileSync(opts.diff, 'utf-8');
+                diffHunks = parseDiffHunks(diffContent);
+                log.info('context: diff hunks loaded', {
+                    path: opts.diff,
+                    files: diffHunks.size,
+                    totalHunks: [...diffHunks.values()].reduce((s, h) => s + h.length, 0),
+                });
+            } catch (err) {
+                log.warn('context: failed to read --diff file, proceeding without it', {
+                    path: opts.diff,
+                    error: String(err),
+                });
+            }
+        }
+
         // Build V2 context
         const output = buildContextV2({
             mergedGraph,
@@ -121,6 +142,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             minConfidence: opts.minConfidence,
             maxDepth: opts.maxDepth,
             skipTests: opts.skipTests,
+            diffHunks,
         });
 
         log.info('context: analysis done', {
