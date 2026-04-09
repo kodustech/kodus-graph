@@ -57,17 +57,26 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const newEdgesInChanged = mergedGraph.edges.filter((e) => changedSet.has(e.file_path));
 
     const structuralDiff = computeStructuralDiff(oldIndexed, newNodesInChanged, newEdgesInChanged, changedFiles);
-    // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
-    const changedQN = mergedGraph.nodes.filter((n) => changedSet.has(n.file_path)).map((n) => n.qualified_name);
-    const blastRadius = computeBlastRadius(mergedGraph, changedQN, maxDepth, 0.5);
+
+    // Extract truly changed qualified names from structural diff (added + modified + removed)
+    const trulyChangedQN = new Set([
+        ...structuralDiff.nodes.added.map((n) => n.qualified_name),
+        ...structuralDiff.nodes.modified.map((n) => n.qualified_name),
+        ...structuralDiff.nodes.removed.map((n) => n.qualified_name),
+    ]);
+
+    const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
     const inheritance = extractInheritance(indexed, changedFiles);
 
-    // Phase 3: Filter affected flows
+    // Phase 3: Filter affected flows — only truly changed (added+modified+removed), non-test functions
     const changedFuncSet = new Set(
-        mergedGraph.nodes.filter((n) => changedSet.has(n.file_path) && !n.is_test).map((n) => n.qualified_name),
+        [...trulyChangedQN].filter((qn) => {
+            const node = indexed.byQualified.get(qn);
+            return node && !node.is_test;
+        }),
     );
 
     const affectedFlows: AffectedFlow[] = [];
@@ -85,7 +94,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     }
 
     // Phase 3: Enrichment
-    const enriched = enrichChangedFunctions(indexed, changedFiles, structuralDiff, allFlows.flows, minConfidence);
+    const enriched = enrichChangedFunctions(indexed, changedFiles, structuralDiff, allFlows.flows, minConfidence, true);
 
     // Phase 4: Assembly
     const totalCallers = enriched.reduce((s, f) => s + f.callers.length, 0);

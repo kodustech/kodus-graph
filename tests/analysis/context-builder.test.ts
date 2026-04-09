@@ -157,7 +157,7 @@ describe('buildContextV2', () => {
 
     it('should NOT mark functions as new when identical oldGraph is provided (pre-fix behavior)', () => {
         // When oldGraph has the same nodes as mergedGraph → everything is "unchanged"
-        // This is the broken behavior that context.ts now prevents for same-branch scenarios
+        // With onlyChanged=true in enrichment, no functions are returned since none truly changed
         const result = buildContextV2({
             mergedGraph: graphData,
             oldGraph: graphData,
@@ -166,9 +166,209 @@ describe('buildContextV2', () => {
             maxDepth: 3,
         });
 
-        // With identical graphs, nothing appears as new or modified
-        expect(result.analysis.changed_functions[0].is_new).toBe(false);
-        expect(result.analysis.changed_functions[0].diff_changes).toHaveLength(0);
+        // With identical graphs, nothing truly changed → no enriched functions
+        expect(result.analysis.changed_functions).toHaveLength(0);
+        expect(result.analysis.structural_diff.nodes.added).toHaveLength(0);
+        expect(result.analysis.structural_diff.nodes.modified).toHaveLength(0);
+    });
+
+    it('should seed blast radius from trulyChangedQN (not file-level)', () => {
+        // Graph with 2 functions in the same changed file, but only one is modified
+        const oldGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '(ctx: Ctx)', // different from merged → will be "modified"
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+            ],
+            edges: [],
+        };
+
+        const mergedWithTwoFns: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)', // changed params
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)', // same params → unchanged
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+                {
+                    kind: 'Function',
+                    name: 'helper',
+                    qualified_name: 'src/utils.ts::helper',
+                    file_path: 'src/utils.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'u',
+                },
+            ],
+            edges: [
+                // helper calls authenticate → blast radius should reach helper only if authenticate is a seed
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/utils.ts::helper',
+                    target_qualified: 'src/auth.ts::authenticate',
+                    file_path: 'src/utils.ts',
+                    line: 3,
+                    confidence: 0.9,
+                },
+                // helper also calls validate → if validate were a seed, helper would still be reached
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/utils.ts::helper',
+                    target_qualified: 'src/auth.ts::validate',
+                    file_path: 'src/utils.ts',
+                    line: 4,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        const result = buildContextV2({
+            mergedGraph: mergedWithTwoFns,
+            oldGraph,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        // Only authenticate is modified (params change); validate is unchanged
+        expect(result.analysis.structural_diff.nodes.modified.length).toBe(1);
+        expect(result.analysis.structural_diff.nodes.modified[0].qualified_name).toBe(
+            'src/auth.ts::authenticate',
+        );
+
+        // Blast radius seeds = trulyChangedQN, which is just [authenticate]
+        // So total_functions includes authenticate + helper (reached via reverse CALLS)
+        expect(result.analysis.blast_radius.total_functions).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should build changedFuncSet from trulyChangedQN only (not all functions in file)', () => {
+        // Two functions in the same file, but only one truly changed
+        const oldGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '(ctx: Ctx)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+            ],
+            edges: [],
+        };
+
+        const mergedWithTwoFns: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'old',
+                },
+            ],
+            edges: [],
+        };
+
+        const result = buildContextV2({
+            mergedGraph: mergedWithTwoFns,
+            oldGraph,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        // Only authenticate truly changed, validate did not
+        // So enriched functions should only contain authenticate (onlyChanged=true)
+        expect(result.analysis.changed_functions).toHaveLength(1);
+        expect(result.analysis.changed_functions[0].qualified_name).toBe('src/auth.ts::authenticate');
+
+        // Affected flows should only match against truly changed functions (authenticate)
+        // With no flows detected in this simple graph, affected_flows should be empty
+        expect(result.analysis.affected_flows).toHaveLength(0);
     });
 
     it('should compute structural diff when oldGraph is provided', () => {

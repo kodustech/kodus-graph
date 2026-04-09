@@ -9,6 +9,7 @@ export function enrichChangedFunctions(
     diff: DiffResult,
     allFlows: Flow[],
     minConfidence: number,
+    onlyChanged: boolean = false,
 ): EnrichedFunction[] {
     const changedSet = new Set(changedFiles);
 
@@ -35,15 +36,15 @@ export function enrichChangedFunctions(
     }
 
     // Filter functions in changed files
-    const changedFunctions = graph.nodes.filter(
-        (n) =>
-            changedSet.has(n.file_path) &&
-            !n.is_test &&
-            n.kind !== 'Constructor' &&
-            n.kind !== 'Class' &&
-            n.kind !== 'Interface' &&
-            n.kind !== 'Enum',
-    );
+    const changedFunctions = graph.nodes.filter((n) => {
+        if (!changedSet.has(n.file_path)) return false;
+        if (n.is_test || n.kind === 'Constructor' || n.kind === 'Class' || n.kind === 'Interface' || n.kind === 'Enum')
+            return false;
+        if (onlyChanged) {
+            return addedSet.has(n.qualified_name) || modifiedMap.has(n.qualified_name);
+        }
+        return true;
+    });
 
     return changedFunctions
         .sort((a, b) => a.file_path.localeCompare(b.file_path) || a.line_start - b.line_start)

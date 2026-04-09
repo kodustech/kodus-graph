@@ -171,4 +171,172 @@ describe('enrichChangedFunctions', () => {
         const result = enrichChangedFunctions(indexed, ['tests/auth.test.ts'], diff, [], 0.5);
         expect(result).toHaveLength(0);
     });
+
+    it('should exclude unchanged functions when onlyChanged=true', () => {
+        // Graph has authenticate (modified) and login (unchanged) in changed files
+        const graphWithTwoChanged: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        const diffWithOneModified: DiffResult = {
+            changed_files: ['src/auth.ts'],
+            summary: { added: 0, removed: 0, modified: 1 },
+            nodes: {
+                added: [],
+                removed: [],
+                modified: [{ qualified_name: 'src/auth.ts::authenticate', changes: ['params'], contract_diffs: [] }],
+            },
+            edges: { added: [], removed: [] },
+            risk_by_file: {},
+        };
+
+        const indexed = indexGraph(graphWithTwoChanged);
+
+        // onlyChanged=true: only authenticate (modified) should appear
+        const resultOnly = enrichChangedFunctions(indexed, ['src/auth.ts'], diffWithOneModified, [], 0.5, true);
+        expect(resultOnly).toHaveLength(1);
+        expect(resultOnly[0].qualified_name).toBe('src/auth.ts::authenticate');
+
+        // validate should NOT appear even though it's in the changed file
+    });
+
+    it('should include all functions in changed files when onlyChanged=false (backward compat)', () => {
+        const graphWithTwoFns: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/auth.ts::validate',
+                    file_path: 'src/auth.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(token: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        const diffWithOneModified: DiffResult = {
+            changed_files: ['src/auth.ts'],
+            summary: { added: 0, removed: 0, modified: 1 },
+            nodes: {
+                added: [],
+                removed: [],
+                modified: [{ qualified_name: 'src/auth.ts::authenticate', changes: ['params'], contract_diffs: [] }],
+            },
+            edges: { added: [], removed: [] },
+            risk_by_file: {},
+        };
+
+        const indexed = indexGraph(graphWithTwoFns);
+
+        // onlyChanged=false (default): both functions should appear
+        const resultAll = enrichChangedFunctions(indexed, ['src/auth.ts'], diffWithOneModified, [], 0.5, false);
+        expect(resultAll).toHaveLength(2);
+        const qns = resultAll.map((f) => f.qualified_name).sort();
+        expect(qns).toEqual(['src/auth.ts::authenticate', 'src/auth.ts::validate']);
+    });
+
+    it('should include added functions when onlyChanged=true', () => {
+        const graphWithNewFn: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'newHelper',
+                    qualified_name: 'src/auth.ts::newHelper',
+                    file_path: 'src/auth.ts',
+                    line_start: 50,
+                    line_end: 60,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'existingFn',
+                    qualified_name: 'src/auth.ts::existingFn',
+                    file_path: 'src/auth.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        const diffWithAdded: DiffResult = {
+            changed_files: ['src/auth.ts'],
+            summary: { added: 1, removed: 0, modified: 0 },
+            nodes: {
+                added: [
+                    {
+                        qualified_name: 'src/auth.ts::newHelper',
+                        kind: 'Function',
+                        file_path: 'src/auth.ts',
+                        line_start: 50,
+                        line_end: 60,
+                    },
+                ],
+                removed: [],
+                modified: [],
+            },
+            edges: { added: [], removed: [] },
+            risk_by_file: {},
+        };
+
+        const indexed = indexGraph(graphWithNewFn);
+        const result = enrichChangedFunctions(indexed, ['src/auth.ts'], diffWithAdded, [], 0.5, true);
+
+        // Only newHelper (added) should appear; existingFn is unchanged
+        expect(result).toHaveLength(1);
+        expect(result[0].qualified_name).toBe('src/auth.ts::newHelper');
+        expect(result[0].is_new).toBe(true);
+    });
 });
