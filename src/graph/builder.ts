@@ -150,8 +150,11 @@ export function buildGraphData(
         });
     }
 
-    // IMPORTS edges
+    // IMPORTS edges — only emit resolved imports (skip external/unresolved packages)
     for (const ie of importEdges) {
+        if (!ie.resolved) {
+            continue;
+        }
         edges.push({
             kind: 'IMPORTS',
             source_qualified: ie.source,
