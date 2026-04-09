@@ -83,6 +83,12 @@ program
     .option('--max-depth <n>', 'Blast radius BFS depth', '3')
     .option('--format <type>', 'Output format: json or prompt', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
+    .option('--max-functions <n>', 'Max changed functions in prompt output (default: 30)', (v) => parseInt(v, 10))
+    .option(
+        '--max-prompt-chars <n>',
+        'Max total prompt chars — truncates less important sections first (default: 20000)',
+        (v) => parseInt(v, 10),
+    )
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
@@ -103,6 +109,8 @@ program
             maxDepth: Number.parseInt(opts.maxDepth, 10),
             format: opts.format,
             skipTests: opts.skipTests ?? false,
+            maxFunctions: opts.maxFunctions,
+            maxPromptChars: opts.maxPromptChars,
         });
     });
 

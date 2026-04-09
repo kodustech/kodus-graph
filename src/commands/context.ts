@@ -3,7 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
 import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
-import { formatPrompt } from '../analysis/prompt-formatter';
+import { formatPrompt, type PromptFormatterOptions } from '../analysis/prompt-formatter';
 import { mergeGraphs } from '../graph/merger';
 import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
@@ -21,6 +21,8 @@ interface ContextOptions {
     maxDepth: number;
     format: 'json' | 'prompt';
     skipTests?: boolean;
+    maxFunctions?: number;
+    maxPromptChars?: number;
 }
 
 export async function executeContext(opts: ContextOptions): Promise<void> {
@@ -156,7 +158,14 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
         });
 
         if (opts.format === 'prompt') {
-            writeFileSync(opts.out, formatPrompt(output));
+            const fmtOpts: PromptFormatterOptions = {};
+            if (opts.maxFunctions != null) {
+                fmtOpts.maxFunctions = opts.maxFunctions;
+            }
+            if (opts.maxPromptChars != null) {
+                fmtOpts.maxPromptChars = opts.maxPromptChars;
+            }
+            writeFileSync(opts.out, formatPrompt(output, fmtOpts));
         } else {
             writeFileSync(opts.out, JSON.stringify(output, null, 2));
         }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { buildContextV2 } from '../../src/analysis/context-builder';
-import { formatPrompt } from '../../src/analysis/prompt-formatter';
-import type { GraphData } from '../../src/graph/types';
+import { computeFunctionRisk, formatPrompt } from '../../src/analysis/prompt-formatter';
+import type { EnrichedFunction, GraphData } from '../../src/graph/types';
 
 describe('formatPrompt', () => {
     const graphData: GraphData = {
@@ -640,5 +640,179 @@ describe('formatPrompt', () => {
 
         // Header should say "1 changed (1 untested)" not "2 untested"
         expect(text).toContain('1 changed (1 untested)');
+    });
+
+    it('should sort functions by risk and truncate when maxFunctions is set', () => {
+        // Create a graph with 5 functions — different risk profiles
+        const nodes = [];
+        const edges = [];
+        for (let i = 1; i <= 5; i++) {
+            nodes.push({
+                kind: 'Function' as const,
+                name: `fn${i}`,
+                qualified_name: `src/f${i}.ts::fn${i}`,
+                file_path: `src/f${i}.ts`,
+                line_start: 1,
+                line_end: 10 + i * 20, // fn5 is biggest
+                language: 'typescript',
+                params: '()',
+                return_type: 'void',
+                is_test: false,
+                file_hash: `h${i}`,
+            });
+        }
+        // fn1 has 3 callers — higher blast radius
+        for (let c = 1; c <= 3; c++) {
+            nodes.push({
+                kind: 'Function' as const,
+                name: `caller${c}`,
+                qualified_name: `src/c${c}.ts::caller${c}`,
+                file_path: `src/c${c}.ts`,
+                line_start: 1,
+                line_end: 5,
+                language: 'typescript',
+                is_test: false,
+                file_hash: `c${c}`,
+            });
+            edges.push({
+                kind: 'CALLS' as const,
+                source_qualified: `src/c${c}.ts::caller${c}`,
+                target_qualified: 'src/f1.ts::fn1',
+                file_path: `src/c${c}.ts`,
+                line: 2,
+                confidence: 0.9,
+            });
+        }
+
+        const output = buildContextV2({
+            mergedGraph: { nodes, edges },
+            oldGraph: null,
+            changedFiles: ['src/f1.ts', 'src/f2.ts', 'src/f3.ts', 'src/f4.ts', 'src/f5.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output, { maxFunctions: 2 });
+
+        // Should show truncation footer
+        expect(text).toContain('Showing top 2 of 5 changed functions');
+        // fn1 has 3 callers, so highest risk — should appear first
+        expect(text).toContain('fn1');
+        // Only 2 functions should appear — fn3, fn4 should not
+        expect(text).not.toContain('fn3 ');
+        expect(text).not.toContain('fn4 ');
+    });
+
+    it('should truncate BLAST RADIUS section when maxPromptChars is exceeded', () => {
+        // Build a graph that produces BLAST RADIUS
+        const nodes = [];
+        const edges = [];
+        for (let i = 0; i < 10; i++) {
+            nodes.push({
+                kind: 'Function' as const,
+                name: `deepFn${i}`,
+                qualified_name: `src/deep${i}.ts::deepFn${i}`,
+                file_path: `src/deep${i}.ts`,
+                line_start: 1,
+                line_end: 10,
+                language: 'typescript',
+                is_test: false,
+                file_hash: `d${i}`,
+            });
+        }
+        // Chain: changed → deepFn0 → deepFn1 → ...
+        nodes.push({
+            kind: 'Function' as const,
+            name: 'entry',
+            qualified_name: 'src/entry.ts::entry',
+            file_path: 'src/entry.ts',
+            line_start: 1,
+            line_end: 10,
+            language: 'typescript',
+            is_test: false,
+            file_hash: 'e',
+        });
+        edges.push({
+            kind: 'CALLS' as const,
+            source_qualified: 'src/deep0.ts::deepFn0',
+            target_qualified: 'src/entry.ts::entry',
+            file_path: 'src/deep0.ts',
+            line: 2,
+            confidence: 0.9,
+        });
+
+        const output = buildContextV2({
+            mergedGraph: { nodes, edges },
+            oldGraph: null,
+            changedFiles: ['src/entry.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const fullText = formatPrompt(output);
+        // Full text should have BLAST RADIUS
+        expect(fullText).toContain('BLAST RADIUS:');
+        // Now truncate with a limit smaller than the full output
+        const truncatedText = formatPrompt(output, { maxPromptChars: fullText.length - 10 });
+
+        expect(truncatedText.length).toBeLessThan(fullText.length);
+        // BLAST RADIUS should have been removed (it's the first section dropped)
+        expect(truncatedText).not.toContain('BLAST RADIUS:');
+    });
+});
+
+describe('computeFunctionRisk', () => {
+    function makeFn(overrides: Partial<EnrichedFunction>): EnrichedFunction {
+        return {
+            qualified_name: 'src/a.ts::fn',
+            name: 'fn',
+            kind: 'Function',
+            signature: 'fn()',
+            file_path: 'src/a.ts',
+            line_start: 1,
+            line_end: 10,
+            callers: [],
+            callees: [],
+            has_test_coverage: true,
+            diff_changes: [],
+            contract_diffs: [],
+            is_new: true,
+            in_flows: [],
+            ...overrides,
+        };
+    }
+
+    it('should rank function with contract diffs higher', () => {
+        const withDiff = makeFn({
+            contract_diffs: [{ field: 'params', old_value: '(a)', new_value: '(a, b)' }],
+        });
+        const withoutDiff = makeFn({ contract_diffs: [] });
+        expect(computeFunctionRisk(withDiff)).toBeGreaterThan(computeFunctionRisk(withoutDiff));
+    });
+
+    it('should rank untested functions higher', () => {
+        const untested = makeFn({ has_test_coverage: false });
+        const tested = makeFn({ has_test_coverage: true });
+        expect(computeFunctionRisk(untested)).toBeGreaterThan(computeFunctionRisk(tested));
+    });
+
+    it('should rank functions with many callers higher', () => {
+        const manyCallers = makeFn({
+            callers: Array.from({ length: 8 }, (_, i) => ({
+                qualified_name: `src/c${i}.ts::c${i}`,
+                name: `c${i}`,
+                file_path: `src/c${i}.ts`,
+                line: 1,
+                confidence: 0.9,
+            })),
+        });
+        const noCallers = makeFn({ callers: [] });
+        expect(computeFunctionRisk(manyCallers)).toBeGreaterThan(computeFunctionRisk(noCallers));
+    });
+
+    it('should rank modified functions higher than new ones', () => {
+        const modified = makeFn({ is_new: false });
+        const newFn = makeFn({ is_new: true });
+        expect(computeFunctionRisk(modified)).toBeGreaterThan(computeFunctionRisk(newFn));
     });
 });

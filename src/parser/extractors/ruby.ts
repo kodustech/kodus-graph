@@ -2,6 +2,7 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
+import { NOISE } from '../../shared/filters';
 import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
 
@@ -51,36 +52,38 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
         });
     }
 
-    // ── Methods ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.method } })) {
-        const name = node.field('name')?.text();
-        if (!name) {
-            continue;
-        }
-        const line = node.range().start.line;
-        if (seen.has(`m:${fp}:${name}:${line}`)) {
-            continue;
-        }
-        seen.add(`m:${fp}:${name}:${line}`);
+    // ── Methods (regular + singleton) ──
+    for (const methodKind of [kinds.method, kinds.singletonMethod]) {
+        for (const node of rootNode.findAll({ rule: { kind: methodKind } })) {
+            const name = node.field('name')?.text();
+            if (!name) {
+                continue;
+            }
+            const line = node.range().start.line;
+            if (seen.has(`m:${fp}:${name}:${line}`)) {
+                continue;
+            }
+            seen.add(`m:${fp}:${name}:${line}`);
 
-        const classAncestor = node
-            .ancestors()
-            .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
-        const className = classAncestor?.field('name')?.text() || '';
+            const classAncestor = node
+                .ancestors()
+                .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
+            const className = classAncestor?.field('name')?.text() || '';
 
-        graph.functions.push({
-            name,
-            file: fp,
-            line_start: line,
-            line_end: node.range().end.line,
-            params: node.field('parameters')?.text() || '()',
-            returnType: '',
-            kind: className ? 'Method' : 'Function',
-            ast_kind: String(node.kind()),
-            className,
-            qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
-            content_hash: computeContentHash(node.text()),
-        });
+            graph.functions.push({
+                name,
+                file: fp,
+                line_start: line,
+                line_end: node.range().end.line,
+                params: node.field('parameters')?.text() || '()',
+                returnType: '',
+                kind: className ? 'Method' : 'Function',
+                ast_kind: String(node.kind()),
+                className,
+                qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+                content_hash: computeContentHash(node.text()),
+            });
+        }
     }
 
     // ── Tests (RSpec: describe/it/context) ──
@@ -161,5 +164,67 @@ function createRubyCallConfig(): CallExtractionConfig {
  * Detects self.X() and super() to preserve class resolution context.
  */
 export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-    extractCalls(root.root(), fp, createRubyCallConfig(), calls);
+    const rootNode = root.root();
+    const config = createRubyCallConfig();
+
+    // Track lines already captured by the pattern-based extraction to avoid duplicates
+    const seenLines = new Set<string>();
+
+    extractCalls(rootNode, fp, config, calls);
+    for (const c of calls) {
+        seenLines.add(`${c.callName}:${c.line}`);
+    }
+
+    // ── call nodes: covers both paren and no-paren calls with arguments ──
+    // The pattern $CALLEE($$$ARGS) only matches calls with literal parentheses.
+    // This loop catches the remaining call nodes (no-paren style).
+    for (const node of rootNode.findAll({ rule: { kind: 'call' } })) {
+        const methodNode = node.field('method');
+        const callName = methodNode?.text();
+        if (!callName || NOISE.has(callName)) {
+            continue;
+        }
+        const line = node.range().start.line;
+        if (seenLines.has(`${callName}:${line}`)) {
+            continue;
+        }
+        seenLines.add(`${callName}:${line}`);
+
+        let resolveInClass: string | undefined;
+        const receiver = node.field('receiver');
+        if (receiver?.text() === 'self') {
+            const classNode = config.findEnclosingClass(node);
+            resolveInClass = classNode?.field('name')?.text();
+        }
+
+        calls.push({
+            source: fp,
+            callName,
+            line,
+            ...(resolveInClass ? { resolveInClass } : {}),
+        });
+    }
+
+    // ── bare identifiers in body_statement: no-arg, no-paren calls (e.g., `authenticate_user`) ──
+    for (const node of rootNode.findAll({ rule: { kind: 'identifier' } })) {
+        const parent = node.parent();
+        if (!parent || parent.kind() !== 'body_statement') {
+            continue;
+        }
+        const callName = node.text();
+        if (NOISE.has(callName)) {
+            continue;
+        }
+        const line = node.range().start.line;
+        if (seenLines.has(`${callName}:${line}`)) {
+            continue;
+        }
+        seenLines.add(`${callName}:${line}`);
+
+        calls.push({
+            source: fp,
+            callName,
+            line,
+        });
+    }
 }

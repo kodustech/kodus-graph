@@ -1,4 +1,29 @@
+import type { EnrichedFunction } from '../graph/types';
 import type { ContextV2Output } from './context-builder';
+
+export interface PromptFormatterOptions {
+    /** Max functions to include in CHANGED section (default: 30). */
+    maxFunctions?: number;
+    /** Max total chars for the prompt — truncates BLAST RADIUS, then IMPORTS if exceeded (default: 20000). */
+    maxPromptChars?: number;
+}
+
+const DEFAULT_MAX_FUNCTIONS = 30;
+const DEFAULT_MAX_PROMPT_CHARS = 20_000;
+
+/**
+ * Compute a per-function risk score (0–1) for truncation sorting.
+ * Higher = riskier = shown first.
+ */
+export function computeFunctionRisk(fn: EnrichedFunction): number {
+    const hasContractDiff = fn.contract_diffs.length > 0 ? 1 : 0;
+    const callersNorm = Math.min(fn.callers.length / 10, 1);
+    const isUntested = fn.has_test_coverage ? 0 : 1;
+    const isModified = fn.is_new ? 0 : 1; // modified > new (can break existing callers)
+    const sizeNorm = Math.min((fn.line_end - fn.line_start) / 100, 1);
+
+    return hasContractDiff * 0.3 + callersNorm * 0.25 + isUntested * 0.2 + isModified * 0.15 + sizeNorm * 0.1;
+}
 
 /**
  * Compact prompt format optimized for LLM agent consumption.
@@ -11,7 +36,7 @@ import type { ContextV2Output } from './context-builder';
  * - Contract changes on callers are high-value signals → inline with ⚠
  * - Flows show how HTTP/test paths cross changed code → inline per function
  */
-export function formatPrompt(output: ContextV2Output): string {
+export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOptions): string {
     const { analysis } = output;
     const lines: string[] = [];
 
@@ -26,14 +51,24 @@ export function formatPrompt(output: ContextV2Output): string {
     );
     lines.push('');
 
-    // ── Changed functions ──
+    const maxFunctions = opts?.maxFunctions ?? DEFAULT_MAX_FUNCTIONS;
+    const maxPromptChars = opts?.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS;
+
+    // ── Changed functions (sorted by risk, truncated) ──
     if (analysis.changed_functions.length > 0) {
+        // Sort by per-function risk (highest first)
+        const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
+
+        const totalFunctions = sorted.length;
+        const truncated = sorted.slice(0, maxFunctions);
+        const wasTruncated = totalFunctions > maxFunctions;
+
         lines.push('CHANGED:');
 
         // Build a set of qualified names that have siblings (same method name in sibling classes)
         const siblingMap = buildSiblingMap(analysis, output);
 
-        for (const fn of analysis.changed_functions) {
+        for (const fn of truncated) {
             const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
             const tested = fn.has_test_coverage ? 'tested' : 'untested';
 
@@ -108,6 +143,11 @@ export function formatPrompt(output: ContextV2Output): string {
 
             lines.push('');
         }
+
+        if (wasTruncated) {
+            lines.push(`⚠ Showing top ${maxFunctions} of ${totalFunctions} changed functions (sorted by risk)`);
+            lines.push('');
+        }
     }
 
     // ── Imports for changed files (helps agent spot missing/new dependencies) ──
@@ -165,7 +205,32 @@ export function formatPrompt(output: ContextV2Output): string {
         lines.push('');
     }
 
-    return lines.join('\n');
+    // ── Char-level truncation: drop sections from bottom (BLAST RADIUS → IMPORTS) if over limit ──
+    let result = lines.join('\n');
+    if (result.length > maxPromptChars) {
+        // Try removing BLAST RADIUS first, then IMPORTS
+        for (const section of ['BLAST RADIUS:', 'IMPORTS:']) {
+            const idx = result.indexOf(`\n${section}\n`);
+            if (idx !== -1) {
+                // Find the end of this section (next section start or end of string)
+                const afterSection = result.indexOf('\n\n', idx + section.length + 2);
+                if (afterSection !== -1) {
+                    result = result.slice(0, idx) + result.slice(afterSection);
+                } else {
+                    result = result.slice(0, idx);
+                }
+            }
+            if (result.length <= maxPromptChars) {
+                break;
+            }
+        }
+        // Hard truncate as last resort
+        if (result.length > maxPromptChars) {
+            result = `${result.slice(0, maxPromptChars - 60)}\n\n⚠ Prompt truncated at ${maxPromptChars} chars`;
+        }
+    }
+
+    return result;
 }
 
 // ── Helpers ──

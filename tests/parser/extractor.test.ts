@@ -8,6 +8,44 @@ import { extractFromFile } from '../../src/parser/extractor';
 // Import to trigger language registration side-effect
 import '../../src/parser/languages';
 
+describe('extractFromFile (Ruby)', () => {
+    it('should extract singleton methods (def self.method_name)', async () => {
+        const source = `
+class TopicEmbed
+  def self.import(url, contents)
+    # class method
+  end
+
+  def self.find_remote(url)
+    # another class method
+  end
+
+  def instance_method
+    # regular method
+  end
+end
+`;
+        const root = await parseAsync('ruby' as any, source);
+        const graph = emptyGraph();
+        const seen = new Set<string>();
+
+        extractFromFile(root, 'test.rb', 'ruby', seen, graph);
+
+        expect(graph.functions.some((f) => f.name === 'import')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'find_remote')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'instance_method')).toBe(true);
+
+        const importFn = graph.functions.find((f) => f.name === 'import');
+        expect(importFn!.className).toBe('TopicEmbed');
+        expect(importFn!.kind).toBe('Method');
+        expect(importFn!.qualified).toBe('test.rb::TopicEmbed.import');
+
+        const findRemoteFn = graph.functions.find((f) => f.name === 'find_remote');
+        expect(findRemoteFn!.className).toBe('TopicEmbed');
+        expect(findRemoteFn!.qualified).toBe('test.rb::TopicEmbed.find_remote');
+    });
+});
+
 function emptyGraph(): RawGraph {
     return {
         functions: [],

@@ -151,6 +151,60 @@ real_function(arg)
         expect(names).not.toContain('puts');
         expect(names).toContain('real_function');
     });
+
+    it('should extract calls without parentheses (command style)', async () => {
+        const source = `
+class MyController
+  def index
+    authenticate_user
+    load_resources
+    process_data(input)
+  end
+end
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('authenticate_user');
+        expect(names).toContain('load_resources');
+        expect(names).toContain('process_data');
+    });
+
+    it('should extract receiver.method calls without parens', async () => {
+        const source = `
+class MyService
+  def run
+    logger.notify "starting"
+    self.validate token
+    other_service.transform data
+  end
+end
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('notify');
+        expect(names).toContain('validate');
+        expect(names).toContain('transform');
+        const validateCall = calls.find((c) => c.callName === 'validate');
+        expect(validateCall).toBeDefined();
+        expect(validateCall!.resolveInClass).toBe('MyService');
+    });
+
+    it('should filter Ruby NOISE in command style calls', async () => {
+        const source = `
+def index
+  puts "hello"
+  render json: data
+  redirect_to root_path
+  real_method arg
+end
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).not.toContain('puts');
+        expect(names).not.toContain('render');
+        expect(names).not.toContain('redirect_to');
+        expect(names).toContain('real_method');
+    });
 });
 
 describe('extractCallsFromGeneric', () => {

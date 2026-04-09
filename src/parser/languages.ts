@@ -57,6 +57,7 @@ const EXT_TO_LANG: Record<string, Lang | string> = {
     '.jsx': Lang.JavaScript,
     '.mjs': Lang.JavaScript,
     '.cjs': Lang.JavaScript,
+    '.es6': Lang.JavaScript,
     '.py': 'python',
     '.rb': 'ruby',
     '.go': 'go',
