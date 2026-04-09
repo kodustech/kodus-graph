@@ -627,3 +627,25 @@ describe('TypeScript workspace object format', () => {
         expect(result).toContain('utils.ts');
     });
 });
+
+// ── Robustness: unknown languages and all registered keys ──
+
+describe('Import resolver robustness', () => {
+    it('returns null for unknown language without crashing', () => {
+        const result = resolveImport('/tmp/file.xyz', './other', 'unknown-lang', '/tmp');
+        expect(result).toBeNull();
+    });
+
+    it('handles all registered language keys without crashing', () => {
+        const langs = ['ts', 'javascript', 'typescript', 'python', 'ruby', 'go', 'java', 'rust', 'csharp', 'php'];
+        for (const lang of langs) {
+            const result = resolveImport('/tmp/file.ts', './nonexistent', lang, '/tmp');
+            expect(result).toBeNull();
+        }
+    });
+
+    it('does not silently fall back to TS resolver for non-TS languages', () => {
+        const result = resolveImport('/tmp/App.java', 'com.example.Foo', 'java', '/tmp');
+        expect(result).toBeNull();
+    });
+});

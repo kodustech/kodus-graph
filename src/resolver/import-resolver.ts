@@ -20,6 +20,19 @@ import { resolve as resolveRbImport } from './languages/ruby';
 import { resolve as resolveRustImport } from './languages/rust';
 import { loadBundlerAliases, loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
 
+/**
+ * Registered import resolvers by language key.
+ *
+ * IMPORTANT: When adding a new language, you MUST:
+ * 1. Create a resolver in src/resolver/languages/<lang>.ts
+ * 2. Add it to this map
+ * 3. Add tests in tests/resolver/<lang>.test.ts
+ * 4. Add external detection in src/resolver/external-detector.ts
+ *
+ * If a language key from the parser is not in this map, resolveImport()
+ * will log a warning and return null. This is intentional — silent
+ * failures that default to another language's resolver cause wrong results.
+ */
 const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
     ts: resolveTsImport,
     javascript: resolveTsImport,
@@ -237,13 +250,18 @@ export function resolveImport(
 ): string | null {
     const resolver = RESOLVERS[lang];
     if (!resolver) {
+        log.warn('No import resolver registered for language', { lang, module: modulePath, from: fromAbsFile });
         return null;
     }
 
-    const isTs = lang === 'ts' || lang === 'javascript' || lang === 'typescript';
+    // TS/JS-specific fallbacks: tsconfig aliases, bundler aliases, #imports, workspace exports.
+    // These are Node.js/npm ecosystem features that don't apply to other languages.
+    // Other languages handle their own workspace/monorepo patterns inside their resolvers
+    // (Go: go.work, Rust: Cargo workspace, Java: Maven/Gradle modules).
+    const isTsOrJs = lang === 'ts' || lang === 'javascript' || lang === 'typescript';
 
     // Handle package.json #imports (TS/JS only)
-    if (isTs && modulePath.startsWith('#')) {
+    if (isTsOrJs && modulePath.startsWith('#')) {
         const result = resolveHashImport(modulePath, repoRoot);
         if (result) {
             try {
@@ -263,12 +281,12 @@ export function resolveImport(
     let result = resolver(fromAbsFile, modulePath, repoRoot);
 
     // Fallback: tsconfig aliases for TS/JS
-    if (!result && isTs && tsconfigAliases?.size) {
+    if (!result && isTsOrJs && tsconfigAliases?.size) {
         result = resolveWithAliases(modulePath, tsconfigAliases, repoRoot);
     }
 
     // Fallback: bundler aliases (webpack/vite) for TS/JS bare specifiers
-    if (!result && isTs && !modulePath.startsWith('.')) {
+    if (!result && isTsOrJs && !modulePath.startsWith('.')) {
         const bundlerAliases = loadBundlerAliases(repoRoot);
         if (bundlerAliases.size > 0) {
             result = resolveWithAliases(modulePath, bundlerAliases, repoRoot);
@@ -276,7 +294,7 @@ export function resolveImport(
     }
 
     // Fallback: monorepo workspace exports for TS/JS bare specifiers
-    if (!result && isTs && !modulePath.startsWith('.')) {
+    if (!result && isTsOrJs && !modulePath.startsWith('.')) {
         result = resolveWorkspaceExport(modulePath, repoRoot);
     }
 
