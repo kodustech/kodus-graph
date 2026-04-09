@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { dirname, join, resolve as resolvePath } from 'path';
 import { cachedExists } from '../fs-cache';
 

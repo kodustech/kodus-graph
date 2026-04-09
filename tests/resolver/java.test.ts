@@ -210,12 +210,14 @@ describe('Java nested Maven multi-module', () => {
         mkdirSync(join(TMP_NESTED_MAVEN, 'core/sub/src/main/java/com/example/sub'), { recursive: true });
         mkdirSync(join(TMP_NESTED_MAVEN, 'core/src/main/java/com/example/core'), { recursive: true });
 
-        writeFileSync(join(TMP_NESTED_MAVEN, 'pom.xml'), [
-            '<project><modules><module>core</module></modules></project>',
-        ].join('\n'));
-        writeFileSync(join(TMP_NESTED_MAVEN, 'core/pom.xml'), [
-            '<project><modules><module>sub</module></modules></project>',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP_NESTED_MAVEN, 'pom.xml'),
+            ['<project><modules><module>core</module></modules></project>'].join('\n'),
+        );
+        writeFileSync(
+            join(TMP_NESTED_MAVEN, 'core/pom.xml'),
+            ['<project><modules><module>sub</module></modules></project>'].join('\n'),
+        );
         writeFileSync(join(TMP_NESTED_MAVEN, 'core/sub/pom.xml'), '<project></project>\n');
         writeFileSync(
             join(TMP_NESTED_MAVEN, 'core/sub/src/main/java/com/example/sub/Deep.java'),
@@ -252,15 +254,18 @@ describe('Java Gradle custom sourceSets', () => {
         mkdirSync(join(TMP_SRCSET, 'app/src/generated/java/com/example/gen'), { recursive: true });
 
         writeFileSync(join(TMP_SRCSET, 'settings.gradle'), "include ':app'\n");
-        writeFileSync(join(TMP_SRCSET, 'app/build.gradle'), [
-            'sourceSets {',
-            '    main {',
-            '        java {',
-            "            srcDirs = ['src/main/java', 'src/generated/java']",
-            '        }',
-            '    }',
-            '}',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP_SRCSET, 'app/build.gradle'),
+            [
+                'sourceSets {',
+                '    main {',
+                '        java {',
+                "            srcDirs = ['src/main/java', 'src/generated/java']",
+                '        }',
+                '    }',
+                '}',
+            ].join('\n'),
+        );
         writeFileSync(
             join(TMP_SRCSET, 'app/src/generated/java/com/example/gen/Generated.java'),
             'package com.example.gen;\npublic class Generated {}\n',

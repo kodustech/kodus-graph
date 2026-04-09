@@ -130,12 +130,7 @@ const MAX_MAVEN_DEPTH = 5;
  * Each module's pom.xml may declare its own <module> elements,
  * forming a tree (e.g. Keycloak: root → services → sub-service).
  */
-function discoverMavenModules(
-    repoRoot: string,
-    relDir: string,
-    roots: string[],
-    depth: number,
-): void {
+function discoverMavenModules(repoRoot: string, relDir: string, roots: string[], depth: number): void {
     if (depth > MAX_MAVEN_DEPTH) {
         return;
     }

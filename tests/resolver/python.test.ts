@@ -222,21 +222,13 @@ describe('Python setup.cfg package_dir', () => {
         rmSync(TMP_SETUPCFG, { recursive: true, force: true });
         mkdirSync(join(TMP_SETUPCFG, 'src/mylib'), { recursive: true });
 
-        writeFileSync(join(TMP_SETUPCFG, 'setup.cfg'), [
-            '[options]',
-            'package_dir =',
-            '    = src',
-        ].join('\n'));
+        writeFileSync(join(TMP_SETUPCFG, 'setup.cfg'), ['[options]', 'package_dir =', '    = src'].join('\n'));
         writeFileSync(join(TMP_SETUPCFG, 'src/mylib/__init__.py'), '');
         writeFileSync(join(TMP_SETUPCFG, 'src/mylib/core.py'), 'class Core: pass\n');
     });
 
     test('resolves import with setup.cfg src layout', () => {
-        const result = resolve(
-            join(TMP_SETUPCFG, 'test_app.py'),
-            'mylib.core',
-            TMP_SETUPCFG,
-        );
+        const result = resolve(join(TMP_SETUPCFG, 'test_app.py'), 'mylib.core', TMP_SETUPCFG);
         expect(result).not.toBeNull();
         expect(result).toContain('src/mylib/core.py');
     });

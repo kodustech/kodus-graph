@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { detectExternal, clearExternalCache } from '../../src/resolver/external-detector';
+import { clearExternalCache, detectExternal } from '../../src/resolver/external-detector';
 
 const TMP = join(import.meta.dir, '../fixtures/external-detector-tmp');
 
@@ -11,53 +11,68 @@ describe('External package detection', () => {
         mkdirSync(TMP, { recursive: true });
 
         // TypeScript project
-        writeFileSync(join(TMP, 'package.json'), JSON.stringify({
-            dependencies: { 'react': '^18', '@nestjs/common': '^10', 'lodash': '^4' },
-            devDependencies: { 'vitest': '^1', '@types/react': '^18' },
-        }));
+        writeFileSync(
+            join(TMP, 'package.json'),
+            JSON.stringify({
+                dependencies: { 'react': '^18', '@nestjs/common': '^10', 'lodash': '^4' },
+                devDependencies: { 'vitest': '^1', '@types/react': '^18' },
+            }),
+        );
 
         // Python project
         writeFileSync(join(TMP, 'requirements.txt'), 'django>=4.0\nflask>=2.0\nrequests>=2.28\n');
 
         // Go project
-        writeFileSync(join(TMP, 'go.mod'), [
-            'module github.com/acme/app',
-            '',
-            'go 1.21',
-            '',
-            'require (',
-            '\tgithub.com/gin-gonic/gin v1.9.0',
-            '\tgithub.com/lib/pq v1.10.0',
-            ')',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP, 'go.mod'),
+            [
+                'module github.com/acme/app',
+                '',
+                'go 1.21',
+                '',
+                'require (',
+                '\tgithub.com/gin-gonic/gin v1.9.0',
+                '\tgithub.com/lib/pq v1.10.0',
+                ')',
+            ].join('\n'),
+        );
 
         // Rust project
-        writeFileSync(join(TMP, 'Cargo.toml'), [
-            '[package]',
-            'name = "myapp"',
-            '',
-            '[dependencies]',
-            'serde = { version = "1", features = ["derive"] }',
-            'tokio = "1"',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP, 'Cargo.toml'),
+            [
+                '[package]',
+                'name = "myapp"',
+                '',
+                '[dependencies]',
+                'serde = { version = "1", features = ["derive"] }',
+                'tokio = "1"',
+            ].join('\n'),
+        );
 
         // Java project
-        writeFileSync(join(TMP, 'pom.xml'), [
-            '<project>',
-            '  <dependencies>',
-            '    <dependency>',
-            '      <groupId>org.springframework.boot</groupId>',
-            '      <artifactId>spring-boot-starter-web</artifactId>',
-            '    </dependency>',
-            '  </dependencies>',
-            '</project>',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP, 'pom.xml'),
+            [
+                '<project>',
+                '  <dependencies>',
+                '    <dependency>',
+                '      <groupId>org.springframework.boot</groupId>',
+                '      <artifactId>spring-boot-starter-web</artifactId>',
+                '    </dependency>',
+                '  </dependencies>',
+                '</project>',
+            ].join('\n'),
+        );
 
         // PHP project
-        writeFileSync(join(TMP, 'composer.json'), JSON.stringify({
-            require: { 'laravel/framework': '^10', 'guzzlehttp/guzzle': '^7' },
-            autoload: { 'psr-4': { 'App\\': 'src/' } },
-        }));
+        writeFileSync(
+            join(TMP, 'composer.json'),
+            JSON.stringify({
+                require: { 'laravel/framework': '^10', 'guzzlehttp/guzzle': '^7' },
+                autoload: { 'psr-4': { 'App\\': 'src/' } },
+            }),
+        );
 
         // Ruby project
         writeFileSync(join(TMP, 'Gemfile'), "gem 'rails', '~> 7.0'\ngem 'pg'\ngem 'devise'\n");
@@ -131,7 +146,9 @@ describe('External package detection', () => {
         expect(detectExternal('java.util.List', 'java', TMP)).toBe('java.util');
     });
     it('detects Maven dependency (Java)', () => {
-        expect(detectExternal('org.springframework.boot.SpringApplication', 'java', TMP)).toBe('spring-boot-starter-web');
+        expect(detectExternal('org.springframework.boot.SpringApplication', 'java', TMP)).toBe(
+            'spring-boot-starter-web',
+        );
     });
 
     // PHP

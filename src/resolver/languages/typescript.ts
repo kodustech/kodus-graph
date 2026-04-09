@@ -56,12 +56,7 @@ export function loadBundlerAliases(repoRoot: string): Map<string, string[]> {
 
     const aliases = new Map<string, string[]>();
 
-    const configFiles = [
-        'webpack.config.js',
-        'webpack.config.ts',
-        'vite.config.js',
-        'vite.config.ts',
-    ];
+    const configFiles = ['webpack.config.js', 'webpack.config.ts', 'vite.config.js', 'vite.config.ts'];
 
     for (const configFile of configFiles) {
         const configPath = join(repoRoot, configFile);
@@ -89,11 +84,7 @@ export function loadBundlerAliases(repoRoot: string): Map<string, string[]> {
  * - Variable references like path.join(varName, 'sub') where varName is defined
  *   earlier as const varName = path.join(__dirname, ...)
  */
-function parseBundlerAliases(
-    content: string,
-    repoRoot: string,
-    aliases: Map<string, string[]>,
-): void {
+function parseBundlerAliases(content: string, repoRoot: string, aliases: Map<string, string[]>): void {
     // First, extract top-level variable definitions like:
     //   const staticPrefix = path.join(__dirname, 'static')
     const varDefs = new Map<string, string>();
@@ -167,11 +158,7 @@ function parseAliasEntries(
 /**
  * Try to resolve an alias value expression to an absolute directory.
  */
-function resolveAliasValue(
-    expr: string,
-    repoRoot: string,
-    varDefs: Map<string, string>,
-): string | null {
+function resolveAliasValue(expr: string, repoRoot: string, varDefs: Map<string, string>): string | null {
     // path.join(__dirname, 'a', 'b') or path.resolve(__dirname, 'a', 'b')
     const pathDirnameRegex = /^path\.(?:join|resolve)\s*\(\s*__dirname\s*,\s*([^)]+)\)/;
     const dirnameMatch = pathDirnameRegex.exec(expr);
@@ -395,11 +382,7 @@ export function loadTsconfigAliases(repoRoot: string): Map<string, string[]> {
  * Parse a tsconfig.json (and tsconfig.base.json) in the given directory
  * and add its path aliases to the provided map.
  */
-function loadTsconfigPathsInto(
-    dir: string,
-    aliases: Map<string, string[]>,
-    visited?: Set<string>,
-): void {
+function loadTsconfigPathsInto(dir: string, aliases: Map<string, string[]>, visited?: Set<string>): void {
     const seen = visited ?? new Set<string>();
     const absDir = resolvePath(dir);
     if (seen.has(absDir)) {

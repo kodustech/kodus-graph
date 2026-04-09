@@ -57,7 +57,8 @@ function resolveTypeName(
         const match = candidates.find((q) => q.startsWith(importedFrom + '::'));
         if (match) return match;
         // If importedFrom is not a local file (not in graph), it's an external package — skip
-        const isLocal = graph.classes.some((c) => c.file === importedFrom) ||
+        const isLocal =
+            graph.classes.some((c) => c.file === importedFrom) ||
             graph.interfaces.some((i) => i.file === importedFrom) ||
             graph.functions.some((f) => f.file === importedFrom);
         if (!isLocal) return null;

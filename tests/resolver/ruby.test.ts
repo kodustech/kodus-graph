@@ -76,7 +76,10 @@ describe('Ruby Zeitwerk autoload', () => {
 
         writeFileSync(join(TMP_ZEITWERK, 'app/models/user.rb'), 'class User; end\n');
         writeFileSync(join(TMP_ZEITWERK, 'app/services/auth_service.rb'), 'class AuthService; end\n');
-        writeFileSync(join(TMP_ZEITWERK, 'app/controllers/admin/users_controller.rb'), 'class Admin::UsersController; end\n');
+        writeFileSync(
+            join(TMP_ZEITWERK, 'app/controllers/admin/users_controller.rb'),
+            'class Admin::UsersController; end\n',
+        );
     });
 
     test('resolves simple class name', () => {

@@ -144,18 +144,18 @@ describe('C# solution file project discovery', () => {
         mkdirSync(join(TMP_SLN, 'src/Api/Controllers'), { recursive: true });
         mkdirSync(join(TMP_SLN, 'src/Domain/Models'), { recursive: true });
 
-        writeFileSync(join(TMP_SLN, 'MySolution.sln'), [
-            'Project("{FAE04EC0}") = "Api", "src/Api/Api.csproj", "{GUID1}"',
-            'EndProject',
-            'Project("{FAE04EC0}") = "Domain", "src/Domain/Domain.csproj", "{GUID2}"',
-            'EndProject',
-        ].join('\n'));
+        writeFileSync(
+            join(TMP_SLN, 'MySolution.sln'),
+            [
+                'Project("{FAE04EC0}") = "Api", "src/Api/Api.csproj", "{GUID1}"',
+                'EndProject',
+                'Project("{FAE04EC0}") = "Domain", "src/Domain/Domain.csproj", "{GUID2}"',
+                'EndProject',
+            ].join('\n'),
+        );
         writeFileSync(join(TMP_SLN, 'src/Api/Api.csproj'), '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n');
         writeFileSync(join(TMP_SLN, 'src/Domain/Domain.csproj'), '<Project Sdk="Microsoft.NET.Sdk"></Project>\n');
-        writeFileSync(
-            join(TMP_SLN, 'src/Domain/Models/Order.cs'),
-            'namespace Domain.Models;\npublic class Order {}\n',
-        );
+        writeFileSync(join(TMP_SLN, 'src/Domain/Models/Order.cs'), 'namespace Domain.Models;\npublic class Order {}\n');
         writeFileSync(
             join(TMP_SLN, 'src/Api/Controllers/OrderController.cs'),
             'using Domain.Models;\nnamespace Api.Controllers;\n',

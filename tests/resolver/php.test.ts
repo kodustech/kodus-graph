@@ -174,7 +174,10 @@ describe('PHP require/include paths', () => {
         mkdirSync(join(TMP_REQUIRE, 'config'), { recursive: true });
         mkdirSync(join(TMP_REQUIRE, 'src'), { recursive: true });
 
-        writeFileSync(join(TMP_REQUIRE, 'composer.json'), JSON.stringify({ autoload: { 'psr-4': { 'App\\': 'src/' } } }));
+        writeFileSync(
+            join(TMP_REQUIRE, 'composer.json'),
+            JSON.stringify({ autoload: { 'psr-4': { 'App\\': 'src/' } } }),
+        );
         writeFileSync(join(TMP_REQUIRE, 'config/database.php'), '<?php return [];\n');
         writeFileSync(join(TMP_REQUIRE, 'src/App.php'), "<?php\nrequire_once __DIR__ . '/../config/database.php';\n");
         clearCache();

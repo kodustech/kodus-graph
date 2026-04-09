@@ -482,7 +482,13 @@ describe('buildGraphData', () => {
             // Internal call — should be kept
             { source: 'src/page.ts', target: 'src/utils.ts::helper', callName: 'helper', line: 3, confidence: 0.9 },
             // External call — should be filtered out
-            { source: 'src/page.ts', target: 'next/navigation::useRouter', callName: 'useRouter', line: 5, confidence: 0.5 },
+            {
+                source: 'src/page.ts',
+                target: 'next/navigation::useRouter',
+                callName: 'useRouter',
+                line: 5,
+                confidence: 0.5,
+            },
         ];
 
         const result = buildGraphData(raw, callEdges, [], 'src', new Map());

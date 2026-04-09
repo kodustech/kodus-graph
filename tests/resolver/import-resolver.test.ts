@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
-import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
 import { clearFsCache } from '../../src/resolver/fs-cache';
+import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
 import { resolve as resolveTsImport } from '../../src/resolver/languages/typescript';
 
 const fixtureDir = resolve('tests/fixtures/sample-repo');
@@ -302,31 +302,34 @@ describe('TypeScript conditional exports', () => {
         mkdirSync(join(TS_COND, 'packages/app/src'), { recursive: true });
 
         writeFileSync(join(TS_COND, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
-        writeFileSync(join(TS_COND, 'packages/lib/package.json'), JSON.stringify({
-            name: '@acme/lib',
-            exports: {
-                '.': {
-                    types: './src/index.ts',
-                    import: './dist/esm/index.js',
-                    default: './dist/esm/index.js',
+        writeFileSync(
+            join(TS_COND, 'packages/lib/package.json'),
+            JSON.stringify({
+                name: '@acme/lib',
+                exports: {
+                    '.': {
+                        types: './src/index.ts',
+                        import: './dist/esm/index.js',
+                        default: './dist/esm/index.js',
+                    },
                 },
-            },
-        }));
+            }),
+        );
         writeFileSync(join(TS_COND, 'packages/lib/src/index.ts'), 'export function lib() {}\n');
         writeFileSync(join(TS_COND, 'packages/lib/dist/esm/index.js'), 'export function lib() {}\n');
-        writeFileSync(join(TS_COND, 'packages/app/package.json'), JSON.stringify({
-            dependencies: { '@acme/lib': 'workspace:*' },
-        }));
+        writeFileSync(
+            join(TS_COND, 'packages/app/package.json'),
+            JSON.stringify({
+                dependencies: { '@acme/lib': 'workspace:*' },
+            }),
+        );
         writeFileSync(join(TS_COND, 'packages/app/src/main.ts'), "import { lib } from '@acme/lib';\n");
     });
 
     afterAll(() => rmSync(TS_COND, { recursive: true, force: true }));
 
     it('prefers types field in conditional exports', () => {
-        const result = resolveImport(
-            join(TS_COND, 'packages/app/src/main.ts'),
-            '@acme/lib', 'ts', TS_COND,
-        );
+        const result = resolveImport(join(TS_COND, 'packages/app/src/main.ts'), '@acme/lib', 'ts', TS_COND);
         expect(result).not.toBeNull();
         expect(result).toContain('src/index.ts');
         expect(result).not.toContain('dist');
@@ -342,24 +345,27 @@ describe('TypeScript workspace main/module fallback', () => {
         mkdirSync(join(TS_MAIN, 'packages/app/src'), { recursive: true });
 
         writeFileSync(join(TS_MAIN, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
-        writeFileSync(join(TS_MAIN, 'packages/old-lib/package.json'), JSON.stringify({
-            name: '@acme/old-lib',
-            main: './src/index.ts',
-        }));
+        writeFileSync(
+            join(TS_MAIN, 'packages/old-lib/package.json'),
+            JSON.stringify({
+                name: '@acme/old-lib',
+                main: './src/index.ts',
+            }),
+        );
         writeFileSync(join(TS_MAIN, 'packages/old-lib/src/index.ts'), 'export function old() {}\n');
-        writeFileSync(join(TS_MAIN, 'packages/app/package.json'), JSON.stringify({
-            dependencies: { '@acme/old-lib': 'workspace:*' },
-        }));
+        writeFileSync(
+            join(TS_MAIN, 'packages/app/package.json'),
+            JSON.stringify({
+                dependencies: { '@acme/old-lib': 'workspace:*' },
+            }),
+        );
         writeFileSync(join(TS_MAIN, 'packages/app/src/main.ts'), "import { old } from '@acme/old-lib';\n");
     });
 
     afterAll(() => rmSync(TS_MAIN, { recursive: true, force: true }));
 
     it('falls back to main field when no exports', () => {
-        const result = resolveImport(
-            join(TS_MAIN, 'packages/app/src/main.ts'),
-            '@acme/old-lib', 'ts', TS_MAIN,
-        );
+        const result = resolveImport(join(TS_MAIN, 'packages/app/src/main.ts'), '@acme/old-lib', 'ts', TS_MAIN);
         expect(result).not.toBeNull();
         expect(result).toContain('index.ts');
     });
@@ -428,13 +434,19 @@ describe('TypeScript project references', () => {
         mkdirSync(join(TS_PROJREF, 'packages/app/src'), { recursive: true });
         mkdirSync(join(TS_PROJREF, 'packages/shared/src'), { recursive: true });
 
-        writeFileSync(join(TS_PROJREF, 'packages/app/tsconfig.json'), JSON.stringify({
-            compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } },
-            references: [{ path: '../shared' }],
-        }));
-        writeFileSync(join(TS_PROJREF, 'packages/shared/tsconfig.json'), JSON.stringify({
-            compilerOptions: { composite: true, baseUrl: '.', paths: { '@shared/*': ['src/*'] } },
-        }));
+        writeFileSync(
+            join(TS_PROJREF, 'packages/app/tsconfig.json'),
+            JSON.stringify({
+                compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } },
+                references: [{ path: '../shared' }],
+            }),
+        );
+        writeFileSync(
+            join(TS_PROJREF, 'packages/shared/tsconfig.json'),
+            JSON.stringify({
+                compilerOptions: { composite: true, baseUrl: '.', paths: { '@shared/*': ['src/*'] } },
+            }),
+        );
         writeFileSync(join(TS_PROJREF, 'packages/shared/src/utils.ts'), 'export function util() {}\n');
         writeFileSync(join(TS_PROJREF, 'packages/app/src/main.ts'), "import { util } from '@shared/utils';\n");
     });
@@ -445,7 +457,10 @@ describe('TypeScript project references', () => {
         const aliases = loadTsconfigAliases(join(TS_PROJREF, 'packages/app'));
         const result = resolveImport(
             join(TS_PROJREF, 'packages/app/src/main.ts'),
-            '@shared/utils', 'ts', TS_PROJREF, aliases,
+            '@shared/utils',
+            'ts',
+            TS_PROJREF,
+            aliases,
         );
         if (result) {
             expect(result).toContain('shared/src/utils.ts');
@@ -464,46 +479,43 @@ describe('TypeScript workspace package without exports (naked)', () => {
         mkdirSync(join(TS_NAKED, 'packages/app/src'), { recursive: true });
 
         writeFileSync(join(TS_NAKED, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
-        writeFileSync(join(TS_NAKED, 'packages/lib/package.json'), JSON.stringify({
-            name: '@acme/lib',
-            private: true,
-            // NO exports, NO main, NO module — naked package
-        }));
+        writeFileSync(
+            join(TS_NAKED, 'packages/lib/package.json'),
+            JSON.stringify({
+                name: '@acme/lib',
+                private: true,
+                // NO exports, NO main, NO module — naked package
+            }),
+        );
         writeFileSync(join(TS_NAKED, 'packages/lib/crypto.ts'), 'export function encrypt() {}\n');
         mkdirSync(join(TS_NAKED, 'packages/lib/utils'), { recursive: true });
         writeFileSync(join(TS_NAKED, 'packages/lib/utils/index.ts'), 'export function format() {}\n');
         writeFileSync(join(TS_NAKED, 'packages/lib/logger.tsx'), 'export function Logger() {}\n');
-        writeFileSync(join(TS_NAKED, 'packages/app/package.json'), JSON.stringify({
-            dependencies: { '@acme/lib': '*' },
-        }));
+        writeFileSync(
+            join(TS_NAKED, 'packages/app/package.json'),
+            JSON.stringify({
+                dependencies: { '@acme/lib': '*' },
+            }),
+        );
         writeFileSync(join(TS_NAKED, 'packages/app/src/main.ts'), "import { encrypt } from '@acme/lib/crypto';\n");
     });
 
     afterAll(() => rmSync(TS_NAKED, { recursive: true, force: true }));
 
     it('resolves subpath to .ts file directly', () => {
-        const result = resolveImport(
-            join(TS_NAKED, 'packages/app/src/main.ts'),
-            '@acme/lib/crypto', 'ts', TS_NAKED,
-        );
+        const result = resolveImport(join(TS_NAKED, 'packages/app/src/main.ts'), '@acme/lib/crypto', 'ts', TS_NAKED);
         expect(result).not.toBeNull();
         expect(result).toContain('packages/lib/crypto.ts');
     });
 
     it('resolves subpath to directory index.ts', () => {
-        const result = resolveImport(
-            join(TS_NAKED, 'packages/app/src/main.ts'),
-            '@acme/lib/utils', 'ts', TS_NAKED,
-        );
+        const result = resolveImport(join(TS_NAKED, 'packages/app/src/main.ts'), '@acme/lib/utils', 'ts', TS_NAKED);
         expect(result).not.toBeNull();
         expect(result).toContain('packages/lib/utils/index.ts');
     });
 
     it('resolves subpath to .tsx file', () => {
-        const result = resolveImport(
-            join(TS_NAKED, 'packages/app/src/main.ts'),
-            '@acme/lib/logger', 'ts', TS_NAKED,
-        );
+        const result = resolveImport(join(TS_NAKED, 'packages/app/src/main.ts'), '@acme/lib/logger', 'ts', TS_NAKED);
         expect(result).not.toBeNull();
         expect(result).toContain('packages/lib/logger.tsx');
     });
@@ -522,25 +534,25 @@ describe('TypeScript webpack alias resolution', () => {
         writeFileSync(join(TS_WEBPACK, 'src/main.ts'), "import { Button } from 'app/components/Button';\n");
 
         // Simple webpack config with alias
-        writeFileSync(join(TS_WEBPACK, 'webpack.config.js'), [
-            "const path = require('path');",
-            "module.exports = {",
-            "  resolve: {",
-            "    alias: {",
-            "      app: path.join(__dirname, 'static', 'app'),",
-            "    },",
-            "  },",
-            "};",
-        ].join('\n'));
+        writeFileSync(
+            join(TS_WEBPACK, 'webpack.config.js'),
+            [
+                "const path = require('path');",
+                'module.exports = {',
+                '  resolve: {',
+                '    alias: {',
+                "      app: path.join(__dirname, 'static', 'app'),",
+                '    },',
+                '  },',
+                '};',
+            ].join('\n'),
+        );
     });
 
     afterAll(() => rmSync(TS_WEBPACK, { recursive: true, force: true }));
 
     it('resolves import via webpack alias', () => {
-        const result = resolveImport(
-            join(TS_WEBPACK, 'src/main.ts'),
-            'app/components/Button', 'ts', TS_WEBPACK,
-        );
+        const result = resolveImport(join(TS_WEBPACK, 'src/main.ts'), 'app/components/Button', 'ts', TS_WEBPACK);
         expect(result).not.toBeNull();
         expect(result).toContain('Button.tsx');
     });
@@ -557,27 +569,27 @@ describe('TypeScript vite alias resolution', () => {
         writeFileSync(join(TS_VITE_ALIAS, 'src/lib/utils.ts'), 'export function util() {}\n');
         writeFileSync(join(TS_VITE_ALIAS, 'src/main.ts'), "import { util } from '~/lib/utils';\n");
 
-        writeFileSync(join(TS_VITE_ALIAS, 'vite.config.ts'), [
-            "import { defineConfig } from 'vite';",
-            "import path from 'path';",
-            "",
-            "export default defineConfig({",
-            "  resolve: {",
-            "    alias: {",
-            "      '~': path.resolve(__dirname, 'src'),",
-            "    },",
-            "  },",
-            "});",
-        ].join('\n'));
+        writeFileSync(
+            join(TS_VITE_ALIAS, 'vite.config.ts'),
+            [
+                "import { defineConfig } from 'vite';",
+                "import path from 'path';",
+                '',
+                'export default defineConfig({',
+                '  resolve: {',
+                '    alias: {',
+                "      '~': path.resolve(__dirname, 'src'),",
+                '    },',
+                '  },',
+                '});',
+            ].join('\n'),
+        );
     });
 
     afterAll(() => rmSync(TS_VITE_ALIAS, { recursive: true, force: true }));
 
     it('resolves import via vite alias', () => {
-        const result = resolveImport(
-            join(TS_VITE_ALIAS, 'src/main.ts'),
-            '~/lib/utils', 'ts', TS_VITE_ALIAS,
-        );
+        const result = resolveImport(join(TS_VITE_ALIAS, 'src/main.ts'), '~/lib/utils', 'ts', TS_VITE_ALIAS);
         expect(result).not.toBeNull();
         expect(result).toContain('utils.ts');
     });
@@ -592,28 +604,34 @@ describe('TypeScript workspace object format', () => {
         mkdirSync(join(TS_WS_OBJ, 'packages/app/src'), { recursive: true });
 
         // Object-form workspaces (used by Grafana, Yarn classic)
-        writeFileSync(join(TS_WS_OBJ, 'package.json'), JSON.stringify({
-            workspaces: { packages: ['packages/*'] },
-        }));
-        writeFileSync(join(TS_WS_OBJ, 'packages/core/package.json'), JSON.stringify({
-            name: '@myorg/core',
-            main: 'src/index.ts',
-        }));
+        writeFileSync(
+            join(TS_WS_OBJ, 'package.json'),
+            JSON.stringify({
+                workspaces: { packages: ['packages/*'] },
+            }),
+        );
+        writeFileSync(
+            join(TS_WS_OBJ, 'packages/core/package.json'),
+            JSON.stringify({
+                name: '@myorg/core',
+                main: 'src/index.ts',
+            }),
+        );
         writeFileSync(join(TS_WS_OBJ, 'packages/core/src/index.ts'), 'export function core() {}\n');
         writeFileSync(join(TS_WS_OBJ, 'packages/core/src/utils.ts'), 'export function util() {}\n');
-        writeFileSync(join(TS_WS_OBJ, 'packages/app/package.json'), JSON.stringify({
-            dependencies: { '@myorg/core': '*' },
-        }));
+        writeFileSync(
+            join(TS_WS_OBJ, 'packages/app/package.json'),
+            JSON.stringify({
+                dependencies: { '@myorg/core': '*' },
+            }),
+        );
         writeFileSync(join(TS_WS_OBJ, 'packages/app/src/main.ts'), "import { core } from '@myorg/core';\n");
     });
 
     afterAll(() => rmSync(TS_WS_OBJ, { recursive: true, force: true }));
 
     it('resolves workspace with object-form workspaces field', () => {
-        const result = resolveImport(
-            join(TS_WS_OBJ, 'packages/app/src/main.ts'),
-            '@myorg/core', 'ts', TS_WS_OBJ,
-        );
+        const result = resolveImport(join(TS_WS_OBJ, 'packages/app/src/main.ts'), '@myorg/core', 'ts', TS_WS_OBJ);
         expect(result).not.toBeNull();
         expect(result).toContain('core/src/index.ts');
     });
@@ -621,7 +639,9 @@ describe('TypeScript workspace object format', () => {
     it('resolves subpath in object-form workspace', () => {
         const result = resolveImport(
             join(TS_WS_OBJ, 'packages/app/src/main.ts'),
-            '@myorg/core/src/utils', 'ts', TS_WS_OBJ,
+            '@myorg/core/src/utils',
+            'ts',
+            TS_WS_OBJ,
         );
         expect(result).not.toBeNull();
         expect(result).toContain('utils.ts');
@@ -671,11 +691,7 @@ describe('Import resolver edge cases', () => {
         mkdirSync(join(tmp, 'src/components'), { recursive: true });
         writeFileSync(join(tmp, 'src/components/Button.tsx'), 'export function Button() {}\n');
 
-        const result = resolveImport(
-            join(tmp, 'src/app.ts'),
-            '!!type-loader!./components/Button',
-            'ts', tmp,
-        );
+        const result = resolveImport(join(tmp, 'src/app.ts'), '!!type-loader!./components/Button', 'ts', tmp);
         // Should resolve to the actual file (stripping loader prefix) — NOT a path containing '!'
         expect(result).not.toBeNull();
         expect(result).toContain('Button.tsx');
@@ -696,11 +712,7 @@ describe('Import resolver edge cases', () => {
         mkdirSync(join(tmp, 'src'), { recursive: true });
         writeFileSync(join(tmp, 'src/styles.css'), 'body {}\n');
 
-        const result = resolveImport(
-            join(tmp, 'src/app.ts'),
-            'css-loader!./styles.css',
-            'ts', tmp,
-        );
+        const result = resolveImport(join(tmp, 'src/app.ts'), 'css-loader!./styles.css', 'ts', tmp);
         // ./styles.css exists, so after stripping loader it should resolve
         expect(result).not.toBeNull();
         expect(result).toContain('styles.css');

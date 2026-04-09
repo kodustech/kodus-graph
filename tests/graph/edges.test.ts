@@ -66,7 +66,9 @@ describe('deriveEdges', () => {
             ],
         };
         const result = deriveEdges(graph, []);
-        expect(result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/admin.ts::User')).toBe(true);
+        expect(
+            result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/admin.ts::User'),
+        ).toBe(true);
     });
 
     it('should resolve INHERITS via import map', () => {
@@ -105,7 +107,9 @@ describe('deriveEdges', () => {
             },
         };
         const result = deriveEdges(graph, [], mockSymbolTable, mockImportMap);
-        expect(result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/user.ts::User')).toBe(true);
+        expect(
+            result.inherits.some((e) => e.source === 'src/admin.ts::Admin' && e.target === 'src/user.ts::User'),
+        ).toBe(true);
     });
 
     it('should skip INHERITS edges for unresolvable external classes', () => {
@@ -312,7 +316,9 @@ describe('deriveEdges', () => {
         };
         const result = deriveEdges(graph, []);
         expect(
-            result.implements.some((e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/auth.ts::IAuthService'),
+            result.implements.some(
+                (e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/auth.ts::IAuthService',
+            ),
         ).toBe(true);
     });
 
@@ -347,7 +353,9 @@ describe('deriveEdges', () => {
         };
         const result = deriveEdges(graph, [], mockSymbolTable);
         expect(
-            result.implements.some((e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/interfaces.ts::IAuthService'),
+            result.implements.some(
+                (e) => e.source === 'src/auth.ts::AuthService' && e.target === 'src/interfaces.ts::IAuthService',
+            ),
         ).toBe(true);
     });
 

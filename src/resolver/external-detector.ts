@@ -29,61 +29,273 @@ export function clearExternalCache(): void {
 // ---------------------------------------------------------------------------
 
 const NODE_BUILTINS = new Set([
-    'fs', 'path', 'os', 'http', 'https', 'http2', 'net', 'stream', 'buffer',
-    'url', 'util', 'crypto', 'events', 'child_process', 'cluster', 'dns',
-    'readline', 'repl', 'tls', 'vm', 'zlib', 'assert', 'async_hooks',
-    'console', 'constants', 'dgram', 'diagnostics_channel', 'domain',
-    'inspector', 'module', 'perf_hooks', 'process', 'punycode', 'querystring',
-    'string_decoder', 'timers', 'tty', 'v8', 'wasi', 'worker_threads',
+    'fs',
+    'path',
+    'os',
+    'http',
+    'https',
+    'http2',
+    'net',
+    'stream',
+    'buffer',
+    'url',
+    'util',
+    'crypto',
+    'events',
+    'child_process',
+    'cluster',
+    'dns',
+    'readline',
+    'repl',
+    'tls',
+    'vm',
+    'zlib',
+    'assert',
+    'async_hooks',
+    'console',
+    'constants',
+    'dgram',
+    'diagnostics_channel',
+    'domain',
+    'inspector',
+    'module',
+    'perf_hooks',
+    'process',
+    'punycode',
+    'querystring',
+    'string_decoder',
+    'timers',
+    'tty',
+    'v8',
+    'wasi',
+    'worker_threads',
 ]);
 
 const PYTHON_STDLIB = new Set([
-    'os', 'sys', 'json', 'typing', 'collections', 'datetime', 're', 'math',
-    'pathlib', 'functools', 'itertools', 'abc', 'dataclasses', 'enum',
-    'logging', 'unittest', 'io', 'copy', 'hashlib', 'hmac', 'secrets',
-    'socket', 'http', 'urllib', 'email', 'html', 'xml', 'sqlite3', 'csv',
-    'configparser', 'argparse', 'subprocess', 'threading', 'multiprocessing',
-    'asyncio', 'signal', 'shutil', 'tempfile', 'glob', 'fnmatch', 'struct',
-    'codecs', 'pprint', 'textwrap', 'difflib', 'traceback', 'warnings',
-    'contextlib', 'weakref', 'types', 'inspect', 'dis', 'importlib',
-    'pkgutil', 'pdb', 'cProfile', 'time', 'calendar', 'random', 'statistics',
-    'fractions', 'decimal', 'operator', 'string', 'base64', 'binascii',
-    'zlib', 'gzip', 'bz2', 'lzma', 'zipfile', 'tarfile',
+    'os',
+    'sys',
+    'json',
+    'typing',
+    'collections',
+    'datetime',
+    're',
+    'math',
+    'pathlib',
+    'functools',
+    'itertools',
+    'abc',
+    'dataclasses',
+    'enum',
+    'logging',
+    'unittest',
+    'io',
+    'copy',
+    'hashlib',
+    'hmac',
+    'secrets',
+    'socket',
+    'http',
+    'urllib',
+    'email',
+    'html',
+    'xml',
+    'sqlite3',
+    'csv',
+    'configparser',
+    'argparse',
+    'subprocess',
+    'threading',
+    'multiprocessing',
+    'asyncio',
+    'signal',
+    'shutil',
+    'tempfile',
+    'glob',
+    'fnmatch',
+    'struct',
+    'codecs',
+    'pprint',
+    'textwrap',
+    'difflib',
+    'traceback',
+    'warnings',
+    'contextlib',
+    'weakref',
+    'types',
+    'inspect',
+    'dis',
+    'importlib',
+    'pkgutil',
+    'pdb',
+    'cProfile',
+    'time',
+    'calendar',
+    'random',
+    'statistics',
+    'fractions',
+    'decimal',
+    'operator',
+    'string',
+    'base64',
+    'binascii',
+    'zlib',
+    'gzip',
+    'bz2',
+    'lzma',
+    'zipfile',
+    'tarfile',
     // additional commonly used stdlib modules
-    'builtins', 'array', 'bisect', 'heapq', 'queue', 'sched',
-    'selectors', 'mmap', 'ctypes', 'concurrent', 'test', 'profile',
-    'cmath', 'numbers', 'locale', 'gettext', 'unicodedata',
-    'stringprep', 'rlcompleter', 'code', 'codeop', 'compileall',
-    'py_compile', 'zipimport', 'winreg', 'winsound', 'msvcrt',
-    'posixpath', 'ntpath', 'genericpath', 'posix', 'nt',
-    'token', 'tokenize', 'keyword', 'linecache', 'pickle',
-    'shelve', 'marshal', 'dbm', 'platform', 'errno', 'faulthandler',
-    'atexit', 'site', 'sysconfig', 'zipapp', 'venv', 'ensurepip',
-    'distutils', 'setuptools',
-    '_thread', '__future__', 'colorsys', 'fileinput', 'filecmp',
-    'stat', 'grp', 'pwd', 'resource', 'termios', 'fcntl',
-    'pty', 'pipes', 'mailbox', 'mailcap', 'mimetypes', 'imaplib',
-    'poplib', 'smtplib', 'ftplib', 'telnetlib', 'xmlrpc',
-    'ipaddress', 'ssl', 'cgi', 'cgitb', 'wsgiref', 'webbrowser',
-    'uuid', 'getpass', 'curses', 'turtle', 'cmd', 'shlex',
-    'tkinter', 'idlelib', 'doctest', 'pydoc',
-    'ast', 'symtable', 'tabnanny',
+    'builtins',
+    'array',
+    'bisect',
+    'heapq',
+    'queue',
+    'sched',
+    'selectors',
+    'mmap',
+    'ctypes',
+    'concurrent',
+    'test',
+    'profile',
+    'cmath',
+    'numbers',
+    'locale',
+    'gettext',
+    'unicodedata',
+    'stringprep',
+    'rlcompleter',
+    'code',
+    'codeop',
+    'compileall',
+    'py_compile',
+    'zipimport',
+    'winreg',
+    'winsound',
+    'msvcrt',
+    'posixpath',
+    'ntpath',
+    'genericpath',
+    'posix',
+    'nt',
+    'token',
+    'tokenize',
+    'keyword',
+    'linecache',
+    'pickle',
+    'shelve',
+    'marshal',
+    'dbm',
+    'platform',
+    'errno',
+    'faulthandler',
+    'atexit',
+    'site',
+    'sysconfig',
+    'zipapp',
+    'venv',
+    'ensurepip',
+    'distutils',
+    'setuptools',
+    '_thread',
+    '__future__',
+    'colorsys',
+    'fileinput',
+    'filecmp',
+    'stat',
+    'grp',
+    'pwd',
+    'resource',
+    'termios',
+    'fcntl',
+    'pty',
+    'pipes',
+    'mailbox',
+    'mailcap',
+    'mimetypes',
+    'imaplib',
+    'poplib',
+    'smtplib',
+    'ftplib',
+    'telnetlib',
+    'xmlrpc',
+    'ipaddress',
+    'ssl',
+    'cgi',
+    'cgitb',
+    'wsgiref',
+    'webbrowser',
+    'uuid',
+    'getpass',
+    'curses',
+    'turtle',
+    'cmd',
+    'shlex',
+    'tkinter',
+    'idlelib',
+    'doctest',
+    'pydoc',
+    'ast',
+    'symtable',
+    'tabnanny',
 ]);
 
 const RUBY_STDLIB = new Set([
-    'json', 'net/http', 'uri', 'fileutils', 'set', 'csv', 'yaml', 'openssl',
-    'pathname', 'tempfile', 'socket', 'open-uri', 'erb', 'cgi', 'digest',
-    'base64', 'securerandom', 'optparse', 'logger', 'stringio', 'strscan',
-    'date', 'time', 'bigdecimal', 'fiddle', 'readline', 'io/console',
-    'benchmark', 'minitest', 'pp', 'irb', 'rdoc', 'psych', 'zlib',
-    'webrick', 'rexml', 'rss', 'drb', 'mutex_m', 'observer', 'singleton',
-    'forwardable', 'delegate', 'ostruct', 'open3', 'shellwords', 'abbrev',
-    'english', 'find', 'resolv', 'ipaddr', 'un', 'mkmf',
+    'json',
+    'net/http',
+    'uri',
+    'fileutils',
+    'set',
+    'csv',
+    'yaml',
+    'openssl',
+    'pathname',
+    'tempfile',
+    'socket',
+    'open-uri',
+    'erb',
+    'cgi',
+    'digest',
+    'base64',
+    'securerandom',
+    'optparse',
+    'logger',
+    'stringio',
+    'strscan',
+    'date',
+    'time',
+    'bigdecimal',
+    'fiddle',
+    'readline',
+    'io/console',
+    'benchmark',
+    'minitest',
+    'pp',
+    'irb',
+    'rdoc',
+    'psych',
+    'zlib',
+    'webrick',
+    'rexml',
+    'rss',
+    'drb',
+    'mutex_m',
+    'observer',
+    'singleton',
+    'forwardable',
+    'delegate',
+    'ostruct',
+    'open3',
+    'shellwords',
+    'abbrev',
+    'english',
+    'find',
+    'resolv',
+    'ipaddr',
+    'un',
+    'mkmf',
 ]);
 
-const JAVA_STDLIB_PREFIXES = [
-    'java.', 'javax.', 'jakarta.', 'sun.', 'com.sun.', 'jdk.',
-];
+const JAVA_STDLIB_PREFIXES = ['java.', 'javax.', 'jakarta.', 'sun.', 'com.sun.', 'jdk.'];
 
 const RUST_STDLIB_CRATES = new Set(['std', 'core', 'alloc']);
 
@@ -136,7 +348,11 @@ function loadPythonDeps(repoRoot: string): LangDeps {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('-')) continue;
             // Strip version specifiers: django>=4.0 -> django
-            const name = trimmed.split(/[>=<!~;\s\[]/)[0].trim().toLowerCase().replace(/-/g, '_');
+            const name = trimmed
+                .split(/[>=<!~;\s[]/)[0]
+                .trim()
+                .toLowerCase()
+                .replace(/-/g, '_');
             if (name) pkgs.add(name);
         }
     }
@@ -147,8 +363,11 @@ function loadPythonDeps(repoRoot: string): LangDeps {
         let inDeps = false;
         for (const line of pyproject.split('\n')) {
             const trimmed = line.trim();
-            if (/^\[(project|tool\.poetry)\.?dependencies\]$/i.test(trimmed) ||
-                trimmed === '[project]' || trimmed === '[tool.poetry.dependencies]') {
+            if (
+                /^\[(project|tool\.poetry)\.?dependencies\]$/i.test(trimmed) ||
+                trimmed === '[project]' ||
+                trimmed === '[tool.poetry.dependencies]'
+            ) {
                 inDeps = true;
                 continue;
             }
@@ -307,7 +526,9 @@ function loadCsharpDeps(repoRoot: string): LangDeps {
                 candidates.push(join(repoRoot, e));
             }
         }
-    } catch { /* ignore */ }
+    } catch {
+        /* ignore */
+    }
 
     for (const csproj of candidates) {
         const text = safeRead(csproj);
@@ -355,7 +576,11 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
     }
 
     // Java
-    if (cachedExists(join(repoRoot, 'pom.xml')) || cachedExists(join(repoRoot, 'build.gradle')) || cachedExists(join(repoRoot, 'build.gradle.kts'))) {
+    if (
+        cachedExists(join(repoRoot, 'pom.xml')) ||
+        cachedExists(join(repoRoot, 'build.gradle')) ||
+        cachedExists(join(repoRoot, 'build.gradle.kts'))
+    ) {
         result.set('java', loadJavaDeps(repoRoot));
     }
 
@@ -384,11 +609,7 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
  * Check if an import is an external (third-party) package.
  * Returns the package name if external, null if not detected as external.
  */
-export function detectExternal(
-    modulePath: string,
-    lang: string,
-    repoRoot: string,
-): string | null {
+export function detectExternal(modulePath: string, lang: string, repoRoot: string): string | null {
     // Normalize language key
     const langKey = lang === 'ts' ? 'typescript' : lang;
 
@@ -584,8 +805,12 @@ export function detectExternal(
     // ----- C# -----
     if (langKey === 'csharp') {
         // Framework namespaces
-        if (modulePath.startsWith('System.') || modulePath === 'System' ||
-            modulePath.startsWith('Microsoft.') || modulePath === 'Microsoft') {
+        if (
+            modulePath.startsWith('System.') ||
+            modulePath === 'System' ||
+            modulePath.startsWith('Microsoft.') ||
+            modulePath === 'Microsoft'
+        ) {
             return modulePath.split('.').slice(0, 2).join('.');
         }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { cachedExists, cachedReaddir, clearFsCache } from '../../src/resolver/fs-cache';

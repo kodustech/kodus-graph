@@ -8,9 +8,9 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
 import { log } from '../shared/logger';
-import { cachedExists } from './fs-cache';
 import { ensureWithinRoot } from '../shared/safe-path';
 import { detectExternal } from './external-detector';
+import { cachedExists } from './fs-cache';
 import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolveGoImport } from './languages/go';
 import { resolve as resolveJavaImport } from './languages/java';
@@ -18,7 +18,12 @@ import { resolve as resolvePhpImport } from './languages/php';
 import { resolve as resolvePyImport } from './languages/python';
 import { resolve as resolveRbImport } from './languages/ruby';
 import { resolve as resolveRustImport } from './languages/rust';
-import { loadBundlerAliases, loadTsconfigAliases, resolve as resolveTsImport, resolveWithAliases } from './languages/typescript';
+import {
+    loadBundlerAliases,
+    loadTsconfigAliases,
+    resolve as resolveTsImport,
+    resolveWithAliases,
+} from './languages/typescript';
 
 /**
  * Registered import resolvers by language key.
