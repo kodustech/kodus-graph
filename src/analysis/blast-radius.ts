@@ -1,34 +1,38 @@
 import type { BlastRadiusResult, GraphData } from '../graph/types';
 
-export function computeBlastRadius(graph: GraphData, changedFiles: string[], maxDepth: number = 2): BlastRadiusResult {
-    // Build adjacency list from CALLS edges (callers of changed nodes)
+export function computeBlastRadius(
+    graph: GraphData,
+    changedQualifiedNames: string[],
+    maxDepth: number = 2,
+    minConfidence?: number,
+): BlastRadiusResult {
+    const minConf = minConfidence ?? 0.5;
+
+    // Build adjacency list filtering by confidence
     const adj = new Map<string, Set<string>>();
+
+    const addEdge = (from: string, to: string) => {
+        if (!adj.has(from)) {
+            adj.set(from, new Set());
+        }
+        adj.get(from)!.add(to);
+    };
+
     for (const edge of graph.edges) {
-        if (edge.kind !== 'CALLS' && edge.kind !== 'IMPORTS') {
-            continue;
-        }
-        // Reverse direction: target -> source (who calls/imports this?)
-        if (!adj.has(edge.target_qualified)) {
-            adj.set(edge.target_qualified, new Set());
-        }
-        adj.get(edge.target_qualified)!.add(edge.source_qualified);
-        // Forward direction too for IMPORTS
         if (edge.kind === 'IMPORTS') {
-            if (!adj.has(edge.source_qualified)) {
-                adj.set(edge.source_qualified, new Set());
-            }
-            adj.get(edge.source_qualified)!.add(edge.target_qualified);
+            // IMPORTS: no confidence filter, bidirectional
+            addEdge(edge.target_qualified, edge.source_qualified);
+            addEdge(edge.source_qualified, edge.target_qualified);
+        } else if (edge.kind === 'CALLS' && (edge.confidence ?? 1.0) >= minConf) {
+            // CALLS: only edges with sufficient confidence, reverse direction
+            addEdge(edge.target_qualified, edge.source_qualified);
         }
     }
 
-    // Seed: all nodes in changed files
-    const changedSet = new Set(changedFiles);
-    const seeds = graph.nodes.filter((n) => changedSet.has(n.file_path)).map((n) => n.qualified_name);
-
-    // BFS
-    const visited = new Set<string>(seeds);
+    // Seeds: qualified names directly (no more file-level)
+    const visited = new Set<string>(changedQualifiedNames);
     const byDepth: Record<string, string[]> = {};
-    let frontier = seeds;
+    let frontier = [...changedQualifiedNames];
 
     for (let depth = 1; depth <= maxDepth; depth++) {
         const next: string[] = [];

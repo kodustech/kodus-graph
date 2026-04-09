@@ -60,7 +60,8 @@ describe('computeBlastRadius', () => {
             ],
         };
 
-        const result = computeBlastRadius(graph, ['src/auth.ts'], 2);
+        // Now pass qualified names instead of file paths
+        const result = computeBlastRadius(graph, ['src/auth.ts::auth'], 2);
         expect(result.total_functions).toBeGreaterThan(1);
         expect(result.total_files).toBeGreaterThan(1);
     });
@@ -122,8 +123,236 @@ describe('computeBlastRadius', () => {
             ],
         };
 
-        const depth1 = computeBlastRadius(graph, ['a.ts'], 1);
-        const depth2 = computeBlastRadius(graph, ['a.ts'], 2);
+        // Now pass qualified names instead of file paths
+        const depth1 = computeBlastRadius(graph, ['a.ts::a'], 1);
+        const depth2 = computeBlastRadius(graph, ['a.ts::a'], 2);
         expect(depth2.total_functions).toBeGreaterThanOrEqual(depth1.total_functions);
+    });
+
+    it('should only use provided qualified names as seeds (not all file nodes)', () => {
+        // File A has func1, func2, func3 — only func1 changed
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'func1',
+                    qualified_name: 'A.ts::func1',
+                    file_path: 'A.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'func2',
+                    qualified_name: 'A.ts::func2',
+                    file_path: 'A.ts',
+                    line_start: 6,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'func3',
+                    qualified_name: 'A.ts::func3',
+                    file_path: 'A.ts',
+                    line_start: 11,
+                    line_end: 15,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'callerOfFunc1',
+                    qualified_name: 'B.ts::callerOfFunc1',
+                    file_path: 'B.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h2',
+                },
+                {
+                    kind: 'Function',
+                    name: 'callerOfFunc2',
+                    qualified_name: 'C.ts::callerOfFunc2',
+                    file_path: 'C.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h3',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'B.ts::callerOfFunc1',
+                    target_qualified: 'A.ts::func1',
+                    file_path: 'B.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'C.ts::callerOfFunc2',
+                    target_qualified: 'A.ts::func2',
+                    file_path: 'C.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        // Only func1 changed — blast radius should NOT include callerOfFunc2
+        const result = computeBlastRadius(graph, ['A.ts::func1'], 2);
+
+        // Should include func1 (seed) + callerOfFunc1 (depth 1)
+        expect(result.total_functions).toBe(2);
+        // Should NOT include callerOfFunc2 since func2 was not a seed
+        const allReached = new Set<string>();
+        allReached.add('A.ts::func1'); // seed
+        for (const names of Object.values(result.by_depth)) {
+            for (const n of names) {
+                allReached.add(n);
+            }
+        }
+        expect(allReached.has('B.ts::callerOfFunc1')).toBe(true);
+        expect(allReached.has('C.ts::callerOfFunc2')).toBe(false);
+        expect(allReached.has('A.ts::func2')).toBe(false);
+        expect(allReached.has('A.ts::func3')).toBe(false);
+    });
+
+    it('should filter CALLS edges by minConfidence', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'target',
+                    qualified_name: 'x.ts::target',
+                    file_path: 'x.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'highConfCaller',
+                    qualified_name: 'y.ts::highConfCaller',
+                    file_path: 'y.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h2',
+                },
+                {
+                    kind: 'Function',
+                    name: 'lowConfCaller',
+                    qualified_name: 'z.ts::lowConfCaller',
+                    file_path: 'z.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h3',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'y.ts::highConfCaller',
+                    target_qualified: 'x.ts::target',
+                    file_path: 'y.ts',
+                    line: 2,
+                    confidence: 0.8,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'z.ts::lowConfCaller',
+                    target_qualified: 'x.ts::target',
+                    file_path: 'z.ts',
+                    line: 2,
+                    confidence: 0.3,
+                },
+            ],
+        };
+
+        // With minConfidence=0.5, low-confidence edge should NOT propagate
+        const result = computeBlastRadius(graph, ['x.ts::target'], 2, 0.5);
+        expect(result.total_functions).toBe(2); // target + highConfCaller
+
+        const allReached = new Set<string>();
+        allReached.add('x.ts::target');
+        for (const names of Object.values(result.by_depth)) {
+            for (const n of names) {
+                allReached.add(n);
+            }
+        }
+        expect(allReached.has('y.ts::highConfCaller')).toBe(true);
+        expect(allReached.has('z.ts::lowConfCaller')).toBe(false);
+
+        // With minConfidence=0.1, both should propagate
+        const resultLow = computeBlastRadius(graph, ['x.ts::target'], 2, 0.1);
+        expect(resultLow.total_functions).toBe(3);
+    });
+
+    it('should NOT filter IMPORTS edges by confidence', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'util',
+                    qualified_name: 'util.ts::util',
+                    file_path: 'util.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'consumer',
+                    qualified_name: 'consumer.ts::consumer',
+                    file_path: 'consumer.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h2',
+                },
+            ],
+            edges: [
+                {
+                    // IMPORTS edge has no confidence field
+                    kind: 'IMPORTS',
+                    source_qualified: 'consumer.ts::consumer',
+                    target_qualified: 'util.ts::util',
+                    file_path: 'consumer.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        // IMPORTS edges should always be followed regardless of minConfidence
+        const result = computeBlastRadius(graph, ['util.ts::util'], 2, 0.99);
+        expect(result.total_functions).toBe(2); // util + consumer
+
+        const allReached = new Set<string>();
+        allReached.add('util.ts::util');
+        for (const names of Object.values(result.by_depth)) {
+            for (const n of names) {
+                allReached.add(n);
+            }
+        }
+        expect(allReached.has('consumer.ts::consumer')).toBe(true);
     });
 });

@@ -129,7 +129,9 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     const mergedGraph = mainGraph ? mergeGraphs(mainGraph, localGraphData, opts.files) : localGraphData;
 
     // Analyze
-    const blastRadius = computeBlastRadius(mergedGraph, opts.files);
+    // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
+    const changedQN = mergedGraph.nodes.filter((n) => opts.files.includes(n.file_path)).map((n) => n.qualified_name);
+    const blastRadius = computeBlastRadius(mergedGraph, changedQN);
     const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, { skipTests: opts.skipTests });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files);
 

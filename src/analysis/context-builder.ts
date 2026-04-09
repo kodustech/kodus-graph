@@ -57,7 +57,9 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const newEdgesInChanged = mergedGraph.edges.filter((e) => changedSet.has(e.file_path));
 
     const structuralDiff = computeStructuralDiff(oldIndexed, newNodesInChanged, newEdgesInChanged, changedFiles);
-    const blastRadius = computeBlastRadius(mergedGraph, changedFiles, maxDepth);
+    // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
+    const changedQN = mergedGraph.nodes.filter((n) => changedSet.has(n.file_path)).map((n) => n.qualified_name);
+    const blastRadius = computeBlastRadius(mergedGraph, changedQN, maxDepth, 0.5);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
