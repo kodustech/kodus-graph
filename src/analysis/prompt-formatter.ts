@@ -19,9 +19,10 @@ export function formatPrompt(output: ContextV2Output): string {
     const br = analysis.blast_radius;
     const meta = analysis.metadata;
 
-    // ── Header: one-line stats ──
+    // ── Header: one-line stats (untested scoped to changed functions only) ──
+    const changedUntested = analysis.changed_functions.filter((f) => !f.has_test_coverage).length;
     lines.push(
-        `${meta.changed_functions_count} changed | ${br.total_functions} impacted | ${br.total_files} files | risk ${risk.level} ${risk.score} | ${meta.untested_count} untested`,
+        `${meta.changed_functions_count} changed (${changedUntested} untested) | ${br.total_functions} impacted | ${br.total_files} files | risk ${risk.level} ${risk.score}`,
     );
     lines.push('');
 
@@ -36,9 +37,12 @@ export function formatPrompt(output: ContextV2Output): string {
             const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
             const tested = fn.has_test_coverage ? 'tested' : 'untested';
 
+            // Class-qualified signature for methods (language-agnostic via qualified_name)
+            const displayName = classQualifiedSignature(fn.qualified_name, fn.signature);
+
             // Main line
             lines.push(
-                `  ${fn.signature} [${fn.file_path}:${fn.line_start}-${fn.line_end}] ${status} | ${fn.callers.length} callers | ${tested}`,
+                `  ${displayName} [${fn.file_path}:${fn.line_start}-${fn.line_end}] ${status} | ${fn.callers.length} callers | ${tested}`,
             );
 
             // Contract changes — high value for agent to spot breaking changes
@@ -159,6 +163,21 @@ export function formatPrompt(output: ContextV2Output): string {
 /** Extract short name from qualified_name (e.g. "mod::Class::method" → "method") */
 function shortName(qualifiedName: string): string {
     return qualifiedName.split('::').pop() || qualifiedName;
+}
+
+/**
+ * Build class-qualified signature for methods.
+ * "file::Class::method" + "method(params) -> ret" → "Class.method(params) -> ret"
+ * For top-level functions ("file::func"), returns signature as-is.
+ * Language-agnostic: works for any language since qualified_name always uses "::" separator.
+ */
+function classQualifiedSignature(qualifiedName: string, signature: string): string {
+    const parts = qualifiedName.split('::');
+    if (parts.length < 3) {
+        return signature; // top-level function, no class
+    }
+    const className = parts[parts.length - 2];
+    return `${className}.${signature}`;
 }
 
 /**

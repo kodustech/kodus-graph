@@ -70,7 +70,7 @@ describe('executeContext', () => {
 
         const text = readFileSync(promptPath, 'utf-8');
         // Compact format header: stats line
-        expect(text).toMatch(/\d+ changed \| \d+ impacted/);
+        expect(text).toMatch(/\d+ changed \(\d+ untested\) \| \d+ impacted/);
         // When baseline graph is from same repo without real changes, structural diff
         // finds 0 added/modified, so no changed functions appear in the prompt.
         // The prompt still contains inheritance.

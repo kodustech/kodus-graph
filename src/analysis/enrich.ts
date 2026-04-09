@@ -55,27 +55,59 @@ export function enrichChangedFunctions(
         return true;
     });
 
+    // Pre-index INHERITS edges: child → parent qualified name
+    const childToParent = new Map<string, string>();
+    for (const edge of graph.edges) {
+        if (edge.kind === 'INHERITS') {
+            childToParent.set(edge.source_qualified, edge.target_qualified);
+        }
+    }
+
     return changedFunctions
         .sort((a, b) => a.file_path.localeCompare(b.file_path) || a.line_start - b.line_start)
         .map((node) => {
-            // Callers
+            // Callers — include both direct callers AND callers of the overridden parent method.
+            // When code calls `base.method()`, the edge points to the parent class method,
+            // so overrides show 0 callers without this inheritance resolution.
             const callers: CallerRef[] = [];
-            for (const edge of graph.reverseAdjacency.get(node.qualified_name) || []) {
-                if (edge.kind !== 'CALLS') {
-                    continue;
+            const seenCallers = new Set<string>();
+
+            const collectCallers = (targetQN: string) => {
+                for (const edge of graph.reverseAdjacency.get(targetQN) || []) {
+                    if (edge.kind !== 'CALLS') {
+                        continue;
+                    }
+                    if (seenCallers.has(edge.source_qualified)) {
+                        continue;
+                    }
+                    if ((edge.confidence ?? 1.0) < minConfidence) {
+                        continue;
+                    }
+                    seenCallers.add(edge.source_qualified);
+                    const sourceNode = graph.byQualified.get(edge.source_qualified);
+                    callers.push({
+                        qualified_name: edge.source_qualified,
+                        name: sourceNode?.name || edge.source_qualified.split('::').pop() || 'unknown',
+                        file_path: sourceNode?.file_path || edge.file_path,
+                        line: edge.line,
+                        confidence: edge.confidence ?? 1.0,
+                    });
                 }
-                // null/undefined confidence = high confidence (edge came from DB or parser without scoring)
-                if ((edge.confidence ?? 1.0) < minConfidence) {
-                    continue;
+            };
+
+            // Direct callers
+            collectCallers(node.qualified_name);
+
+            // Inherited callers: if this is a method override, also collect callers of the parent method.
+            // e.g. OptimizedCursorPaginator::get_result inherits callers of BasePaginator::get_result
+            const qnParts = node.qualified_name.split('::');
+            if (qnParts.length >= 3) {
+                const methodName = qnParts[qnParts.length - 1];
+                const className = qnParts.slice(0, -1).join('::');
+                const parentClass = childToParent.get(className);
+                if (parentClass) {
+                    collectCallers(`${parentClass}::${methodName}`);
                 }
-                const sourceNode = graph.byQualified.get(edge.source_qualified);
-                callers.push({
-                    qualified_name: edge.source_qualified,
-                    name: sourceNode?.name || edge.source_qualified.split('::').pop() || 'unknown',
-                    file_path: sourceNode?.file_path || edge.file_path,
-                    line: edge.line,
-                    confidence: edge.confidence ?? 1.0,
-                });
             }
 
             // Callees

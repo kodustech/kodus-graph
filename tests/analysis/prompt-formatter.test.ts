@@ -75,7 +75,7 @@ describe('formatPrompt', () => {
         const text = formatPrompt(output);
 
         // Header line with stats
-        expect(text).toMatch(/\d+ changed \| \d+ impacted \| \d+ files \| risk/);
+        expect(text).toMatch(/\d+ changed \(\d+ untested\) \| \d+ impacted \| \d+ files \| risk/);
         // Changed section
         expect(text).toContain('CHANGED:');
         expect(text).toContain('authenticate(ctx: Context) -> Result');
@@ -199,7 +199,7 @@ describe('formatPrompt', () => {
         const text = formatPrompt(output);
 
         // Header still present
-        expect(text).toMatch(/\d+ changed/);
+        expect(text).toMatch(/\d+ changed \(\d+ untested\)/);
         // No CHANGED section
         expect(text).not.toContain('CHANGED:');
     });
@@ -297,5 +297,213 @@ describe('formatPrompt', () => {
 
         // Should show the sibling's implementation as "similar:"
         expect(text).toContain('similar: DateTimePaginator.getItemKey');
+        // Class-qualified signature: method should show ClassName.method
+        expect(text).toContain('OptimizedPaginator.getItemKey');
+    });
+
+    it('should prefix class name on method signatures', () => {
+        const graphWithMethod: GraphData = {
+            nodes: [
+                {
+                    kind: 'Class',
+                    name: 'PaymentService',
+                    qualified_name: 'src/payment.ts::PaymentService',
+                    file_path: 'src/payment.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Method',
+                    name: 'PaymentService.processOrder',
+                    qualified_name: 'src/payment.ts::PaymentService::processOrder',
+                    file_path: 'src/payment.ts',
+                    line_start: 10,
+                    line_end: 30,
+                    language: 'typescript',
+                    params: '(id: number)',
+                    return_type: 'void',
+                    is_test: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithMethod,
+            oldGraph: null,
+            changedFiles: ['src/payment.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // Should show "PaymentService.processOrder" not just "processOrder"
+        expect(text).toContain('PaymentService.processOrder(id: number) -> void');
+    });
+
+    it('should inherit callers from parent class method overrides', () => {
+        const graphWithOverride: GraphData = {
+            nodes: [
+                {
+                    kind: 'Class',
+                    name: 'BasePaginator',
+                    qualified_name: 'src/base.ts::BasePaginator',
+                    file_path: 'src/base.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Method',
+                    name: 'BasePaginator.getResult',
+                    qualified_name: 'src/base.ts::BasePaginator::getResult',
+                    file_path: 'src/base.ts',
+                    line_start: 10,
+                    line_end: 30,
+                    language: 'typescript',
+                    params: '(limit: number)',
+                    return_type: 'Result',
+                    is_test: false,
+                },
+                {
+                    kind: 'Class',
+                    name: 'CustomPaginator',
+                    qualified_name: 'src/custom.ts::CustomPaginator',
+                    file_path: 'src/custom.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Method',
+                    name: 'CustomPaginator.getResult',
+                    qualified_name: 'src/custom.ts::CustomPaginator::getResult',
+                    file_path: 'src/custom.ts',
+                    line_start: 10,
+                    line_end: 30,
+                    language: 'typescript',
+                    params: '(limit: number)',
+                    return_type: 'Result',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'handleRequest',
+                    qualified_name: 'src/handler.ts::handleRequest',
+                    file_path: 'src/handler.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'src/custom.ts::CustomPaginator',
+                    target_qualified: 'src/base.ts::BasePaginator',
+                    file_path: 'src/custom.ts',
+                    line: 1,
+                },
+                // handleRequest calls BasePaginator.getResult (via base class reference)
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/handler.ts::handleRequest',
+                    target_qualified: 'src/base.ts::BasePaginator::getResult',
+                    file_path: 'src/handler.ts',
+                    line: 5,
+                    confidence: 0.95,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithOverride,
+            oldGraph: null,
+            changedFiles: ['src/custom.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // CustomPaginator.getResult should inherit handleRequest as a caller
+        // (even though the CALLS edge points to BasePaginator.getResult)
+        expect(text).toContain('CustomPaginator.getResult');
+        expect(text).toContain('← handleRequest');
+        expect(text).toContain('1 callers');
+    });
+
+    it('should scope untested count to changed functions only', () => {
+        // Graph with 3 functions in changed file, but only 1 is actually changed
+        const graphMixed: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'changedFn',
+                    qualified_name: 'src/a.ts::changedFn',
+                    file_path: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'unchangedFn',
+                    qualified_name: 'src/a.ts::unchangedFn',
+                    file_path: 'src/a.ts',
+                    line_start: 20,
+                    line_end: 30,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphMixed,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'changedFn',
+                        qualified_name: 'src/a.ts::changedFn',
+                        file_path: 'src/a.ts',
+                        line_start: 1,
+                        line_end: 8,
+                        language: 'typescript',
+                        is_test: false,
+                        content_hash: 'old',
+                    },
+                    {
+                        kind: 'Function',
+                        name: 'unchangedFn',
+                        qualified_name: 'src/a.ts::unchangedFn',
+                        file_path: 'src/a.ts',
+                        line_start: 20,
+                        line_end: 30,
+                        language: 'typescript',
+                        is_test: false,
+                        content_hash: 'same',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/a.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // Header should say "1 changed (1 untested)" not "2 untested"
+        expect(text).toContain('1 changed (1 untested)');
     });
 });
