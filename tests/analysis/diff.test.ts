@@ -57,7 +57,14 @@ function makeGraph(nodes: GraphNode[], edges: GraphEdge[]): IndexedGraph {
     };
 }
 
-const node = (name: string, file: string, lineStart = 1, lineEnd = 5, params?: string): GraphNode => ({
+const node = (
+    name: string,
+    file: string,
+    lineStart = 1,
+    lineEnd = 5,
+    params?: string,
+    opts?: { return_type?: string; modifiers?: string },
+): GraphNode => ({
     kind: 'Function',
     name,
     qualified_name: `${file}::${name}`,
@@ -68,6 +75,8 @@ const node = (name: string, file: string, lineStart = 1, lineEnd = 5, params?: s
     is_test: false,
     file_hash: 'x',
     ...(params ? { params } : {}),
+    ...(opts?.return_type ? { return_type: opts.return_type } : {}),
+    ...(opts?.modifiers ? { modifiers: opts.modifiers } : {}),
 });
 
 describe('computeStructuralDiff', () => {
@@ -144,6 +153,61 @@ describe('computeStructuralDiff', () => {
 
         expect(result.nodes.modified).toHaveLength(1);
         expect(result.nodes.modified[0].changes).toContain('params');
+    });
+
+    it('should include contract_diffs with old/new values for params change', () => {
+        const oldGraph = makeGraph([node('foo', 'src/a.ts', 1, 5, '(x: number)')], []);
+        const newNodes: GraphNode[] = [node('foo', 'src/a.ts', 1, 5, '(x: number, y: string)')];
+        const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].contract_diffs).toEqual([
+            { field: 'params', old_value: '(x: number)', new_value: '(x: number, y: string)' },
+        ]);
+    });
+
+    it('should include contract_diffs for return_type change', () => {
+        const oldGraph = makeGraph(
+            [node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string' })],
+            [],
+        );
+        const newNodes: GraphNode[] = [
+            node('foo', 'src/a.ts', 1, 5, undefined, { return_type: 'string | null' }),
+        ];
+        const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].contract_diffs).toEqual([
+            { field: 'return_type', old_value: 'string', new_value: 'string | null' },
+        ]);
+    });
+
+    it('should detect modifiers change', () => {
+        const oldGraph = makeGraph(
+            [node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'public' })],
+            [],
+        );
+        const newNodes: GraphNode[] = [
+            node('foo', 'src/a.ts', 1, 5, undefined, { modifiers: 'private' }),
+        ];
+        const result = computeStructuralDiff(oldGraph, newNodes, [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].changes).toContain('modifiers');
+        expect(result.nodes.modified[0].contract_diffs).toEqual([
+            { field: 'modifiers', old_value: 'public', new_value: 'private' },
+        ]);
+    });
+
+    it('should have empty contract_diffs when only body changed', () => {
+        const oldNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: 'aaa' };
+        const newNode = { ...node('foo', 'src/a.ts', 1, 5), content_hash: 'bbb' };
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].changes).toEqual(['body']);
+        expect(result.nodes.modified[0].contract_diffs).toEqual([]);
     });
 
     it('should compute risk_by_file using reverse adjacency', () => {

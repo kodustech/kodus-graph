@@ -10,9 +10,16 @@ export interface NodeChange {
     line_end: number;
 }
 
+export interface ContractDiff {
+    field: 'params' | 'return_type' | 'modifiers';
+    old_value: string;
+    new_value: string;
+}
+
 export interface ModifiedNode {
     qualified_name: string;
     changes: string[];
+    contract_diffs: ContractDiff[];
 }
 
 export interface DiffResult {
@@ -119,14 +126,22 @@ export function computeStructuralDiff(
                     });
                 }
             }
+            const contractDiffs: ContractDiff[] = [];
+
             if ((n.params || '') !== (newN.params || '')) {
                 changes.push('params');
+                contractDiffs.push({ field: 'params', old_value: n.params || '()', new_value: newN.params || '()' });
             }
             if ((n.return_type || '') !== (newN.return_type || '')) {
                 changes.push('return_type');
+                contractDiffs.push({ field: 'return_type', old_value: n.return_type || 'void', new_value: newN.return_type || 'void' });
+            }
+            if ((n.modifiers || '') !== (newN.modifiers || '')) {
+                changes.push('modifiers');
+                contractDiffs.push({ field: 'modifiers', old_value: n.modifiers || '', new_value: newN.modifiers || '' });
             }
             if (changes.length > 0) {
-                modified.push({ qualified_name: qn, changes });
+                modified.push({ qualified_name: qn, changes, contract_diffs: contractDiffs });
             }
         }
     }
