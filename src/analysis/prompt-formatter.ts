@@ -1,191 +1,240 @@
 import type { ContextV2Output } from './context-builder';
 
+/**
+ * Compact prompt format optimized for LLM agent consumption.
+ *
+ * Design principles (derived from Langsmith trace analysis):
+ * - Agent forms hypotheses on FIRST LLM call using graph + diff → dense signal, no noise
+ * - Agent then uses grep/readFile with names from the graph → names must be grepable (file:line)
+ * - Inheritance enables cross-class comparison (e.g. sibling method implementations) → keep hierarchy
+ * - Test Gaps list and Structural Changes were never referenced by agent → removed
+ * - Contract changes on callers are high-value signals → inline with ⚠
+ * - Flows show how HTTP/test paths cross changed code → inline per function
+ */
 export function formatPrompt(output: ContextV2Output): string {
     const { analysis } = output;
     const lines: string[] = [];
 
-    // Header
     const risk = analysis.risk;
     const br = analysis.blast_radius;
     const meta = analysis.metadata;
-    lines.push('# Code Review Context');
-    lines.push('');
+
+    // ── Header: one-line stats ──
     lines.push(
-        `Risk: ${risk.level} (${risk.score}) | ${br.total_functions} functions impacted across ${br.total_files} files | ${meta.untested_count} untested`,
+        `${meta.changed_functions_count} changed | ${br.total_functions} impacted | ${br.total_files} files | risk ${risk.level} ${risk.score} | ${meta.untested_count} untested`,
     );
     lines.push('');
 
-    // Changed functions
+    // ── Changed functions ──
     if (analysis.changed_functions.length > 0) {
-        lines.push('## Changed Functions');
-        lines.push('');
+        lines.push('CHANGED:');
+
+        // Build a set of qualified names that have siblings (same method name in sibling classes)
+        const siblingMap = buildSiblingMap(analysis, output);
 
         for (const fn of analysis.changed_functions) {
-            lines.push(`### ${fn.signature}  [${fn.file_path}:${fn.line_start}-${fn.line_end}]`);
+            const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
+            const tested = fn.has_test_coverage ? 'tested' : 'untested';
 
-            // Status
-            if (fn.is_new) {
-                lines.push('Status: new');
-            } else if (fn.diff_changes.length > 0) {
-                lines.push('Status: modified');
-                lines.push(`  Changes: ${fn.diff_changes.join(', ')}`);
-                for (const cd of fn.contract_diffs) {
-                    lines.push(`  - ${cd.field}: ${cd.old_value} -> ${cd.new_value}`);
-                }
-                if (fn.caller_impact) {
-                    lines.push(`  Impact: ${fn.caller_impact}`);
-                }
-            } else {
-                lines.push('Status: unchanged');
+            // Main line
+            lines.push(
+                `  ${fn.signature} [${fn.file_path}:${fn.line_start}-${fn.line_end}] ${status} | ${fn.callers.length} callers | ${tested}`,
+            );
+
+            // Contract changes — high value for agent to spot breaking changes
+            for (const cd of fn.contract_diffs) {
+                lines.push(`    ⚠ ${cd.field}: ${cd.old_value} → ${cd.new_value}`);
+            }
+            if (fn.caller_impact) {
+                lines.push(`    ⚠ ${fn.caller_impact}`);
             }
 
-            // Callers
+            // Callers (← notation) — top N, then summary
             if (fn.callers.length > 0) {
-                lines.push('Callers:');
-                for (const c of fn.callers) {
-                    const conf = c.confidence < 0.85 ? ` confidence=${c.confidence.toFixed(2)}` : '';
-                    lines.push(`  - ${c.name}  [${c.file_path}:${c.line}]${conf}`);
+                const MAX_CALLERS = 5;
+                const shown = fn.callers.slice(0, MAX_CALLERS);
+                for (const c of shown) {
+                    const conf = c.confidence < 0.85 ? ` ~${Math.round(c.confidence * 100)}%` : '';
+                    lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}`);
                 }
-            } else {
-                lines.push('Callers: none');
+                if (fn.callers.length > MAX_CALLERS) {
+                    const remaining = fn.callers.slice(MAX_CALLERS);
+                    const uniqueFiles = new Set(remaining.map((c) => c.file_path)).size;
+                    lines.push(`    ... +${remaining.length} callers in ${uniqueFiles} files`);
+                }
             }
 
-            // Callees
+            // Callees (→ compact chain)
             if (fn.callees.length > 0) {
-                lines.push('Callees:');
-                for (const c of fn.callees) {
-                    lines.push(`  - ${c.signature}  [${c.file_path}]`);
+                const MAX_CALLEES = 8;
+                const names = fn.callees.slice(0, MAX_CALLEES).map((c) => c.name);
+                let calleeLine = `    → ${names.join(', ')}`;
+                if (fn.callees.length > MAX_CALLEES) {
+                    calleeLine += `, ... +${fn.callees.length - MAX_CALLEES}`;
                 }
-            } else {
-                lines.push('Callees: none');
+                lines.push(calleeLine);
             }
 
-            // Test coverage
-            lines.push(`Test coverage: ${fn.has_test_coverage ? 'yes' : 'no'}`);
+            // Similar: sibling class with same method name — enables cross-class comparison
+            const siblings = siblingMap.get(fn.qualified_name);
+            if (siblings && siblings.length > 0) {
+                for (const sib of siblings) {
+                    lines.push(`    similar: ${sib.name} [${sib.file_path}:${sib.line_start}]`);
+                }
+            }
 
-            // Affected flows
+            // Affected flows inline
             if (fn.in_flows.length > 0) {
-                lines.push('Affected flows:');
+                const MAX_FLOWS = 3;
+                let flowCount = 0;
                 for (const ep of fn.in_flows) {
+                    if (flowCount >= MAX_FLOWS) {
+                        lines.push(`    ... +${fn.in_flows.length - MAX_FLOWS} flows`);
+                        break;
+                    }
                     const flow = analysis.affected_flows.find((f) => f.entry_point === ep);
                     if (flow) {
                         const prefix = flow.type === 'http' ? 'HTTP' : 'TEST';
-                        lines.push(`  - ${prefix}: ${flow.path.map((q) => q.split('::').pop()).join(' → ')}`);
-                    } else {
-                        lines.push(`  - ${ep.split('::').pop()}`);
+                        const path = flow.path.map((q) => shortName(q)).join(' → ');
+                        lines.push(`    flow: ${prefix} ${path}`);
                     }
+                    flowCount++;
                 }
-            } else {
-                lines.push('Affected flows: none');
             }
 
             lines.push('');
         }
     }
 
-    // Inheritance
+    // ── Hierarchy (compact) ──
     if (analysis.inheritance.length > 0) {
-        lines.push('## Inheritance');
-        lines.push('');
+        lines.push('HIERARCHY:');
         for (const entry of analysis.inheritance) {
-            const name = entry.qualified_name.split('::').pop();
+            const name = shortName(entry.qualified_name);
             const parts: string[] = [];
             if (entry.extends) {
-                parts.push(`extends ${entry.extends.split('::').pop()}`);
+                parts.push(`extends ${shortName(entry.extends)}`);
             }
             if (entry.implements.length > 0) {
-                parts.push(`implements ${entry.implements.map((i) => i.split('::').pop()).join(', ')}`);
+                parts.push(`impl ${entry.implements.map((i) => shortName(i)).join(', ')}`);
             }
-            lines.push(`- ${name} ${parts.join(', ')}`);
+            let line = `  ${name}`;
+            if (parts.length > 0) {
+                line += ` ${parts.join(' | ')}`;
+            }
             if (entry.children.length > 0) {
-                lines.push(`  Children: ${entry.children.map((c) => c.split('::').pop()).join(', ')}`);
+                line += ` | children: ${entry.children.map((c) => shortName(c)).join(', ')}`;
             }
+            lines.push(line);
         }
         lines.push('');
     }
 
-    // Blast radius by depth
+    // ── Blast radius by depth (compact) ──
     const byDepth = analysis.blast_radius.by_depth;
     const depthKeys = Object.keys(byDepth).sort();
     if (depthKeys.length > 0) {
-        lines.push('## Blast Radius');
-        lines.push('');
+        lines.push('BLAST RADIUS:');
         for (const depth of depthKeys) {
-            const names = byDepth[depth].map((q) => q.split('::').pop());
-            lines.push(`Depth ${depth}: ${names.join(', ')} (${names.length} functions)`);
-        }
-        lines.push('');
-    }
-
-    // Test gaps
-    if (analysis.test_gaps.length > 0) {
-        lines.push('## Test Gaps');
-        lines.push('');
-        for (const gap of analysis.test_gaps) {
-            const name = gap.function.split('::').pop();
-            lines.push(`- ${name}  [${gap.file_path}:${gap.line_start}]`);
-        }
-        lines.push('');
-    }
-
-    // Structural diff
-    const diff = analysis.structural_diff;
-    const hasNodeChanges = diff.summary.added > 0 || diff.summary.removed > 0 || diff.summary.modified > 0;
-    const hasEdgeChanges = diff.edges.added.length > 0 || diff.edges.removed.length > 0;
-
-    if (hasNodeChanges || hasEdgeChanges) {
-        lines.push('## Structural Changes');
-        lines.push('');
-
-        if (hasNodeChanges) {
-            const parts: string[] = [];
-            if (diff.summary.added > 0) {
-                parts.push(`${diff.summary.added} added`);
-            }
-            if (diff.summary.removed > 0) {
-                parts.push(`${diff.summary.removed} removed`);
-            }
-            if (diff.summary.modified > 0) {
-                parts.push(`${diff.summary.modified} modified`);
-            }
-            lines.push(parts.join(', '));
-        }
-
-        if (diff.nodes.removed.length > 0) {
-            lines.push('');
-            lines.push('Removed:');
-            for (const n of diff.nodes.removed) {
-                const name = n.qualified_name.split('::').pop();
-                lines.push(`  - [${n.kind}] ${name}  [${n.file_path}:${n.line_start}]`);
+            const qnames = byDepth[depth];
+            const names = qnames.map((q) => shortName(q));
+            const MAX_SHOW = 8;
+            if (names.length <= MAX_SHOW) {
+                lines.push(`  depth ${depth}: ${names.join(', ')} (${names.length})`);
+            } else {
+                const shown = names.slice(0, MAX_SHOW);
+                lines.push(
+                    `  depth ${depth}: ${shown.join(', ')} ... +${names.length - MAX_SHOW} (${names.length} total)`,
+                );
             }
         }
-
-        if (diff.nodes.modified.length > 0) {
-            lines.push('');
-            lines.push('Modified:');
-            for (const m of diff.nodes.modified) {
-                const name = m.qualified_name.split('::').pop();
-                lines.push(`  - ${name} (${m.changes.join(', ')})`);
-            }
-        }
-
-        if (hasEdgeChanges) {
-            lines.push('');
-            lines.push('Dependency changes:');
-            for (const e of diff.edges.added) {
-                const src = e.source_qualified.split('::').pop();
-                const tgt = e.target_qualified.split('::').pop();
-                lines.push(`  + ${e.kind}: ${src} → ${tgt}`);
-            }
-            for (const e of diff.edges.removed) {
-                const src = e.source_qualified.split('::').pop();
-                const tgt = e.target_qualified.split('::').pop();
-                lines.push(`  - ${e.kind}: ${src} → ${tgt}`);
-            }
-        }
-
         lines.push('');
     }
 
     return lines.join('\n');
+}
+
+// ── Helpers ──
+
+/** Extract short name from qualified_name (e.g. "mod::Class::method" → "method") */
+function shortName(qualifiedName: string): string {
+    return qualifiedName.split('::').pop() || qualifiedName;
+}
+
+/**
+ * Build a map of changed functions → sibling implementations.
+ * A "sibling" is a function with the same method name in a class that shares
+ * the same parent (extends same base). This enables cross-class comparison
+ * (e.g. OptimizedCursorPaginator.get_item_key vs DateTimePaginator.get_item_key).
+ *
+ * Uses full graph edges (not just analysis.inheritance which is filtered to changed files).
+ */
+function buildSiblingMap(
+    analysis: ContextV2Output['analysis'],
+    output: ContextV2Output,
+): Map<string, Array<{ name: string; file_path: string; line_start: number }>> {
+    const result = new Map<string, Array<{ name: string; file_path: string; line_start: number }>>();
+
+    // Build parent→children index from ALL INHERITS edges in the graph (not just changed files)
+    const parentToChildren = new Map<string, string[]>();
+    for (const edge of output.graph.edges) {
+        if (edge.kind !== 'INHERITS') {
+            continue;
+        }
+        const existing = parentToChildren.get(edge.target_qualified) || [];
+        existing.push(edge.source_qualified);
+        parentToChildren.set(edge.target_qualified, existing);
+    }
+
+    // Index nodes by qualified name for fast lookup
+    const nodeByQN = new Map(output.graph.nodes.map((n) => [n.qualified_name, n]));
+
+    // For each changed function, find if its class has siblings with the same method
+    const changedQNs = new Set(analysis.changed_functions.map((f) => f.qualified_name));
+
+    for (const fn of analysis.changed_functions) {
+        // Extract class name from qualified_name (e.g. "file::Class::method" → "file::Class")
+        const parts = fn.qualified_name.split('::');
+        if (parts.length < 3) {
+            continue; // need at least file::class::method
+        }
+
+        const methodName = parts[parts.length - 1];
+        const className = parts.slice(0, -1).join('::');
+
+        // Find what this class extends (from INHERITS edges)
+        const parentEdge = output.graph.edges.find((e) => e.kind === 'INHERITS' && e.source_qualified === className);
+        if (!parentEdge) {
+            continue;
+        }
+
+        // Find sibling classes (same parent)
+        const siblings = parentToChildren.get(parentEdge.target_qualified) || [];
+
+        for (const siblingClass of siblings) {
+            if (siblingClass === className) {
+                continue;
+            }
+
+            // Look for same method name in sibling class
+            const siblingMethodQN = `${siblingClass}::${methodName}`;
+            // Don't list if the sibling is also in changed functions (it's already shown)
+            if (changedQNs.has(siblingMethodQN)) {
+                continue;
+            }
+
+            const siblingNode = nodeByQN.get(siblingMethodQN);
+            if (siblingNode) {
+                const existing = result.get(fn.qualified_name) || [];
+                existing.push({
+                    name: `${shortName(siblingClass)}.${methodName}`,
+                    file_path: siblingNode.file_path,
+                    line_start: siblingNode.line_start,
+                });
+                result.set(fn.qualified_name, existing);
+            }
+        }
+    }
+
+    return result;
 }
