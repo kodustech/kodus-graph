@@ -10,6 +10,7 @@ import { join, resolve as resolvePath } from 'path';
 import { log } from '../shared/logger';
 import { cachedExists } from './fs-cache';
 import { ensureWithinRoot } from '../shared/safe-path';
+import { detectExternal } from './external-detector';
 import { resolve as resolveCsImport } from './languages/csharp';
 import { resolve as resolveGoImport } from './languages/go';
 import { resolve as resolveJavaImport } from './languages/java';
@@ -179,15 +180,29 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
                         }
                     }
                 }
-            } else if (modulePath.startsWith(`${pkgName}/`) && exports && typeof exports === 'object') {
-                // Subpath export: "./button" entry
-                const subpath = `./${modulePath.slice(pkgName.length + 1)}`;
-                const target = resolveExportValue(exports[subpath]);
-                if (target) {
-                    const resolved = resolvePath(pkgDir, target);
-                    if (cachedExists(resolved)) {
-                        return resolved;
+            } else if (modulePath.startsWith(`${pkgName}/`)) {
+                const subpath = modulePath.slice(pkgName.length + 1);
+
+                // 1. Try exports field first
+                if (exports && typeof exports === 'object') {
+                    const exportKey = `./${subpath}`;
+                    const target = resolveExportValue(exports[exportKey]);
+                    if (target) {
+                        const resolved = resolvePath(pkgDir, target);
+                        if (cachedExists(resolved)) {
+                            return resolved;
+                        }
                     }
+                }
+
+                // 2. No exports or no match? Resolve subpath directly in package directory
+                const directBase = join(pkgDir, subpath);
+                for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
+                    if (cachedExists(directBase + ext)) return resolvePath(directBase + ext);
+                }
+                for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
+                    const idx = join(directBase, 'index' + ext);
+                    if (cachedExists(idx)) return resolvePath(idx);
                 }
             }
         }
@@ -264,6 +279,17 @@ export function resolveImport(
             });
             return null;
         }
+    }
+
+    // If still unresolved, check if it's an external package (for logging/debugging)
+    if (!result) {
+        const externalPkg = detectExternal(modulePath, lang, repoRoot);
+        if (externalPkg) {
+            // External package — expected null, don't log as warning
+            return null;
+        }
+        // Truly unresolved local import
+        log.debug('Unresolved local import', { from: fromAbsFile, module: modulePath });
     }
 
     return result;

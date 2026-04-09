@@ -453,3 +453,57 @@ describe('TypeScript project references', () => {
         }
     });
 });
+
+const TS_NAKED = join(import.meta.dir, '../fixtures/ts-naked-workspace-tmp');
+
+describe('TypeScript workspace package without exports (naked)', () => {
+    beforeAll(() => {
+        rmSync(TS_NAKED, { recursive: true, force: true });
+        mkdirSync(join(TS_NAKED, 'packages/lib'), { recursive: true });
+        mkdirSync(join(TS_NAKED, 'packages/app/src'), { recursive: true });
+
+        writeFileSync(join(TS_NAKED, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
+        writeFileSync(join(TS_NAKED, 'packages/lib/package.json'), JSON.stringify({
+            name: '@acme/lib',
+            private: true,
+            // NO exports, NO main, NO module — naked package
+        }));
+        writeFileSync(join(TS_NAKED, 'packages/lib/crypto.ts'), 'export function encrypt() {}\n');
+        mkdirSync(join(TS_NAKED, 'packages/lib/utils'), { recursive: true });
+        writeFileSync(join(TS_NAKED, 'packages/lib/utils/index.ts'), 'export function format() {}\n');
+        writeFileSync(join(TS_NAKED, 'packages/lib/logger.tsx'), 'export function Logger() {}\n');
+        writeFileSync(join(TS_NAKED, 'packages/app/package.json'), JSON.stringify({
+            dependencies: { '@acme/lib': '*' },
+        }));
+        writeFileSync(join(TS_NAKED, 'packages/app/src/main.ts'), "import { encrypt } from '@acme/lib/crypto';\n");
+    });
+
+    afterAll(() => rmSync(TS_NAKED, { recursive: true, force: true }));
+
+    it('resolves subpath to .ts file directly', () => {
+        const result = resolveImport(
+            join(TS_NAKED, 'packages/app/src/main.ts'),
+            '@acme/lib/crypto', 'ts', TS_NAKED,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('packages/lib/crypto.ts');
+    });
+
+    it('resolves subpath to directory index.ts', () => {
+        const result = resolveImport(
+            join(TS_NAKED, 'packages/app/src/main.ts'),
+            '@acme/lib/utils', 'ts', TS_NAKED,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('packages/lib/utils/index.ts');
+    });
+
+    it('resolves subpath to .tsx file', () => {
+        const result = resolveImport(
+            join(TS_NAKED, 'packages/app/src/main.ts'),
+            '@acme/lib/logger', 'ts', TS_NAKED,
+        );
+        expect(result).not.toBeNull();
+        expect(result).toContain('packages/lib/logger.tsx');
+    });
+});
