@@ -221,11 +221,15 @@ function resolveWorkspaceExport(modulePath: string, repoRoot: string): string | 
                 // 2. No exports or no match? Resolve subpath directly in package directory
                 const directBase = join(pkgDir, subpath);
                 for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
-                    if (cachedExists(directBase + ext)) return resolvePath(directBase + ext);
+                    if (cachedExists(directBase + ext)) {
+                        return resolvePath(directBase + ext);
+                    }
                 }
                 for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
-                    const idx = join(directBase, 'index' + ext);
-                    if (cachedExists(idx)) return resolvePath(idx);
+                    const idx = join(directBase, `index${ext}`);
+                    if (cachedExists(idx)) {
+                        return resolvePath(idx);
+                    }
                 }
             }
         }

@@ -297,6 +297,7 @@ function derivedKinds(config: LangConfig): Record<string, string> {
         result.method = firstOf(config.method)!;
     }
     if (firstOf(config.constructorKinds)) {
+        // biome-ignore lint/complexity/useLiteralKeys: bracket notation required — dot notation resolves to Function.prototype.constructor (TS2322)
         result['constructor'] = firstOf(config.constructorKinds)!;
     }
     if (firstOf(config.interface)) {

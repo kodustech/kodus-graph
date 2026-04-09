@@ -96,13 +96,17 @@ describe('deriveEdges', () => {
         };
         const mockImportMap = {
             lookup(file: string, name: string): string | null {
-                if (file === 'src/admin.ts' && name === 'User') return 'src/user.ts';
+                if (file === 'src/admin.ts' && name === 'User') {
+                    return 'src/user.ts';
+                }
                 return null;
             },
         };
         const mockSymbolTable = {
             lookupGlobal(name: string): string[] {
-                if (name === 'User') return ['src/user.ts::User'];
+                if (name === 'User') {
+                    return ['src/user.ts::User'];
+                }
                 return [];
             },
         };
@@ -347,7 +351,9 @@ describe('deriveEdges', () => {
         };
         const mockSymbolTable = {
             lookupGlobal(name: string): string[] {
-                if (name === 'IAuthService') return ['src/interfaces.ts::IAuthService'];
+                if (name === 'IAuthService') {
+                    return ['src/interfaces.ts::IAuthService'];
+                }
                 return [];
             },
         };

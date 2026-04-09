@@ -304,7 +304,9 @@ const RUST_STDLIB_CRATES = new Set(['std', 'core', 'alloc']);
 // ---------------------------------------------------------------------------
 
 function safeRead(filePath: string): string | null {
-    if (!cachedExists(filePath)) return null;
+    if (!cachedExists(filePath)) {
+        return null;
+    }
     try {
         return readFileSync(filePath, 'utf-8');
     } catch {
@@ -314,7 +316,9 @@ function safeRead(filePath: string): string | null {
 
 function safeParseJson(filePath: string): Record<string, unknown> | null {
     const text = safeRead(filePath);
-    if (!text) return null;
+    if (!text) {
+        return null;
+    }
     try {
         return JSON.parse(text);
     } catch {
@@ -346,14 +350,18 @@ function loadPythonDeps(repoRoot: string): LangDeps {
     if (reqText) {
         for (const line of reqText.split('\n')) {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('-')) continue;
+            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('-')) {
+                continue;
+            }
             // Strip version specifiers: django>=4.0 -> django
             const name = trimmed
                 .split(/[>=<!~;\s[]/)[0]
                 .trim()
                 .toLowerCase()
                 .replace(/-/g, '_');
-            if (name) pkgs.add(name);
+            if (name) {
+                pkgs.add(name);
+            }
         }
     }
 
@@ -380,7 +388,9 @@ function loadPythonDeps(repoRoot: string): LangDeps {
                 const match = trimmed.match(/^([a-zA-Z0-9_-]+)\s*=/);
                 if (match) {
                     const name = match[1].toLowerCase().replace(/-/g, '_');
-                    if (name !== 'python') pkgs.add(name);
+                    if (name !== 'python') {
+                        pkgs.add(name);
+                    }
                 }
                 // List items: "django>=4.0"
                 const listMatch = trimmed.match(/^"([a-zA-Z0-9_-]+)/);
@@ -418,11 +428,15 @@ function loadGoDeps(repoRoot: string): LangDeps {
             }
             if (inRequire) {
                 const match = trimmed.match(/^(\S+)\s+/);
-                if (match) pkgs.add(match[1]);
+                if (match) {
+                    pkgs.add(match[1]);
+                }
             }
             // Single-line require
             const singleMatch = trimmed.match(/^require\s+(\S+)\s+/);
-            if (singleMatch) pkgs.add(singleMatch[1]);
+            if (singleMatch) {
+                pkgs.add(singleMatch[1]);
+            }
         }
     }
     return { packages: pkgs, meta };
@@ -445,7 +459,9 @@ function loadRustDeps(repoRoot: string): LangDeps {
             }
             if (inDeps) {
                 const match = trimmed.match(/^([a-zA-Z0-9_-]+)\s*=/);
-                if (match) pkgs.add(match[1]);
+                if (match) {
+                    pkgs.add(match[1]);
+                }
             }
         }
     }
@@ -459,10 +475,11 @@ function loadJavaDeps(repoRoot: string): LangDeps {
     const pom = safeRead(join(repoRoot, 'pom.xml'));
     if (pom) {
         const depRegex = /<dependency>\s*<groupId>([^<]+)<\/groupId>\s*<artifactId>([^<]+)<\/artifactId>/gs;
-        let m: RegExpExecArray | null;
-        while ((m = depRegex.exec(pom)) !== null) {
+        let m: RegExpExecArray | null = depRegex.exec(pom);
+        while (m !== null) {
             // Store as "groupId:artifactId" for later matching
             pkgs.add(`${m[1]}:${m[2]}`);
+            m = depRegex.exec(pom);
         }
     }
 
@@ -470,15 +487,18 @@ function loadJavaDeps(repoRoot: string): LangDeps {
     const gradle = safeRead(join(repoRoot, 'build.gradle'));
     const gradleKts = safeRead(join(repoRoot, 'build.gradle.kts'));
     for (const text of [gradle, gradleKts]) {
-        if (!text) continue;
+        if (!text) {
+            continue;
+        }
         // Matches: implementation 'group:artifact:version' or "group:artifact:version"
         const regex = /(?:implementation|api|compileOnly|runtimeOnly|testImplementation)\s+['"]([^'"]+)['"]/g;
-        let gm: RegExpExecArray | null;
-        while ((gm = regex.exec(text)) !== null) {
+        let gm: RegExpExecArray | null = regex.exec(text);
+        while (gm !== null) {
             const parts = gm[1].split(':');
             if (parts.length >= 2) {
                 pkgs.add(`${parts[0]}:${parts[1]}`);
             }
+            gm = regex.exec(text);
         }
     }
 
@@ -493,7 +513,9 @@ function loadPhpDeps(repoRoot: string): LangDeps {
             const deps = composer[field];
             if (deps && typeof deps === 'object') {
                 for (const name of Object.keys(deps as Record<string, unknown>)) {
-                    if (name === 'php') continue;
+                    if (name === 'php') {
+                        continue;
+                    }
                     pkgs.add(name);
                 }
             }
@@ -507,9 +529,10 @@ function loadRubyDeps(repoRoot: string): LangDeps {
     const gemfile = safeRead(join(repoRoot, 'Gemfile'));
     if (gemfile) {
         const regex = /gem\s+['"]([^'"]+)['"]/g;
-        let m: RegExpExecArray | null;
-        while ((m = regex.exec(gemfile)) !== null) {
+        let m: RegExpExecArray | null = regex.exec(gemfile);
+        while (m !== null) {
             pkgs.add(m[1]);
+            m = regex.exec(gemfile);
         }
     }
     return { packages: pkgs };
@@ -532,11 +555,14 @@ function loadCsharpDeps(repoRoot: string): LangDeps {
 
     for (const csproj of candidates) {
         const text = safeRead(csproj);
-        if (!text) continue;
+        if (!text) {
+            continue;
+        }
         const regex = /<PackageReference\s+Include="([^"]+)"/gi;
-        let m: RegExpExecArray | null;
-        while ((m = regex.exec(text)) !== null) {
+        let m: RegExpExecArray | null = regex.exec(text);
+        while (m !== null) {
             pkgs.add(m[1]);
+            m = regex.exec(text);
         }
     }
     return { packages: pkgs };
@@ -548,7 +574,9 @@ function loadCsharpDeps(repoRoot: string): LangDeps {
 
 function loadDeps(repoRoot: string): Map<string, LangDeps> {
     const cached = depsCache.get(repoRoot);
-    if (cached) return cached;
+    if (cached) {
+        return cached;
+    }
 
     const result = new Map<string, LangDeps>();
 
@@ -616,32 +644,48 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
     // ----- TypeScript / JavaScript -----
     if (langKey === 'typescript' || langKey === 'javascript') {
         // Relative imports are never external
-        if (modulePath.startsWith('.') || modulePath.startsWith('#')) return null;
+        if (modulePath.startsWith('.') || modulePath.startsWith('#')) {
+            return null;
+        }
 
         // Node builtin (with or without node: prefix)
-        if (modulePath.startsWith('node:')) return modulePath;
-        if (modulePath.startsWith('bun:')) return modulePath;
-        if (NODE_BUILTINS.has(modulePath)) return modulePath;
+        if (modulePath.startsWith('node:')) {
+            return modulePath;
+        }
+        if (modulePath.startsWith('bun:')) {
+            return modulePath;
+        }
+        if (NODE_BUILTINS.has(modulePath)) {
+            return modulePath;
+        }
         // Also handle node:XXX/subpath
         const bareNode = modulePath.split('/')[0];
-        if (NODE_BUILTINS.has(bareNode)) return bareNode;
+        if (NODE_BUILTINS.has(bareNode)) {
+            return bareNode;
+        }
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('typescript');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Scoped package: @scope/name or @scope/name/subpath
         if (modulePath.startsWith('@')) {
             const parts = modulePath.split('/');
             const scopedName = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : modulePath;
-            if (langDeps.packages.has(scopedName)) return scopedName;
+            if (langDeps.packages.has(scopedName)) {
+                return scopedName;
+            }
             // Bare specifier not in deps but doesn't start with . or # → likely external
             return scopedName;
         }
 
         // Non-scoped: bare specifier
         const topLevel = modulePath.split('/')[0];
-        if (langDeps.packages.has(topLevel)) return topLevel;
+        if (langDeps.packages.has(topLevel)) {
+            return topLevel;
+        }
 
         // Bare specifier not found in deps — still likely external (unlisted dep)
         return topLevel;
@@ -650,12 +694,16 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
     // ----- Python -----
     if (langKey === 'python') {
         // Relative imports start with .
-        if (modulePath.startsWith('.')) return null;
+        if (modulePath.startsWith('.')) {
+            return null;
+        }
 
         const topLevel = modulePath.split('.')[0].toLowerCase().replace(/-/g, '_');
 
         // Python stdlib
-        if (PYTHON_STDLIB.has(topLevel)) return topLevel;
+        if (PYTHON_STDLIB.has(topLevel)) {
+            return topLevel;
+        }
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('python');
@@ -664,7 +712,9 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
             return PYTHON_STDLIB.has(topLevel) ? topLevel : null;
         }
 
-        if (langDeps.packages.has(topLevel)) return topLevel;
+        if (langDeps.packages.has(topLevel)) {
+            return topLevel;
+        }
         return null;
     }
 
@@ -672,19 +722,27 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
     if (langKey === 'go') {
         // Go stdlib: no dot in first segment
         const firstSegment = modulePath.split('/')[0];
-        if (!firstSegment.includes('.')) return modulePath;
+        if (!firstSegment.includes('.')) {
+            return modulePath;
+        }
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('go');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Check if it's the project's own module
         const ownModule = langDeps.meta?.module;
-        if (ownModule && modulePath.startsWith(ownModule)) return null;
+        if (ownModule && modulePath.startsWith(ownModule)) {
+            return null;
+        }
 
         // Check require list — match prefix
         for (const dep of langDeps.packages) {
-            if (modulePath === dep || modulePath.startsWith(dep + '/')) return dep;
+            if (modulePath === dep || modulePath.startsWith(`${dep}/`)) {
+                return dep;
+            }
         }
 
         // Has a dot in first segment but not in require list — still likely external
@@ -696,19 +754,27 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
         const firstSegment = modulePath.split('::')[0];
 
         // crate:: and super:: and self:: are local
-        if (firstSegment === 'crate' || firstSegment === 'super' || firstSegment === 'self') return null;
+        if (firstSegment === 'crate' || firstSegment === 'super' || firstSegment === 'self') {
+            return null;
+        }
 
         // stdlib crates
-        if (RUST_STDLIB_CRATES.has(firstSegment)) return firstSegment;
+        if (RUST_STDLIB_CRATES.has(firstSegment)) {
+            return firstSegment;
+        }
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('rust');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Cargo dependency names use hyphens but Rust uses underscores
         const normalized = firstSegment.replace(/-/g, '_');
         for (const dep of langDeps.packages) {
-            if (dep.replace(/-/g, '_') === normalized) return dep;
+            if (dep.replace(/-/g, '_') === normalized) {
+                return dep;
+            }
         }
 
         return null;
@@ -727,7 +793,9 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('java');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Match groupId prefix against import path
         // e.g. groupId "org.springframework.boot" -> import "org.springframework.boot.SpringApplication"
@@ -745,7 +813,9 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
     if (langKey === 'php') {
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('php');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Get composer.json autoload info for local namespace detection
         const composer = safeParseJson(join(repoRoot, 'composer.json'));
@@ -757,7 +827,9 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
                     // Normalize import path separators
                     const normalized = modulePath.replace(/\//g, '\\');
                     for (const ns of Object.keys(psr4)) {
-                        if (normalized.startsWith(ns)) return null; // local namespace
+                        if (normalized.startsWith(ns)) {
+                            return null; // local namespace
+                        }
                     }
                 }
             }
@@ -780,7 +852,9 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
             const namespaces = COMPOSER_NS_MAP[dep];
             if (namespaces) {
                 for (const ns of namespaces) {
-                    if (normalized.startsWith(ns)) return dep;
+                    if (normalized.startsWith(ns)) {
+                        return dep;
+                    }
                 }
             }
         }
@@ -791,13 +865,19 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
     // ----- Ruby -----
     if (langKey === 'ruby') {
         // Ruby stdlib
-        if (RUBY_STDLIB.has(modulePath)) return modulePath;
+        if (RUBY_STDLIB.has(modulePath)) {
+            return modulePath;
+        }
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('ruby');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
-        if (langDeps.packages.has(modulePath)) return modulePath;
+        if (langDeps.packages.has(modulePath)) {
+            return modulePath;
+        }
 
         return null;
     }
@@ -816,11 +896,15 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
 
         const deps = loadDeps(repoRoot);
         const langDeps = deps.get('csharp');
-        if (!langDeps) return null;
+        if (!langDeps) {
+            return null;
+        }
 
         // Match PackageReference names against import namespace
         for (const dep of langDeps.packages) {
-            if (modulePath.startsWith(dep)) return dep;
+            if (modulePath.startsWith(dep)) {
+                return dep;
+            }
         }
 
         return null;

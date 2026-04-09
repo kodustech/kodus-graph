@@ -54,27 +54,37 @@ function resolveTypeName(
     if (importedFrom) {
         // Look up the qualified name in the imported file
         const candidates = symbolTable?.lookupGlobal(name) ?? [];
-        const match = candidates.find((q) => q.startsWith(importedFrom + '::'));
-        if (match) return match;
+        const match = candidates.find((q) => q.startsWith(`${importedFrom}::`));
+        if (match) {
+            return match;
+        }
         // If importedFrom is not a local file (not in graph), it's an external package — skip
         const isLocal =
             graph.classes.some((c) => c.file === importedFrom) ||
             graph.interfaces.some((i) => i.file === importedFrom) ||
             graph.functions.some((f) => f.file === importedFrom);
-        if (!isLocal) return null;
+        if (!isLocal) {
+            return null;
+        }
         // Fallback: construct qualified name from local import target
         return `${importedFrom}::${name}`;
     }
 
     // 2. Check same file — class or interface defined in same file
     const sameFileClass = graph.classes.find((other) => other.name === name && other.file === file);
-    if (sameFileClass) return sameFileClass.qualified;
+    if (sameFileClass) {
+        return sameFileClass.qualified;
+    }
     const sameFileInterface = graph.interfaces.find((other) => other.name === name && other.file === file);
-    if (sameFileInterface) return sameFileInterface.qualified;
+    if (sameFileInterface) {
+        return sameFileInterface.qualified;
+    }
 
     // 3. Check global symbol table — unique match only
     const globalCandidates = symbolTable?.lookupGlobal(name) ?? [];
-    if (globalCandidates.length === 1) return globalCandidates[0];
+    if (globalCandidates.length === 1) {
+        return globalCandidates[0];
+    }
 
     // 4. External class/interface (React.Component, Error, etc.) — unresolvable
     return null;
@@ -89,7 +99,9 @@ export function deriveEdges(
     // INHERITS: class extends another class — resolve to qualified names
     const inherits: DerivedEdge[] = [];
     for (const c of graph.classes) {
-        if (!c.extends) continue;
+        if (!c.extends) {
+            continue;
+        }
 
         const resolved = resolveTypeName(c.extends, c.file, graph, symbolTable, importMap);
         if (resolved) {

@@ -140,10 +140,10 @@ function parseAliasEntries(
 
         const resolvedDir = resolveAliasValue(restOfBlock, repoRoot, varDefs);
 
-        if (resolvedDir !== null && !aliases.has(key + '/') && !aliases.has(key)) {
+        if (resolvedDir !== null && !aliases.has(`${key}/`) && !aliases.has(key)) {
             // Use key + '/' as prefix for path-based aliases (like tsconfig aliases)
             // but if the key already ends with special chars like ~, use as-is
-            const prefix = key.endsWith('/') ? key : key + '/';
+            const prefix = key.endsWith('/') ? key : `${key}/`;
             aliases.set(prefix, [resolvedDir]);
             // Also set exact match (for bare imports like 'sentry' → 'sentry/')
             if (!aliases.has(key) && key !== prefix) {

@@ -11,7 +11,9 @@ const readdirCache = new Map<string, string[]>();
 
 export function cachedExists(path: string): boolean {
     const cached = existsCache.get(path);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        return cached;
+    }
     const result = existsSync(path);
     existsCache.set(path, result);
     return result;
@@ -19,7 +21,9 @@ export function cachedExists(path: string): boolean {
 
 export function cachedReaddir(path: string): string[] {
     const cached = readdirCache.get(path);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        return cached;
+    }
     try {
         const result = readdirSync(path).sort();
         readdirCache.set(path, result);
