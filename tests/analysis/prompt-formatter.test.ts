@@ -63,7 +63,7 @@ describe('formatPrompt', () => {
         ],
     };
 
-    it('should produce readable prompt text with all sections', () => {
+    it('should produce compact prompt with header, changed functions, and hierarchy', () => {
         const output = buildContextV2({
             mergedGraph: graphData,
             oldGraph: null,
@@ -74,18 +74,19 @@ describe('formatPrompt', () => {
 
         const text = formatPrompt(output);
 
-        expect(text).toContain('# Code Review Context');
-        expect(text).toContain('Risk:');
-        expect(text).toContain('## Changed Functions');
+        // Header line with stats
+        expect(text).toMatch(/\d+ changed \| \d+ impacted \| \d+ files \| risk/);
+        // Changed section
+        expect(text).toContain('CHANGED:');
         expect(text).toContain('authenticate(ctx: Context) -> Result');
-        expect(text).toContain('Callers:');
-        expect(text).toContain('login');
-        expect(text).toContain('Test coverage:');
-        expect(text).toContain('## Inheritance');
+        // Caller with ← notation
+        expect(text).toContain('← login');
+        // Hierarchy
+        expect(text).toContain('HIERARCHY:');
         expect(text).toContain('AuthService extends BaseService');
     });
 
-    it('should format contract diffs in prompt output', () => {
+    it('should format contract diffs and caller impact inline', () => {
         const graphWithContract: GraphData = {
             nodes: [
                 {
@@ -176,14 +177,14 @@ describe('formatPrompt', () => {
 
         const text = formatPrompt(output);
 
-        // Should contain new format with Changes line
-        expect(text).toContain('Status: modified');
-        expect(text).toContain('  Changes:');
-        // Should contain contract diff details
-        expect(text).toContain('- params: (id: number) -> (id: number, priority: number)');
-        expect(text).toContain('- return_type: string -> string | null');
-        // Should contain impact line
-        expect(text).toContain('Impact: 2 callers may need param update; 2 callers may assume old return type');
+        // Contract diffs inline with ⚠
+        expect(text).toContain('⚠ params: (id: number) → (id: number, priority: number)');
+        expect(text).toContain('⚠ return_type: string → string | null');
+        // Caller impact inline with ⚠
+        expect(text).toContain('⚠ 2 callers may need param update');
+        // Callers with ← notation
+        expect(text).toContain('← handleRequest');
+        expect(text).toContain('← runBatch');
     });
 
     it('should handle empty changed functions', () => {
@@ -197,7 +198,104 @@ describe('formatPrompt', () => {
 
         const text = formatPrompt(output);
 
-        expect(text).toContain('# Code Review Context');
-        expect(text).not.toContain('## Changed Functions');
+        // Header still present
+        expect(text).toMatch(/\d+ changed/);
+        // No CHANGED section
+        expect(text).not.toContain('CHANGED:');
+    });
+
+    it('should show similar sibling methods when inheritance exists', () => {
+        // Sibling class is in a DIFFERENT file (not changed) — this is the real scenario:
+        // OptimizedPaginator.getItemKey changed, DateTimePaginator.getItemKey exists in base graph
+        const graphWithSiblings: GraphData = {
+            nodes: [
+                // Parent class
+                {
+                    kind: 'Class',
+                    name: 'BasePaginator',
+                    qualified_name: 'src/paginator.ts::BasePaginator',
+                    file_path: 'src/paginator.ts',
+                    line_start: 1,
+                    line_end: 100,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                // Child A (changed file)
+                {
+                    kind: 'Class',
+                    name: 'OptimizedPaginator',
+                    qualified_name: 'src/optimized.ts::OptimizedPaginator',
+                    file_path: 'src/optimized.ts',
+                    line_start: 1,
+                    line_end: 100,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Method',
+                    name: 'OptimizedPaginator.getItemKey',
+                    qualified_name: 'src/optimized.ts::OptimizedPaginator::getItemKey',
+                    file_path: 'src/optimized.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(item: any)',
+                    return_type: 'string',
+                    is_test: false,
+                },
+                // Child B (sibling, NOT in changed files)
+                {
+                    kind: 'Class',
+                    name: 'DateTimePaginator',
+                    qualified_name: 'src/datetime.ts::DateTimePaginator',
+                    file_path: 'src/datetime.ts',
+                    line_start: 1,
+                    line_end: 100,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Method',
+                    name: 'DateTimePaginator.getItemKey',
+                    qualified_name: 'src/datetime.ts::DateTimePaginator::getItemKey',
+                    file_path: 'src/datetime.ts',
+                    line_start: 30,
+                    line_end: 40,
+                    language: 'typescript',
+                    params: '(item: any)',
+                    return_type: 'number',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'src/optimized.ts::OptimizedPaginator',
+                    target_qualified: 'src/paginator.ts::BasePaginator',
+                    file_path: 'src/optimized.ts',
+                    line: 1,
+                },
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'src/datetime.ts::DateTimePaginator',
+                    target_qualified: 'src/paginator.ts::BasePaginator',
+                    file_path: 'src/datetime.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithSiblings,
+            oldGraph: null,
+            changedFiles: ['src/optimized.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // Should show the sibling's implementation as "similar:"
+        expect(text).toContain('similar: DateTimePaginator.getItemKey');
     });
 });

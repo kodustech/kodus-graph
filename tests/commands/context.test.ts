@@ -69,11 +69,11 @@ describe('executeContext', () => {
         });
 
         const text = readFileSync(promptPath, 'utf-8');
-        expect(text).toContain('# Code Review Context');
-        expect(text).toContain('Risk:');
+        // Compact format header: stats line
+        expect(text).toMatch(/\d+ changed \| \d+ impacted/);
         // When baseline graph is from same repo without real changes, structural diff
         // finds 0 added/modified, so no changed functions appear in the prompt.
-        // The prompt still contains structural changes (edge removals) and inheritance.
+        // The prompt still contains inheritance.
 
         rmSync(parsePath, { force: true });
         rmSync(promptPath, { force: true });
