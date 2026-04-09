@@ -439,6 +439,141 @@ describe('formatPrompt', () => {
         expect(text).toContain('1 callers');
     });
 
+    it('should show IMPORTS section for changed files', () => {
+        const graphWithImports: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'processOrder',
+                    qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts',
+                    line_start: 5,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/validator.ts::validate',
+                    file_path: 'src/validator.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Class',
+                    name: 'PaymentGateway',
+                    qualified_name: 'src/payment.ts::PaymentGateway',
+                    file_path: 'src/payment.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/order.ts::processOrder',
+                    target_qualified: 'src/validator.ts::validate',
+                    file_path: 'src/order.ts',
+                    line: 1,
+                },
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/order.ts::processOrder',
+                    target_qualified: 'src/payment.ts::PaymentGateway',
+                    file_path: 'src/order.ts',
+                    line: 2,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithImports,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'processOrder',
+                        qualified_name: 'src/order.ts::processOrder',
+                        file_path: 'src/order.ts',
+                        line_start: 5,
+                        line_end: 15,
+                        language: 'typescript',
+                        is_test: false,
+                        content_hash: 'old',
+                    },
+                ],
+                edges: [
+                    // validate import already existed
+                    {
+                        kind: 'IMPORTS',
+                        source_qualified: 'src/order.ts::processOrder',
+                        target_qualified: 'src/validator.ts::validate',
+                        file_path: 'src/order.ts',
+                        line: 1,
+                    },
+                ],
+            },
+            changedFiles: ['src/order.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        // IMPORTS section present
+        expect(text).toContain('IMPORTS:');
+        // Existing import (no tag)
+        expect(text).toContain('src/order.ts → validate');
+        // New import tagged
+        expect(text).toContain('PaymentGateway');
+        expect(text).toContain('NEW');
+    });
+
+    it('should flag unresolved imports', () => {
+        const graphWithUnresolved: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'handler',
+                    qualified_name: 'src/handler.ts::handler',
+                    file_path: 'src/handler.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/handler.ts::handler',
+                    target_qualified: 'src/missing.ts::NonExistent',
+                    file_path: 'src/handler.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithUnresolved,
+            oldGraph: null,
+            changedFiles: ['src/handler.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        expect(text).toContain('IMPORTS:');
+        expect(text).toContain('⚠ UNRESOLVED');
+        expect(text).toContain('NonExistent');
+    });
+
     it('should scope untested count to changed functions only', () => {
         // Graph with 3 functions in changed file, but only 1 is actually changed
         const graphMixed: GraphData = {

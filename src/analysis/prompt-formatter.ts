@@ -110,6 +110,16 @@ export function formatPrompt(output: ContextV2Output): string {
         }
     }
 
+    // ── Imports for changed files (helps agent spot missing/new dependencies) ──
+    const importLines = buildImportsSection(output, analysis);
+    if (importLines.length > 0) {
+        lines.push('IMPORTS:');
+        for (const line of importLines) {
+            lines.push(line);
+        }
+        lines.push('');
+    }
+
     // ── Hierarchy (compact) ──
     if (analysis.inheritance.length > 0) {
         lines.push('HIERARCHY:');
@@ -256,4 +266,69 @@ function buildSiblingMap(
     }
 
     return result;
+}
+
+/**
+ * Build compact IMPORTS section for changed files.
+ * Shows each import edge from a changed file with:
+ *   - NEW tag if the import was added in this change (not in oldGraph)
+ *   - ⚠ UNRESOLVED if the import target has no corresponding node in the graph
+ * Groups by source file for readability.
+ */
+function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output['analysis']): string[] {
+    const changedFiles = new Set(analysis.structural_diff.changed_files);
+
+    // Collect IMPORTS edges from changed files
+    const importEdges = output.graph.edges.filter((e) => e.kind === 'IMPORTS' && changedFiles.has(e.file_path));
+
+    if (importEdges.length === 0) {
+        return [];
+    }
+
+    // Set of new import edges (added in this diff)
+    const newImportKeys = new Set(
+        analysis.structural_diff.edges.added
+            .filter((e) => e.kind === 'IMPORTS')
+            .map((e) => `${e.source_qualified}→${e.target_qualified}`),
+    );
+
+    // Set of all node qualified names — to detect unresolved targets
+    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
+
+    // Group by source file
+    const byFile = new Map<string, typeof importEdges>();
+    for (const edge of importEdges) {
+        const existing = byFile.get(edge.file_path) || [];
+        existing.push(edge);
+        byFile.set(edge.file_path, existing);
+    }
+
+    const lines: string[] = [];
+    for (const [filePath, edges] of byFile) {
+        for (const edge of edges) {
+            const key = `${edge.source_qualified}→${edge.target_qualified}`;
+            const tags: string[] = [];
+
+            if (newImportKeys.has(key)) {
+                tags.push('NEW');
+            }
+
+            // Check if target exists as a node in the graph
+            // For IMPORTS, target_qualified is usually "file::Symbol".
+            // If neither the exact target nor any node starting with the target exists, it's unresolved.
+            const targetExists =
+                allNodes.has(edge.target_qualified) ||
+                // Also check if the target is a file-level reference (e.g. "src/utils.ts::default")
+                [...allNodes].some((qn) => qn.startsWith(`${edge.target_qualified}::`));
+
+            if (!targetExists) {
+                tags.push('⚠ UNRESOLVED');
+            }
+
+            const tagStr = tags.length > 0 ? ` (${tags.join(', ')})` : '';
+            lines.push(`  ${filePath} → ${shortName(edge.target_qualified)}${tagStr}`);
+        }
+    }
+
+    return lines;
 }
