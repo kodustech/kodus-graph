@@ -18,7 +18,7 @@ export function enrichChangedFunctions(
     const modifiedMap = new Map(diff.nodes.modified.map((m) => [m.qualified_name, m]));
 
     // Pre-index TESTED_BY
-    const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
+    const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.file_path));
 
     // Pre-index flows by function
     const flowsByFunction = new Map<string, string[]>();

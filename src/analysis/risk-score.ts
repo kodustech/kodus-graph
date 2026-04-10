@@ -17,7 +17,7 @@ export function computeRiskScore(
     let untestedCount = 0;
     const changedFunctions = changedNodes.filter((n) => n.kind === 'Function' || n.kind === 'Method');
     if (!options?.skipTests) {
-        const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
+        const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.file_path));
         untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
