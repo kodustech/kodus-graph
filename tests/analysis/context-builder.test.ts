@@ -556,23 +556,40 @@ describe('buildContextV2', () => {
         const mergedGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
-                    file_path: 'src/order.ts', line_start: 10, line_end: 30, language: 'typescript',
-                    params: '(id: number, priority: number)', return_type: 'string | null',
-                    is_test: false, file_hash: 'x',
+                    kind: 'Function',
+                    name: 'processOrder',
+                    qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts',
+                    line_start: 10,
+                    line_end: 30,
+                    language: 'typescript',
+                    params: '(id: number, priority: number)',
+                    return_type: 'string | null',
+                    is_test: false,
+                    file_hash: 'x',
                 },
                 {
-                    kind: 'Function', name: 'handleRequest', qualified_name: 'src/handler.ts::handleRequest',
-                    file_path: 'src/handler.ts', line_start: 1, line_end: 10, language: 'typescript',
-                    params: '(req: Request)', return_type: 'Response',
-                    is_test: false, file_hash: 'y',
+                    kind: 'Function',
+                    name: 'handleRequest',
+                    qualified_name: 'src/handler.ts::handleRequest',
+                    file_path: 'src/handler.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    params: '(req: Request)',
+                    return_type: 'Response',
+                    is_test: false,
+                    file_hash: 'y',
                 },
             ],
             edges: [
                 {
-                    kind: 'CALLS', source_qualified: 'src/handler.ts::handleRequest',
+                    kind: 'CALLS',
+                    source_qualified: 'src/handler.ts::handleRequest',
                     target_qualified: 'src/order.ts::processOrder',
-                    file_path: 'src/handler.ts', line: 5, confidence: 0.95,
+                    file_path: 'src/handler.ts',
+                    line: 5,
+                    confidence: 0.95,
                 },
             ],
         };
@@ -580,10 +597,18 @@ describe('buildContextV2', () => {
         const oldGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
-                    file_path: 'src/order.ts', line_start: 10, line_end: 25, language: 'typescript',
-                    params: '(id: number)', return_type: 'string',
-                    is_test: false, file_hash: 'x', content_hash: 'old_hash',
+                    kind: 'Function',
+                    name: 'processOrder',
+                    qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(id: number)',
+                    return_type: 'string',
+                    is_test: false,
+                    file_hash: 'x',
+                    content_hash: 'old_hash',
                 },
             ],
             edges: [],
@@ -599,7 +624,7 @@ describe('buildContextV2', () => {
 
         const depth1 = result.analysis.blast_radius.by_depth['1'];
         expect(depth1).toBeDefined();
-        const handler = depth1?.find(e => e.qualified_name === 'src/handler.ts::handleRequest');
+        const handler = depth1?.find((e) => e.qualified_name === 'src/handler.ts::handleRequest');
         expect(handler).toBeDefined();
         expect(handler!.impact_category).toBe('contract_breaking');
     });
@@ -608,22 +633,39 @@ describe('buildContextV2', () => {
         const mergedGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'compute', qualified_name: 'src/calc.ts::compute',
-                    file_path: 'src/calc.ts', line_start: 1, line_end: 20, language: 'typescript',
-                    params: '(x: number)', return_type: 'number',
-                    is_test: false, file_hash: 'a', content_hash: 'new_hash',
+                    kind: 'Function',
+                    name: 'compute',
+                    qualified_name: 'src/calc.ts::compute',
+                    file_path: 'src/calc.ts',
+                    line_start: 1,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '(x: number)',
+                    return_type: 'number',
+                    is_test: false,
+                    file_hash: 'a',
+                    content_hash: 'new_hash',
                 },
                 {
-                    kind: 'Function', name: 'report', qualified_name: 'src/report.ts::report',
-                    file_path: 'src/report.ts', line_start: 1, line_end: 10, language: 'typescript',
-                    is_test: false, file_hash: 'b',
+                    kind: 'Function',
+                    name: 'report',
+                    qualified_name: 'src/report.ts::report',
+                    file_path: 'src/report.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'b',
                 },
             ],
             edges: [
                 {
-                    kind: 'CALLS', source_qualified: 'src/report.ts::report',
+                    kind: 'CALLS',
+                    source_qualified: 'src/report.ts::report',
                     target_qualified: 'src/calc.ts::compute',
-                    file_path: 'src/report.ts', line: 5, confidence: 0.9,
+                    file_path: 'src/report.ts',
+                    line: 5,
+                    confidence: 0.9,
                 },
             ],
         };
@@ -631,10 +673,18 @@ describe('buildContextV2', () => {
         const oldGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'compute', qualified_name: 'src/calc.ts::compute',
-                    file_path: 'src/calc.ts', line_start: 1, line_end: 18, language: 'typescript',
-                    params: '(x: number)', return_type: 'number',
-                    is_test: false, file_hash: 'a', content_hash: 'old_hash',
+                    kind: 'Function',
+                    name: 'compute',
+                    qualified_name: 'src/calc.ts::compute',
+                    file_path: 'src/calc.ts',
+                    line_start: 1,
+                    line_end: 18,
+                    language: 'typescript',
+                    params: '(x: number)',
+                    return_type: 'number',
+                    is_test: false,
+                    file_hash: 'a',
+                    content_hash: 'old_hash',
                 },
             ],
             edges: [],
@@ -650,7 +700,7 @@ describe('buildContextV2', () => {
 
         const depth1 = result.analysis.blast_radius.by_depth['1'];
         expect(depth1).toBeDefined();
-        const report = depth1?.find(e => e.qualified_name === 'src/report.ts::report');
+        const report = depth1?.find((e) => e.qualified_name === 'src/report.ts::report');
         expect(report).toBeDefined();
         expect(report!.impact_category).toBe('behavior_affected');
     });
@@ -659,23 +709,41 @@ describe('buildContextV2', () => {
         const mergedGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'authenticate', qualified_name: 'src/auth.ts::authenticate',
-                    file_path: 'src/auth.ts', line_start: 10, line_end: 25, language: 'typescript',
-                    params: '(ctx: Context)', return_type: 'Result',
-                    is_test: false, file_hash: 'a',
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
                 },
                 {
-                    kind: 'Method', name: 'LoginController.post', qualified_name: 'src/ctrl.ts::LoginController::post',
-                    file_path: 'src/ctrl.ts', line_start: 5, line_end: 15, language: 'typescript',
-                    params: '(req: Request)', return_type: 'Response', parent_name: 'LoginController',
-                    is_test: false, file_hash: 'b',
+                    kind: 'Method',
+                    name: 'LoginController.post',
+                    qualified_name: 'src/ctrl.ts::LoginController::post',
+                    file_path: 'src/ctrl.ts',
+                    line_start: 5,
+                    line_end: 15,
+                    language: 'typescript',
+                    params: '(req: Request)',
+                    return_type: 'Response',
+                    parent_name: 'LoginController',
+                    is_test: false,
+                    file_hash: 'b',
                 },
             ],
             edges: [
                 {
-                    kind: 'CALLS', source_qualified: 'src/ctrl.ts::LoginController::post',
+                    kind: 'CALLS',
+                    source_qualified: 'src/ctrl.ts::LoginController::post',
                     target_qualified: 'src/auth.ts::authenticate',
-                    file_path: 'src/ctrl.ts', line: 8, confidence: 0.95,
+                    file_path: 'src/ctrl.ts',
+                    line: 8,
+                    confidence: 0.95,
                 },
             ],
         };
@@ -690,7 +758,7 @@ describe('buildContextV2', () => {
 
         const depth1 = result.analysis.blast_radius.by_depth['1'];
         if (depth1 && depth1.length > 0) {
-            const ctrl = depth1.find(e => e.qualified_name === 'src/ctrl.ts::LoginController::post');
+            const ctrl = depth1.find((e) => e.qualified_name === 'src/ctrl.ts::LoginController::post');
             if (ctrl) {
                 expect(ctrl.impact_score).toBeGreaterThan(0);
             }
@@ -701,24 +769,56 @@ describe('buildContextV2', () => {
         const mergedGraph: GraphData = {
             nodes: [
                 {
-                    kind: 'Function', name: 'target', qualified_name: 'src/t.ts::target',
-                    file_path: 'src/t.ts', line_start: 1, line_end: 10, language: 'typescript',
-                    is_test: false, file_hash: 'h1',
+                    kind: 'Function',
+                    name: 'target',
+                    qualified_name: 'src/t.ts::target',
+                    file_path: 'src/t.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
                 },
                 {
-                    kind: 'Function', name: 'highCaller', qualified_name: 'src/high.ts::highCaller',
-                    file_path: 'src/high.ts', line_start: 1, line_end: 10, language: 'typescript',
-                    is_test: false, file_hash: 'h2',
+                    kind: 'Function',
+                    name: 'highCaller',
+                    qualified_name: 'src/high.ts::highCaller',
+                    file_path: 'src/high.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h2',
                 },
                 {
-                    kind: 'Function', name: 'lowCaller', qualified_name: 'src/low.ts::lowCaller',
-                    file_path: 'src/low.ts', line_start: 1, line_end: 10, language: 'typescript',
-                    is_test: false, file_hash: 'h3',
+                    kind: 'Function',
+                    name: 'lowCaller',
+                    qualified_name: 'src/low.ts::lowCaller',
+                    file_path: 'src/low.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h3',
                 },
             ],
             edges: [
-                { kind: 'CALLS', source_qualified: 'src/high.ts::highCaller', target_qualified: 'src/t.ts::target', file_path: 'src/high.ts', line: 2, confidence: 0.95 },
-                { kind: 'CALLS', source_qualified: 'src/low.ts::lowCaller', target_qualified: 'src/t.ts::target', file_path: 'src/low.ts', line: 2, confidence: 0.3 },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/high.ts::highCaller',
+                    target_qualified: 'src/t.ts::target',
+                    file_path: 'src/high.ts',
+                    line: 2,
+                    confidence: 0.95,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/low.ts::lowCaller',
+                    target_qualified: 'src/t.ts::target',
+                    file_path: 'src/low.ts',
+                    line: 2,
+                    confidence: 0.3,
+                },
             ],
         };
 

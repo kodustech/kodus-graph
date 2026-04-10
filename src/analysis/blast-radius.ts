@@ -60,15 +60,15 @@ export function computeBlastRadius(
     const byDepth: Record<string, BlastRadiusEntry[]> = {};
 
     // Initialize frontier from seeds
-    let frontier: FrontierEntry[] = [];
+    const frontier: FrontierEntry[] = [];
     for (const seed of changedQualifiedNames) {
         const neighbors = adj.get(seed) || [];
         for (const entry of neighbors) {
-            if (seedSet.has(entry.neighbor)) continue;
+            if (seedSet.has(entry.neighbor)) {
+                continue;
+            }
 
-            const childAccumulated = entry.edgeKind === 'CALLS'
-                ? 1.0 * entry.confidence
-                : 1.0; // IMPORTS always 1.0
+            const childAccumulated = entry.edgeKind === 'CALLS' ? 1.0 * entry.confidence : 1.0; // IMPORTS always 1.0
 
             const existing = bestConfidence.get(entry.neighbor);
             if (existing === undefined || childAccumulated > existing) {
@@ -127,11 +127,14 @@ export function computeBlastRadius(
         for (const [, parentEntry] of frontierBest) {
             const neighbors = adj.get(parentEntry.qualified) || [];
             for (const adjEntry of neighbors) {
-                if (seedSet.has(adjEntry.neighbor)) continue;
+                if (seedSet.has(adjEntry.neighbor)) {
+                    continue;
+                }
 
-                const childAccumulated = adjEntry.edgeKind === 'CALLS'
-                    ? parentEntry.accumulated * adjEntry.confidence
-                    : parentEntry.accumulated * 1.0; // IMPORTS deterministic
+                const childAccumulated =
+                    adjEntry.edgeKind === 'CALLS'
+                        ? parentEntry.accumulated * adjEntry.confidence
+                        : parentEntry.accumulated * 1.0; // IMPORTS deterministic
 
                 // Check if already visited at a previous depth with better confidence
                 const prevBest = bestConfidence.get(adjEntry.neighbor);
@@ -145,7 +148,7 @@ export function computeBlastRadius(
                         const existingDepth = String(nodeDepth.get(adjEntry.neighbor)!);
                         const existingEntries = byDepth[existingDepth];
                         if (existingEntries) {
-                            const idx = existingEntries.findIndex(e => e.qualified_name === adjEntry.neighbor);
+                            const idx = existingEntries.findIndex((e) => e.qualified_name === adjEntry.neighbor);
                             if (idx !== -1) {
                                 existingEntries[idx].accumulated_confidence = childAccumulated;
                                 existingEntries[idx].edge_kind = adjEntry.edgeKind;

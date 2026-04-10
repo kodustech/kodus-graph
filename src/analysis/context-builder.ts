@@ -96,11 +96,15 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     }
 
     const contractBreakingSeeds = new Set(
-        structuralDiff.nodes.modified
-            .filter((m) => m.contract_diffs.length > 0)
-            .map((m) => m.qualified_name),
+        structuralDiff.nodes.modified.filter((m) => m.contract_diffs.length > 0).map((m) => m.qualified_name),
     );
-    const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence, contractBreakingSeeds);
+    const blastRadius = computeBlastRadius(
+        mergedGraph,
+        [...trulyChangedQN],
+        maxDepth,
+        minConfidence,
+        contractBreakingSeeds,
+    );
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     enrichBlastRadiusWithFlows(blastRadius, allFlows);
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
@@ -177,10 +181,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     };
 }
 
-function enrichBlastRadiusWithFlows(
-    blastRadius: BlastRadiusResult,
-    allFlows: FlowsResult,
-): void {
+function enrichBlastRadiusWithFlows(blastRadius: BlastRadiusResult, allFlows: FlowsResult): void {
     // Build flow index: qualified_name → FlowRef[]
     const flowIndex = new Map<string, FlowRef[]>();
     for (const flow of allFlows.flows) {
