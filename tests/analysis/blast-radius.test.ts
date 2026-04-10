@@ -625,15 +625,66 @@ describe('computeBlastRadius', () => {
     it('should handle cycles without infinite loop', () => {
         const graph: GraphData = {
             nodes: [
-                { kind: 'Function', name: 'a', qualified_name: 'a.ts::a', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'x' },
-                { kind: 'Function', name: 'b', qualified_name: 'b.ts::b', file_path: 'b.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'y' },
-                { kind: 'Function', name: 'c', qualified_name: 'c.ts::c', file_path: 'c.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'z' },
+                {
+                    kind: 'Function',
+                    name: 'a',
+                    qualified_name: 'a.ts::a',
+                    file_path: 'a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'x',
+                },
+                {
+                    kind: 'Function',
+                    name: 'b',
+                    qualified_name: 'b.ts::b',
+                    file_path: 'b.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'y',
+                },
+                {
+                    kind: 'Function',
+                    name: 'c',
+                    qualified_name: 'c.ts::c',
+                    file_path: 'c.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'z',
+                },
             ],
             edges: [
                 // Cycle: b calls a, c calls b, a calls c
-                { kind: 'CALLS', source_qualified: 'b.ts::b', target_qualified: 'a.ts::a', file_path: 'b.ts', line: 2, confidence: 0.9 },
-                { kind: 'CALLS', source_qualified: 'c.ts::c', target_qualified: 'b.ts::b', file_path: 'c.ts', line: 2, confidence: 0.9 },
-                { kind: 'CALLS', source_qualified: 'a.ts::a', target_qualified: 'c.ts::c', file_path: 'a.ts', line: 2, confidence: 0.9 },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'b.ts::b',
+                    target_qualified: 'a.ts::a',
+                    file_path: 'b.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'c.ts::c',
+                    target_qualified: 'b.ts::b',
+                    file_path: 'c.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'a.ts::a',
+                    target_qualified: 'c.ts::c',
+                    file_path: 'a.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
             ],
         };
 
@@ -650,6 +701,110 @@ describe('computeBlastRadius', () => {
                 allQualified.add(e.qualified_name);
             }
         }
+    });
+
+    it('should update impact_category when higher-confidence path revisits a depth-1 node', () => {
+        // Scenario:
+        //   seed (contract_breaking seed) --CALLS(0.6)--> nodeA  [depth 1, initially behavior_affected via non-contract path]
+        //   seed2 (contract_breaking seed) --CALLS(0.9)--> nodeA  [depth 1, higher confidence, contract_breaking path]
+        //
+        // nodeA is first seen via a non-contract seed with conf=0.6 → behavior_affected
+        // Then at depth 2 a higher-confidence path arrives via a contract seed → should become contract_breaking
+        //
+        // Simpler: two seeds, nodeA reachable from both at depth 1.
+        // We test the "same depth dedup" at depth 1 (frontierBest dedup) then also the
+        // "earlier depth revisit" scenario by setting up a depth-2 path that has higher conf.
+        //
+        // For the "earlier depth revisit" branch specifically:
+        //   - A changes at depth 1 via seed (non-contract, conf=0.5) → behavior_affected
+        //   - B is at depth 1, C is at depth 2
+        //   - C calls A directly with conf=0.9 via contractSeed path (comes through depth-2 BFS)
+        //   - Since A is at depth 1 and 0.9 > 0.5, impact_category should update to contract_breaking
+
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'seed',
+                    qualified_name: 'seed.ts::seed',
+                    file_path: 'seed.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h0',
+                },
+                {
+                    kind: 'Function',
+                    name: 'nodeA',
+                    qualified_name: 'a.ts::nodeA',
+                    file_path: 'a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h1',
+                },
+                {
+                    kind: 'Function',
+                    name: 'nodeB',
+                    qualified_name: 'b.ts::nodeB',
+                    file_path: 'b.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'h2',
+                },
+            ],
+            edges: [
+                // nodeA calls seed with low confidence (so nodeA is depth-1, behavior_affected initially)
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'a.ts::nodeA',
+                    target_qualified: 'seed.ts::seed',
+                    file_path: 'a.ts',
+                    line: 2,
+                    confidence: 0.5,
+                },
+                // nodeB calls seed with some confidence (nodeB is depth-1)
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'b.ts::nodeB',
+                    target_qualified: 'seed.ts::seed',
+                    file_path: 'b.ts',
+                    line: 2,
+                    confidence: 0.6,
+                },
+                // nodeA also calls nodeB — so at depth 2, nodeA is reachable via nodeB with higher accumulated conf
+                // BUT nodeA is already at depth 1 (0.5). The depth-2 path conf = 0.6 * 0.95 = 0.57 > 0.5
+                // And seed is in contractBreakingSeeds, so the path through nodeB (originSeed=seed) should mark contract_breaking
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'a.ts::nodeA',
+                    target_qualified: 'b.ts::nodeB',
+                    file_path: 'a.ts',
+                    line: 3,
+                    confidence: 0.95,
+                },
+            ],
+        };
+
+        // seed is a contract-breaking seed
+        const contractBreakingSeeds = new Set(['seed.ts::seed']);
+
+        const result = computeBlastRadius(graph, ['seed.ts::seed'], 3, 0.1, contractBreakingSeeds);
+
+        // nodeA should be in depth 1
+        const depth1 = result.by_depth['1'];
+        expect(depth1).toBeDefined();
+        const nodeAEntry = depth1.find((e) => e.qualified_name === 'a.ts::nodeA');
+        expect(nodeAEntry).toBeDefined();
+
+        // The higher-confidence path (through nodeB at depth 2, conf=0.6*0.95=0.57) should win over 0.5
+        // and since seed is in contractBreakingSeeds, impact_category must be contract_breaking
+        expect(nodeAEntry!.accumulated_confidence).toBeCloseTo(0.57, 2);
+        expect(nodeAEntry!.impact_category).toBe('contract_breaking');
     });
 
     it('should set accumulated_confidence to 1.0 for IMPORTS edges', () => {
