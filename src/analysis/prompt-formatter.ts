@@ -190,8 +190,8 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
     if (depthKeys.length > 0) {
         lines.push('BLAST RADIUS:');
         for (const depth of depthKeys) {
-            const qnames = byDepth[depth];
-            const names = qnames.map((q) => shortName(q));
+            const entries = byDepth[depth];
+            const names = entries.map((e) => shortName(e.qualified_name));
             const MAX_SHOW = 8;
             if (names.length <= MAX_SHOW) {
                 lines.push(`  depth ${depth}: ${names.join(', ')} (${names.length})`);

@@ -217,9 +217,9 @@ describe('computeBlastRadius', () => {
         // Should NOT include callerOfFunc2 since func2 was not a seed
         const allReached = new Set<string>();
         allReached.add('A.ts::func1'); // seed
-        for (const names of Object.values(result.by_depth)) {
-            for (const n of names) {
-                allReached.add(n);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
             }
         }
         expect(allReached.has('B.ts::callerOfFunc1')).toBe(true);
@@ -291,9 +291,9 @@ describe('computeBlastRadius', () => {
 
         const allReached = new Set<string>();
         allReached.add('x.ts::target');
-        for (const names of Object.values(result.by_depth)) {
-            for (const n of names) {
-                allReached.add(n);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
             }
         }
         expect(allReached.has('y.ts::highConfCaller')).toBe(true);
@@ -348,9 +348,9 @@ describe('computeBlastRadius', () => {
 
         const allReached = new Set<string>();
         allReached.add('util.ts::util');
-        for (const names of Object.values(result.by_depth)) {
-            for (const n of names) {
-                allReached.add(n);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
             }
         }
         expect(allReached.has('consumer.ts::consumer')).toBe(true);
@@ -387,7 +387,7 @@ describe('computeBlastRadius', () => {
         const allReached = new Set<string>(['app.ts::app']);
         for (const entries of Object.values(result.by_depth)) {
             for (const e of entries) {
-                allReached.add(typeof e === 'string' ? e : e.qualified_name);
+                allReached.add(e.qualified_name);
             }
         }
         expect(allReached.has('utils.ts::utils')).toBe(false);
@@ -424,9 +424,86 @@ describe('computeBlastRadius', () => {
         const allReached = new Set<string>(['utils.ts::utils']);
         for (const entries of Object.values(result.by_depth)) {
             for (const e of entries) {
-                allReached.add(typeof e === 'string' ? e : e.qualified_name);
+                allReached.add(e.qualified_name);
             }
         }
         expect(allReached.has('app.ts::app')).toBe(true);
+    });
+
+    // ── New tests for confidence-weighted BFS ──
+
+    it('should propagate accumulated confidence through CALLS chain', () => {
+        const graph: GraphData = {
+            nodes: [
+                { kind: 'Function', name: 'a', qualified_name: 'a.ts::a', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'x' },
+                { kind: 'Function', name: 'b', qualified_name: 'b.ts::b', file_path: 'b.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'y' },
+                { kind: 'Function', name: 'c', qualified_name: 'c.ts::c', file_path: 'c.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'z' },
+            ],
+            edges: [
+                { kind: 'CALLS', source_qualified: 'b.ts::b', target_qualified: 'a.ts::a', file_path: 'b.ts', line: 2, confidence: 0.9 },
+                { kind: 'CALLS', source_qualified: 'c.ts::c', target_qualified: 'b.ts::b', file_path: 'c.ts', line: 2, confidence: 0.8 },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['a.ts::a'], 3);
+
+        const depth1 = result.by_depth['1'];
+        expect(depth1).toBeDefined();
+        const bEntry = depth1.find(e => e.qualified_name === 'b.ts::b');
+        expect(bEntry).toBeDefined();
+        expect(bEntry!.accumulated_confidence).toBeCloseTo(0.9, 2);
+        expect(bEntry!.edge_kind).toBe('CALLS');
+
+        const depth2 = result.by_depth['2'];
+        expect(depth2).toBeDefined();
+        const cEntry = depth2.find(e => e.qualified_name === 'c.ts::c');
+        expect(cEntry).toBeDefined();
+        expect(cEntry!.accumulated_confidence).toBeCloseTo(0.72, 2);
+    });
+
+    it('should use highest accumulated confidence when node is reachable via multiple paths', () => {
+        const graph: GraphData = {
+            nodes: [
+                { kind: 'Function', name: 'target', qualified_name: 'x.ts::target', file_path: 'x.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h1' },
+                { kind: 'Function', name: 'pathA', qualified_name: 'a.ts::pathA', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h2' },
+                { kind: 'Function', name: 'pathB', qualified_name: 'b.ts::pathB', file_path: 'b.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h3' },
+                { kind: 'Function', name: 'shared', qualified_name: 's.ts::shared', file_path: 's.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h4' },
+            ],
+            edges: [
+                { kind: 'CALLS', source_qualified: 'a.ts::pathA', target_qualified: 'x.ts::target', file_path: 'a.ts', line: 2, confidence: 0.9 },
+                { kind: 'CALLS', source_qualified: 's.ts::shared', target_qualified: 'a.ts::pathA', file_path: 's.ts', line: 2, confidence: 0.9 },
+                { kind: 'CALLS', source_qualified: 'b.ts::pathB', target_qualified: 'x.ts::target', file_path: 'b.ts', line: 2, confidence: 0.5 },
+                { kind: 'CALLS', source_qualified: 's.ts::shared', target_qualified: 'b.ts::pathB', file_path: 's.ts', line: 3, confidence: 0.5 },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['x.ts::target'], 3);
+
+        const depth2 = result.by_depth['2'];
+        expect(depth2).toBeDefined();
+        const sharedEntry = depth2.find(e => e.qualified_name === 's.ts::shared');
+        expect(sharedEntry).toBeDefined();
+        expect(sharedEntry!.accumulated_confidence).toBeCloseTo(0.81, 2);
+    });
+
+    it('should set accumulated_confidence to 1.0 for IMPORTS edges', () => {
+        const graph: GraphData = {
+            nodes: [
+                { kind: 'Function', name: 'util', qualified_name: 'util.ts::util', file_path: 'util.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h1' },
+                { kind: 'Function', name: 'consumer', qualified_name: 'consumer.ts::consumer', file_path: 'consumer.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'h2' },
+            ],
+            edges: [
+                { kind: 'IMPORTS', source_qualified: 'consumer.ts::consumer', target_qualified: 'util.ts::util', file_path: 'consumer.ts', line: 1 },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['util.ts::util'], 2, 0.99);
+
+        const depth1 = result.by_depth['1'];
+        expect(depth1).toBeDefined();
+        const consumerEntry = depth1.find(e => e.qualified_name === 'consumer.ts::consumer');
+        expect(consumerEntry).toBeDefined();
+        expect(consumerEntry!.accumulated_confidence).toBe(1.0);
+        expect(consumerEntry!.edge_kind).toBe('IMPORTS');
     });
 });
