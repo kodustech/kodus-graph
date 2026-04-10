@@ -199,7 +199,7 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
             const entries = byDepth[depth];
 
             // Group by impact_category
-            const byCategory = new Map<string, typeof entries>();
+            const byCategory = new Map<ImpactCategory, typeof entries>();
             for (const entry of entries) {
                 const cat = entry.impact_category;
                 if (!byCategory.has(cat)) {
