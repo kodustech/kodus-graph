@@ -757,12 +757,11 @@ describe('buildContextV2', () => {
         });
 
         const depth1 = result.analysis.blast_radius.by_depth['1'];
-        if (depth1 && depth1.length > 0) {
-            const ctrl = depth1.find((e) => e.qualified_name === 'src/ctrl.ts::LoginController::post');
-            if (ctrl) {
-                expect(ctrl.impact_score).toBeGreaterThan(0);
-            }
-        }
+        expect(depth1).toBeDefined();
+        expect(depth1.length).toBeGreaterThan(0);
+        const ctrl = depth1.find((e) => e.qualified_name === 'src/ctrl.ts::LoginController::post');
+        expect(ctrl).toBeDefined();
+        expect(ctrl!.impact_score).toBeGreaterThan(0);
     });
 
     it('should sort blast radius entries by impact_score descending within each depth', () => {
@@ -831,9 +830,9 @@ describe('buildContextV2', () => {
         });
 
         const depth1 = result.analysis.blast_radius.by_depth['1'];
-        if (depth1 && depth1.length >= 2) {
-            expect(depth1[0].impact_score).toBeGreaterThanOrEqual(depth1[1].impact_score);
-        }
+        expect(depth1).toBeDefined();
+        expect(depth1.length).toBeGreaterThanOrEqual(2);
+        expect(depth1[0].impact_score).toBeGreaterThanOrEqual(depth1[1].impact_score);
     });
 
     it('should compute structural diff when oldGraph is provided', () => {
