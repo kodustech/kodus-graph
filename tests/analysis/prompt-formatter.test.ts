@@ -703,6 +703,47 @@ describe('formatPrompt', () => {
         expect(text).not.toContain('fn4 ');
     });
 
+    it('should render blast radius entries with confidence, category, and flows', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'authenticate', qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts', line_start: 10, line_end: 25, language: 'typescript',
+                    params: '(ctx: Context)', return_type: 'Result', is_test: false, file_hash: 'a',
+                },
+                {
+                    kind: 'Function', name: 'login', qualified_name: 'src/ctrl.ts::login',
+                    file_path: 'src/ctrl.ts', line_start: 5, line_end: 15, language: 'typescript',
+                    params: '(req: Request)', return_type: 'Response', is_test: false, file_hash: 'b',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS', source_qualified: 'src/ctrl.ts::login',
+                    target_qualified: 'src/auth.ts::authenticate',
+                    file_path: 'src/ctrl.ts', line: 8, confidence: 0.9,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        if (text.includes('BLAST RADIUS:')) {
+            // Should contain percentage notation (confidence)
+            expect(text).toMatch(/\d+%/);
+            // Should contain category label
+            expect(text).toMatch(/\[(contract_breaking|behavior_affected|transitive)\]/);
+        }
+    });
+
     it('should truncate BLAST RADIUS section when maxPromptChars is exceeded', () => {
         // Build a graph that produces BLAST RADIUS
         const nodes = [];

@@ -184,22 +184,65 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
         lines.push('');
     }
 
-    // ── Blast radius by depth (compact) ──
+    // ── Blast radius by depth (with confidence, category, flows) ──
     const byDepth = analysis.blast_radius.by_depth;
     const depthKeys = Object.keys(byDepth).sort();
     if (depthKeys.length > 0) {
         lines.push('BLAST RADIUS:');
         for (const depth of depthKeys) {
             const entries = byDepth[depth];
-            const names = entries.map((e) => shortName(e.qualified_name));
-            const MAX_SHOW = 8;
-            if (names.length <= MAX_SHOW) {
-                lines.push(`  depth ${depth}: ${names.join(', ')} (${names.length})`);
-            } else {
-                const shown = names.slice(0, MAX_SHOW);
-                lines.push(
-                    `  depth ${depth}: ${shown.join(', ')} ... +${names.length - MAX_SHOW} (${names.length} total)`,
-                );
+
+            // Group by impact_category
+            const byCategory = new Map<string, typeof entries>();
+            for (const entry of entries) {
+                const cat = entry.impact_category;
+                if (!byCategory.has(cat)) {
+                    byCategory.set(cat, []);
+                }
+                byCategory.get(cat)!.push(entry);
+            }
+
+            // Render each category group
+            for (const [category, catEntries] of byCategory) {
+                const MAX_SHOW = 6;
+                const shown = catEntries.slice(0, MAX_SHOW);
+                const names = shown.map((e) => {
+                    const name = shortName(e.qualified_name);
+                    const conf = `${Math.round(e.accumulated_confidence * 100)}%`;
+                    const score = e.impact_score > 0 ? `, score ${e.impact_score.toFixed(2)}` : '';
+                    return `${name} (${conf}${score})`;
+                });
+
+                let line = `  depth ${depth} [${category}]: ${names.join(', ')}`;
+                if (catEntries.length > MAX_SHOW) {
+                    line += ` ... +${catEntries.length - MAX_SHOW}`;
+                }
+                line += ` (${catEntries.length})`;
+                lines.push(line);
+
+                // Show flows for this group (compact)
+                const allFlows = shown.flatMap((e) => e.flows);
+                if (allFlows.length > 0) {
+                    const uniqueFlows = new Map<string, string>();
+                    for (const f of allFlows) {
+                        if (!uniqueFlows.has(f.entry_point)) {
+                            uniqueFlows.set(f.entry_point, f.type === 'http' ? 'HTTP' : 'TEST');
+                        }
+                    }
+                    const flowNames = [...uniqueFlows.entries()]
+                        .slice(0, 3)
+                        .map(([ep, type]) => `${type} ${shortName(ep)}`);
+                    let flowLine = `    flows: ${flowNames.join(', ')}`;
+                    if (uniqueFlows.size > 3) {
+                        flowLine += ` ... +${uniqueFlows.size - 3}`;
+                    }
+                    lines.push(flowLine);
+                }
+
+                // Contract breaking warning
+                if (category === 'contract_breaking') {
+                    lines.push('    \u26a0 callers may need update (contract changed)');
+                }
             }
         }
         lines.push('');
