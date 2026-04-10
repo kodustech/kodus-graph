@@ -25,28 +25,29 @@ export function computeBlastRadius(
     // Build adjacency list with metadata
     const adj = new Map<string, AdjEntry[]>();
 
-    const addEdge = (from: string, entry: AdjEntry) => {
+    const addEdge = (from: string, to: string, confidence: number, edgeKind: 'CALLS' | 'IMPORTS') => {
         if (!adj.has(from)) {
             adj.set(from, []);
         }
-        adj.get(from)!.push(entry);
+        const list = adj.get(from)!;
+        // Avoid duplicate edges (keep highest confidence)
+        const existing = list.find((e) => e.neighbor === to && e.edgeKind === edgeKind);
+        if (existing) {
+            if (confidence > existing.confidence) {
+                existing.confidence = confidence;
+            }
+            return;
+        }
+        list.push({ neighbor: to, confidence, edgeKind });
     };
 
     for (const edge of graph.edges) {
         if (edge.kind === 'IMPORTS') {
             // IMPORTS: unidirectional — change in imported affects importer
-            addEdge(edge.target_qualified, {
-                neighbor: edge.source_qualified,
-                confidence: 1.0,
-                edgeKind: 'IMPORTS',
-            });
+            addEdge(edge.target_qualified, edge.source_qualified, 1.0, 'IMPORTS');
         } else if (edge.kind === 'CALLS' && (edge.confidence ?? 1.0) >= minConf) {
             // CALLS: only edges with sufficient confidence, reverse direction
-            addEdge(edge.target_qualified, {
-                neighbor: edge.source_qualified,
-                confidence: edge.confidence ?? 1.0,
-                edgeKind: 'CALLS',
-            });
+            addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
         }
     }
 
@@ -68,7 +69,7 @@ export function computeBlastRadius(
                 continue;
             }
 
-            const childAccumulated = entry.edgeKind === 'CALLS' ? 1.0 * entry.confidence : 1.0; // IMPORTS always 1.0
+            const childAccumulated = entry.edgeKind === 'CALLS' ? entry.confidence : 1.0; // IMPORTS always 1.0
 
             const existing = bestConfidence.get(entry.neighbor);
             if (existing === undefined || childAccumulated > existing) {
@@ -152,6 +153,17 @@ export function computeBlastRadius(
                             if (idx !== -1) {
                                 existingEntries[idx].accumulated_confidence = childAccumulated;
                                 existingEntries[idx].edge_kind = adjEntry.edgeKind;
+                                // Recompute impact_category based on original depth and new edge properties
+                                const originalDepth = nodeDepth.get(adjEntry.neighbor)!;
+                                if (originalDepth === 1) {
+                                    const contractBreaking = contractBreakingSeeds ?? new Set<string>();
+                                    if (adjEntry.edgeKind === 'CALLS' && contractBreaking.has(parentEntry.originSeed)) {
+                                        existingEntries[idx].impact_category = 'contract_breaking';
+                                    } else {
+                                        existingEntries[idx].impact_category = 'behavior_affected';
+                                    }
+                                }
+                                // depth > 1 stays 'transitive' — no change needed
                             }
                         }
                     }

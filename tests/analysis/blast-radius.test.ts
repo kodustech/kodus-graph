@@ -622,6 +622,36 @@ describe('computeBlastRadius', () => {
         expect(sharedEntry!.accumulated_confidence).toBeCloseTo(0.81, 2);
     });
 
+    it('should handle cycles without infinite loop', () => {
+        const graph: GraphData = {
+            nodes: [
+                { kind: 'Function', name: 'a', qualified_name: 'a.ts::a', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'x' },
+                { kind: 'Function', name: 'b', qualified_name: 'b.ts::b', file_path: 'b.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'y' },
+                { kind: 'Function', name: 'c', qualified_name: 'c.ts::c', file_path: 'c.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false, file_hash: 'z' },
+            ],
+            edges: [
+                // Cycle: b calls a, c calls b, a calls c
+                { kind: 'CALLS', source_qualified: 'b.ts::b', target_qualified: 'a.ts::a', file_path: 'b.ts', line: 2, confidence: 0.9 },
+                { kind: 'CALLS', source_qualified: 'c.ts::c', target_qualified: 'b.ts::b', file_path: 'c.ts', line: 2, confidence: 0.9 },
+                { kind: 'CALLS', source_qualified: 'a.ts::a', target_qualified: 'c.ts::c', file_path: 'a.ts', line: 2, confidence: 0.9 },
+            ],
+        };
+
+        // Should terminate without infinite loop and find b and c
+        const result = computeBlastRadius(graph, ['a.ts::a'], 5);
+        expect(result.total_functions).toBeLessThanOrEqual(3);
+        expect(result.total_functions).toBeGreaterThanOrEqual(2); // at least a + b
+
+        // Verify no duplicate entries across depths
+        const allQualified = new Set<string>();
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                expect(allQualified.has(e.qualified_name)).toBe(false); // no duplicates
+                allQualified.add(e.qualified_name);
+            }
+        }
+    });
+
     it('should set accumulated_confidence to 1.0 for IMPORTS edges', () => {
         const graph: GraphData = {
             nodes: [

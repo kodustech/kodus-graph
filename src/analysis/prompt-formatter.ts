@@ -202,8 +202,13 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                 byCategory.get(cat)!.push(entry);
             }
 
-            // Render each category group
-            for (const [category, catEntries] of byCategory) {
+            // Render each category group (deterministic order: contract_breaking → behavior_affected → transitive)
+            const categoryOrder: string[] = ['contract_breaking', 'behavior_affected', 'transitive'];
+            const sortedCategories = [...byCategory.entries()].sort(
+                (a, b) => categoryOrder.indexOf(a[0]) - categoryOrder.indexOf(b[0]),
+            );
+
+            for (const [category, catEntries] of sortedCategories) {
                 const MAX_SHOW = 6;
                 const shown = catEntries.slice(0, MAX_SHOW);
                 const names = shown.map((e) => {
