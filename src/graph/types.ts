@@ -61,10 +61,27 @@ export interface ParseOutput {
 }
 
 // ── Analyze command output ──
+export interface FlowRef {
+    entry_point: string;
+    type: 'test' | 'http';
+    criticality: number;
+}
+
+export type ImpactCategory = 'contract_breaking' | 'behavior_affected' | 'transitive';
+
+export interface BlastRadiusEntry {
+    qualified_name: string;
+    accumulated_confidence: number;
+    edge_kind: 'CALLS' | 'IMPORTS';
+    impact_category: ImpactCategory;
+    flows: FlowRef[];
+    impact_score: number;
+}
+
 export interface BlastRadiusResult {
     total_functions: number;
     total_files: number;
-    by_depth: Record<string, string[]>;
+    by_depth: Record<string, BlastRadiusEntry[]>;
 }
 
 export interface RiskFactor {
