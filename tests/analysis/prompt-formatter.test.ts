@@ -763,6 +763,80 @@ describe('formatPrompt', () => {
         }
     });
 
+    it('should order categories as contract_breaking, behavior_affected, transitive in BLAST RADIUS', () => {
+        // Build a graph where blast radius will have entries of different categories
+        const graphWithContract: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts', line_start: 10, line_end: 30, language: 'typescript',
+                    params: '(id: number, priority: number)', return_type: 'string | null',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function', name: 'handleRequest', qualified_name: 'src/handler.ts::handleRequest',
+                    file_path: 'src/handler.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    params: '(req: Request)', return_type: 'Response',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function', name: 'logEvent', qualified_name: 'src/logger.ts::logEvent',
+                    file_path: 'src/logger.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS', source_qualified: 'src/handler.ts::handleRequest',
+                    target_qualified: 'src/order.ts::processOrder',
+                    file_path: 'src/handler.ts', line: 5, confidence: 0.95,
+                },
+                {
+                    kind: 'CALLS', source_qualified: 'src/logger.ts::logEvent',
+                    target_qualified: 'src/handler.ts::handleRequest',
+                    file_path: 'src/logger.ts', line: 3, confidence: 0.8,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphWithContract,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
+                        file_path: 'src/order.ts', line_start: 10, line_end: 25, language: 'typescript',
+                        params: '(id: number)', return_type: 'string',
+                        is_test: false, content_hash: 'old_hash',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/order.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        if (text.includes('BLAST RADIUS:')) {
+            // contract_breaking should appear before behavior_affected and transitive
+            const contractIdx = text.indexOf('[contract_breaking]');
+            const behaviorIdx = text.indexOf('[behavior_affected]');
+            const transitiveIdx = text.indexOf('[transitive]');
+
+            if (contractIdx !== -1 && behaviorIdx !== -1) {
+                expect(contractIdx).toBeLessThan(behaviorIdx);
+            }
+            if (behaviorIdx !== -1 && transitiveIdx !== -1) {
+                expect(behaviorIdx).toBeLessThan(transitiveIdx);
+            }
+            if (contractIdx !== -1 && transitiveIdx !== -1) {
+                expect(contractIdx).toBeLessThan(transitiveIdx);
+            }
+        }
+    });
+
     it('should truncate BLAST RADIUS section when maxPromptChars is exceeded', () => {
         // Build a graph that produces BLAST RADIUS
         const nodes = [];

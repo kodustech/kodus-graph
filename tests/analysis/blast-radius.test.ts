@@ -15,7 +15,6 @@ describe('computeBlastRadius', () => {
                     line_end: 10,
                     language: 'typescript',
                     is_test: false,
-                    file_hash: 'a',
                 },
                 {
                     kind: 'Function',
@@ -26,7 +25,6 @@ describe('computeBlastRadius', () => {
                     line_end: 10,
                     language: 'typescript',
                     is_test: false,
-                    file_hash: 'b',
                 },
                 {
                     kind: 'Function',
@@ -37,7 +35,6 @@ describe('computeBlastRadius', () => {
                     line_end: 10,
                     language: 'typescript',
                     is_test: false,
-                    file_hash: 'c',
                 },
             ],
             edges: [
@@ -62,8 +59,21 @@ describe('computeBlastRadius', () => {
 
         // Now pass qualified names instead of file paths
         const result = computeBlastRadius(graph, ['src/auth.ts::auth'], 2);
-        expect(result.total_functions).toBeGreaterThan(1);
-        expect(result.total_files).toBeGreaterThan(1);
+
+        // Seed (auth) + depth 1 (login) + depth 2 (route) = 3 total
+        expect(result.total_functions).toBe(3);
+        expect(result.total_files).toBe(3);
+
+        const depth1 = result.by_depth['1'];
+        expect(depth1).toBeDefined();
+        expect(depth1.length).toBe(1);
+        expect(depth1[0].qualified_name).toBe('src/ctrl.ts::login');
+        expect(depth1[0].accumulated_confidence).toBeCloseTo(0.9, 2);
+
+        const depth2 = result.by_depth['2'];
+        expect(depth2).toBeDefined();
+        expect(depth2.length).toBe(1);
+        expect(depth2[0].qualified_name).toBe('src/routes.ts::route');
     });
 
     it('should respect maxDepth', () => {
@@ -805,6 +815,27 @@ describe('computeBlastRadius', () => {
         // and since seed is in contractBreakingSeeds, impact_category must be contract_breaking
         expect(nodeAEntry!.accumulated_confidence).toBeCloseTo(0.57, 2);
         expect(nodeAEntry!.impact_category).toBe('contract_breaking');
+    });
+
+    it('should handle empty graph', () => {
+        const graph: GraphData = { nodes: [], edges: [] };
+        const result = computeBlastRadius(graph, ['nonexistent::fn'], 2);
+        expect(result.total_functions).toBe(1); // only the seed (even if not in graph)
+        expect(result.total_files).toBe(0);
+        expect(Object.keys(result.by_depth)).toHaveLength(0);
+    });
+
+    it('should handle empty seeds', () => {
+        const graph: GraphData = {
+            nodes: [
+                { kind: 'Function', name: 'a', qualified_name: 'a.ts::a', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false },
+            ],
+            edges: [],
+        };
+        const result = computeBlastRadius(graph, [], 2);
+        expect(result.total_functions).toBe(0);
+        expect(result.total_files).toBe(0);
+        expect(Object.keys(result.by_depth)).toHaveLength(0);
     });
 
     it('should set accumulated_confidence to 1.0 for IMPORTS edges', () => {
