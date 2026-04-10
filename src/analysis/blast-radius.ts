@@ -1,16 +1,40 @@
-import type { BlastRadiusEntry, BlastRadiusResult, GraphData, ImpactCategory } from '../graph/types';
+import type { BlastRadiusEntry, BlastRadiusResult, EdgeKind, GraphData, ImpactCategory } from '../graph/types';
+
+type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS'>;
 
 interface AdjEntry {
     neighbor: string;
     confidence: number;
-    edgeKind: 'CALLS' | 'IMPORTS';
+    edgeKind: BlastRadiusEdgeKind;
 }
 
 interface FrontierEntry {
     qualified: string;
     accumulated: number;
-    edgeKind: 'CALLS' | 'IMPORTS';
+    edgeKind: BlastRadiusEdgeKind;
     originSeed: string;
+}
+
+interface NodeState {
+    confidence: number;
+    edgeKind: BlastRadiusEdgeKind;
+    originSeed: string;
+    depth: number;
+}
+
+function computeCategory(
+    depth: number,
+    edgeKind: BlastRadiusEdgeKind,
+    originSeed: string,
+    cbSeeds: Set<string>,
+): ImpactCategory {
+    if (depth === 1 && edgeKind === 'CALLS' && cbSeeds.has(originSeed)) {
+        return 'contract_breaking';
+    }
+    if (depth === 1) {
+        return 'behavior_affected';
+    }
+    return 'transitive';
 }
 
 export function computeBlastRadius(
@@ -21,24 +45,28 @@ export function computeBlastRadius(
     contractBreakingSeeds?: Set<string>,
 ): BlastRadiusResult {
     const minConf = minConfidence ?? 0.5;
+    const cbSeeds = contractBreakingSeeds ?? new Set<string>();
 
     // Build adjacency list with metadata
     const adj = new Map<string, AdjEntry[]>();
+    const adjSeen = new Set<string>();
 
-    const addEdge = (from: string, to: string, confidence: number, edgeKind: 'CALLS' | 'IMPORTS') => {
-        if (!adj.has(from)) {
-            adj.set(from, []);
-        }
-        const list = adj.get(from)!;
-        // Avoid duplicate edges (keep highest confidence)
-        const existing = list.find((e) => e.neighbor === to && e.edgeKind === edgeKind);
-        if (existing) {
-            if (confidence > existing.confidence) {
-                existing.confidence = confidence;
+    const addEdge = (from: string, to: string, confidence: number, edgeKind: BlastRadiusEdgeKind) => {
+        const key = `${from}\0${to}\0${edgeKind}`;
+        if (adjSeen.has(key)) {
+            // Update confidence if higher
+            const list = adj.get(from)!;
+            const entry = list.find((e) => e.neighbor === to && e.edgeKind === edgeKind);
+            if (entry && confidence > entry.confidence) {
+                entry.confidence = confidence;
             }
             return;
         }
-        list.push({ neighbor: to, confidence, edgeKind });
+        adjSeen.add(key);
+        if (!adj.has(from)) {
+            adj.set(from, []);
+        }
+        adj.get(from)!.push({ neighbor: to, confidence, edgeKind });
     };
 
     for (const edge of graph.edges) {
@@ -51,14 +79,13 @@ export function computeBlastRadius(
         }
     }
 
-    // Track best accumulated confidence per node
-    const bestConfidence = new Map<string, number>();
-    const bestEdgeKind = new Map<string, 'CALLS' | 'IMPORTS'>();
-    const bestOriginSeed = new Map<string, string>();
-    const nodeDepth = new Map<string, number>();
+    // Consolidated state per node
+    const nodeState = new Map<string, NodeState>();
 
     const seedSet = new Set(changedQualifiedNames);
-    const byDepth: Record<string, BlastRadiusEntry[]> = {};
+
+    // Use Maps per depth for O(1) lookup instead of findIndex
+    const depthEntryMaps = new Map<number, Map<string, BlastRadiusEntry>>();
 
     // Initialize frontier from seeds
     const frontier: FrontierEntry[] = [];
@@ -71,12 +98,14 @@ export function computeBlastRadius(
 
             const childAccumulated = entry.edgeKind === 'CALLS' ? entry.confidence : 1.0; // IMPORTS always 1.0
 
-            const existing = bestConfidence.get(entry.neighbor);
-            if (existing === undefined || childAccumulated > existing) {
-                bestConfidence.set(entry.neighbor, childAccumulated);
-                bestEdgeKind.set(entry.neighbor, entry.edgeKind);
-                bestOriginSeed.set(entry.neighbor, seed);
-                nodeDepth.set(entry.neighbor, 1);
+            const existing = nodeState.get(entry.neighbor);
+            if (existing === undefined || childAccumulated > existing.confidence) {
+                nodeState.set(entry.neighbor, {
+                    confidence: childAccumulated,
+                    edgeKind: entry.edgeKind,
+                    originSeed: seed,
+                    depth: 1,
+                });
             }
 
             frontier.push({
@@ -99,17 +128,11 @@ export function computeBlastRadius(
 
     // Build depth 1 entries
     if (frontierBest.size > 0) {
-        const contractBreaking = contractBreakingSeeds ?? new Set<string>();
-        const entries: BlastRadiusEntry[] = [];
+        const depthMap = new Map<string, BlastRadiusEntry>();
         for (const [, fe] of frontierBest) {
-            let category: ImpactCategory;
-            if (fe.edgeKind === 'CALLS' && contractBreaking.has(fe.originSeed)) {
-                category = 'contract_breaking';
-            } else {
-                category = 'behavior_affected';
-            }
+            const category = computeCategory(1, fe.edgeKind, fe.originSeed, cbSeeds);
 
-            entries.push({
+            depthMap.set(fe.qualified, {
                 qualified_name: fe.qualified,
                 accumulated_confidence: fe.accumulated,
                 edge_kind: fe.edgeKind,
@@ -118,7 +141,7 @@ export function computeBlastRadius(
                 impact_score: 0,
             });
         }
-        byDepth['1'] = entries;
+        depthEntryMaps.set(1, depthMap);
     }
 
     // BFS for remaining depths
@@ -135,35 +158,33 @@ export function computeBlastRadius(
                 const childAccumulated =
                     adjEntry.edgeKind === 'CALLS'
                         ? parentEntry.accumulated * adjEntry.confidence
-                        : parentEntry.accumulated * 1.0; // IMPORTS deterministic
+                        : parentEntry.accumulated; // IMPORTS: deterministic, confidence = 1.0
 
                 // Check if already visited at a previous depth with better confidence
-                const prevBest = bestConfidence.get(adjEntry.neighbor);
-                if (prevBest !== undefined && nodeDepth.get(adjEntry.neighbor)! < depth) {
+                const prevState = nodeState.get(adjEntry.neighbor);
+                if (prevState !== undefined && prevState.depth < depth) {
                     // Already found at earlier depth — only update if better confidence
-                    if (childAccumulated > prevBest) {
-                        bestConfidence.set(adjEntry.neighbor, childAccumulated);
-                        bestEdgeKind.set(adjEntry.neighbor, adjEntry.edgeKind);
-                        bestOriginSeed.set(adjEntry.neighbor, parentEntry.originSeed);
+                    if (childAccumulated > prevState.confidence) {
+                        nodeState.set(adjEntry.neighbor, {
+                            confidence: childAccumulated,
+                            edgeKind: adjEntry.edgeKind,
+                            originSeed: parentEntry.originSeed,
+                            depth: prevState.depth,
+                        });
                         // Update the entry in the existing depth
-                        const existingDepth = String(nodeDepth.get(adjEntry.neighbor)!);
-                        const existingEntries = byDepth[existingDepth];
-                        if (existingEntries) {
-                            const idx = existingEntries.findIndex((e) => e.qualified_name === adjEntry.neighbor);
-                            if (idx !== -1) {
-                                existingEntries[idx].accumulated_confidence = childAccumulated;
-                                existingEntries[idx].edge_kind = adjEntry.edgeKind;
+                        const existingMap = depthEntryMaps.get(prevState.depth);
+                        if (existingMap) {
+                            const existingEntry = existingMap.get(adjEntry.neighbor);
+                            if (existingEntry) {
+                                existingEntry.accumulated_confidence = childAccumulated;
+                                existingEntry.edge_kind = adjEntry.edgeKind;
                                 // Recompute impact_category based on original depth and new edge properties
-                                const originalDepth = nodeDepth.get(adjEntry.neighbor)!;
-                                if (originalDepth === 1) {
-                                    const contractBreaking = contractBreakingSeeds ?? new Set<string>();
-                                    if (adjEntry.edgeKind === 'CALLS' && contractBreaking.has(parentEntry.originSeed)) {
-                                        existingEntries[idx].impact_category = 'contract_breaking';
-                                    } else {
-                                        existingEntries[idx].impact_category = 'behavior_affected';
-                                    }
-                                }
-                                // depth > 1 stays 'transitive' — no change needed
+                                existingEntry.impact_category = computeCategory(
+                                    prevState.depth,
+                                    adjEntry.edgeKind,
+                                    parentEntry.originSeed,
+                                    cbSeeds,
+                                );
                             }
                         }
                     }
@@ -171,11 +192,14 @@ export function computeBlastRadius(
                 }
 
                 // Same depth — keep the best
-                if (prevBest !== undefined && nodeDepth.get(adjEntry.neighbor) === depth) {
-                    if (childAccumulated > prevBest) {
-                        bestConfidence.set(adjEntry.neighbor, childAccumulated);
-                        bestEdgeKind.set(adjEntry.neighbor, adjEntry.edgeKind);
-                        bestOriginSeed.set(adjEntry.neighbor, parentEntry.originSeed);
+                if (prevState !== undefined && prevState.depth === depth) {
+                    if (childAccumulated > prevState.confidence) {
+                        nodeState.set(adjEntry.neighbor, {
+                            confidence: childAccumulated,
+                            edgeKind: adjEntry.edgeKind,
+                            originSeed: parentEntry.originSeed,
+                            depth,
+                        });
                         nextBest.set(adjEntry.neighbor, {
                             qualified: adjEntry.neighbor,
                             accumulated: childAccumulated,
@@ -187,10 +211,12 @@ export function computeBlastRadius(
                 }
 
                 // New node at this depth
-                bestConfidence.set(adjEntry.neighbor, childAccumulated);
-                bestEdgeKind.set(adjEntry.neighbor, adjEntry.edgeKind);
-                bestOriginSeed.set(adjEntry.neighbor, parentEntry.originSeed);
-                nodeDepth.set(adjEntry.neighbor, depth);
+                nodeState.set(adjEntry.neighbor, {
+                    confidence: childAccumulated,
+                    edgeKind: adjEntry.edgeKind,
+                    originSeed: parentEntry.originSeed,
+                    depth,
+                });
                 nextBest.set(adjEntry.neighbor, {
                     qualified: adjEntry.neighbor,
                     accumulated: childAccumulated,
@@ -201,9 +227,9 @@ export function computeBlastRadius(
         }
 
         if (nextBest.size > 0) {
-            const entries: BlastRadiusEntry[] = [];
+            const depthMap = new Map<string, BlastRadiusEntry>();
             for (const [, fe] of nextBest) {
-                entries.push({
+                depthMap.set(fe.qualified, {
                     qualified_name: fe.qualified,
                     accumulated_confidence: fe.accumulated,
                     edge_kind: fe.edgeKind,
@@ -212,10 +238,16 @@ export function computeBlastRadius(
                     impact_score: 0,
                 });
             }
-            byDepth[String(depth)] = entries;
+            depthEntryMaps.set(depth, depthMap);
         }
 
         frontierBest = nextBest;
+    }
+
+    // Convert depth entry maps to arrays for the result
+    const byDepth: Record<string, BlastRadiusEntry[]> = {};
+    for (const [d, map] of depthEntryMaps) {
+        byDepth[String(d)] = [...map.values()];
     }
 
     // Count unique visited nodes (seeds + all discovered)
