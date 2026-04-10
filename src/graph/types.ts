@@ -61,9 +61,11 @@ export interface ParseOutput {
 }
 
 // ── Analyze command output ──
+export type FlowType = 'test' | 'http';
+
 export interface FlowRef {
     entry_point: string;
-    type: 'test' | 'http';
+    type: FlowType;
     criticality: number;
 }
 
@@ -173,7 +175,7 @@ export interface EnrichedFunction {
 
 export interface AffectedFlow {
     entry_point: string;
-    type: 'test' | 'http';
+    type: FlowType;
     touches_changed: string[];
     depth: number;
     path: string[];

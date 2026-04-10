@@ -20,6 +20,11 @@ import { extractInheritance } from './inheritance';
 import { computeRiskScore } from './risk-score';
 import { findTestGaps } from './test-gaps';
 
+/** Default weight for blast radius entries not in any detected flow. */
+const FLOW_WEIGHT_BASELINE = 0.1;
+/** Multiplier for test-only flows (lower than HTTP flows since they represent test paths, not production). */
+const FLOW_WEIGHT_TEST_MULTIPLIER = 0.3;
+
 export interface ContextV2Output {
     graph: {
         nodes: GraphNode[];
@@ -111,7 +116,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
     const inheritance = extractInheritance(indexed, changedFiles);
 
-    // Phase 3: Filter affected flows — only truly changed (added+modified+removed), non-test functions
+    // Phase 2b: Filter affected flows — only truly changed (added+modified+removed), non-test functions
     const changedFuncSet = new Set(
         [...trulyChangedQN].filter((qn) => {
             const node = indexed.byQualified.get(qn);
@@ -184,14 +189,18 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
 function enrichBlastRadiusWithFlows(blastRadius: BlastRadiusResult, allFlows: FlowsResult): void {
     // Build flow index: qualified_name → FlowRef[]
     const flowIndex = new Map<string, FlowRef[]>();
+    const flowSeenKeys = new Map<string, Set<string>>(); // qn → set of seen entry_points
+
     for (const flow of allFlows.flows) {
         for (const qn of flow.path) {
             if (!flowIndex.has(qn)) {
                 flowIndex.set(qn, []);
+                flowSeenKeys.set(qn, new Set());
             }
-            const refs = flowIndex.get(qn)!;
-            if (!refs.some((r) => r.entry_point === flow.entry_point)) {
-                refs.push({
+            const seen = flowSeenKeys.get(qn)!;
+            if (!seen.has(flow.entry_point)) {
+                seen.add(flow.entry_point);
+                flowIndex.get(qn)!.push({
                     entry_point: flow.entry_point,
                     type: flow.type,
                     criticality: flow.criticality,
@@ -200,23 +209,25 @@ function enrichBlastRadiusWithFlows(blastRadius: BlastRadiusResult, allFlows: Fl
         }
     }
 
-    const maxCriticality = allFlows.summary.max_criticality || 1;
+    // Use ?? to only substitute null/undefined; 0 would cause div-by-zero so we guard separately
+    const maxCriticality = allFlows.summary.max_criticality ?? 0;
+    const safeDivisor = maxCriticality > 0 ? maxCriticality : 1;
 
     for (const entries of Object.values(blastRadius.by_depth)) {
         for (const entry of entries) {
             entry.flows = flowIndex.get(entry.qualified_name) || [];
 
-            let flowWeight = 0.1;
+            let flowWeight = FLOW_WEIGHT_BASELINE;
             if (entry.flows.length > 0) {
                 const httpFlows = entry.flows.filter((f) => f.type === 'http');
                 const testFlows = entry.flows.filter((f) => f.type === 'test');
 
                 if (httpFlows.length > 0) {
                     const maxHttpCrit = Math.max(...httpFlows.map((f) => f.criticality));
-                    flowWeight = Math.min(maxHttpCrit / maxCriticality, 1.0);
+                    flowWeight = Math.min(maxHttpCrit / safeDivisor, 1.0);
                 } else if (testFlows.length > 0) {
                     const maxTestCrit = Math.max(...testFlows.map((f) => f.criticality));
-                    flowWeight = 0.3 * Math.min(maxTestCrit / maxCriticality, 1.0);
+                    flowWeight = FLOW_WEIGHT_TEST_MULTIPLIER * Math.min(maxTestCrit / safeDivisor, 1.0);
                 }
             }
 

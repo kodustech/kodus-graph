@@ -1,4 +1,4 @@
-import type { EnrichedFunction } from '../graph/types';
+import type { EnrichedFunction, ImpactCategory } from '../graph/types';
 import type { ContextV2Output } from './context-builder';
 
 export interface PromptFormatterOptions {
@@ -56,6 +56,12 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
 
     // ── Changed functions (sorted by risk, truncated) ──
     if (analysis.changed_functions.length > 0) {
+        // Pre-index affected_flows for O(1) lookup during rendering
+        const affectedFlowsByEntry = new Map<string, (typeof analysis.affected_flows)[number]>();
+        for (const flow of analysis.affected_flows) {
+            affectedFlowsByEntry.set(flow.entry_point, flow);
+        }
+
         // Sort by per-function risk (highest first)
         const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
 
@@ -131,7 +137,7 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                         lines.push(`    ... +${fn.in_flows.length - MAX_FLOWS} flows`);
                         break;
                     }
-                    const flow = analysis.affected_flows.find((f) => f.entry_point === ep);
+                    const flow = affectedFlowsByEntry.get(ep);
                     if (flow) {
                         const prefix = flow.type === 'http' ? 'HTTP' : 'TEST';
                         const path = flow.path.map((q) => shortName(q)).join(' → ');
@@ -203,7 +209,7 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
             }
 
             // Render each category group (deterministic order: contract_breaking → behavior_affected → transitive)
-            const categoryOrder: string[] = ['contract_breaking', 'behavior_affected', 'transitive'];
+            const categoryOrder: ImpactCategory[] = ['contract_breaking', 'behavior_affected', 'transitive'];
             const sortedCategories = [...byCategory.entries()].sort(
                 (a, b) => categoryOrder.indexOf(a[0]) - categoryOrder.indexOf(b[0]),
             );
@@ -429,10 +435,16 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
             // Check if target exists as a node in the graph
             // For IMPORTS, target_qualified is usually "file::Symbol".
             // If neither the exact target nor any node starting with the target exists, it's unresolved.
-            const targetExists =
-                allNodes.has(edge.target_qualified) ||
-                // Also check if the target is a file-level reference (e.g. "src/utils.ts::default")
-                [...allNodes].some((qn) => qn.startsWith(`${edge.target_qualified}::`));
+            let targetExists = allNodes.has(edge.target_qualified);
+            if (!targetExists) {
+                const prefix = `${edge.target_qualified}::`;
+                for (const qn of allNodes) {
+                    if (qn.startsWith(prefix)) {
+                        targetExists = true;
+                        break;
+                    }
+                }
+            }
 
             if (!targetExists) {
                 tags.push('⚠ UNRESOLVED');

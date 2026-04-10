@@ -828,7 +828,16 @@ describe('computeBlastRadius', () => {
     it('should handle empty seeds', () => {
         const graph: GraphData = {
             nodes: [
-                { kind: 'Function', name: 'a', qualified_name: 'a.ts::a', file_path: 'a.ts', line_start: 1, line_end: 5, language: 'typescript', is_test: false },
+                {
+                    kind: 'Function',
+                    name: 'a',
+                    qualified_name: 'a.ts::a',
+                    file_path: 'a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
             ],
             edges: [],
         };
