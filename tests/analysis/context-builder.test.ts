@@ -552,6 +552,109 @@ describe('buildContextV2', () => {
         expect(resultWithBaseline.analysis.changed_functions.length).toBeGreaterThan(0);
     });
 
+    it('should mark blast radius entries as contract_breaking when seed has contract diffs', () => {
+        const mergedGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts', line_start: 10, line_end: 30, language: 'typescript',
+                    params: '(id: number, priority: number)', return_type: 'string | null',
+                    is_test: false, file_hash: 'x',
+                },
+                {
+                    kind: 'Function', name: 'handleRequest', qualified_name: 'src/handler.ts::handleRequest',
+                    file_path: 'src/handler.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    params: '(req: Request)', return_type: 'Response',
+                    is_test: false, file_hash: 'y',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS', source_qualified: 'src/handler.ts::handleRequest',
+                    target_qualified: 'src/order.ts::processOrder',
+                    file_path: 'src/handler.ts', line: 5, confidence: 0.95,
+                },
+            ],
+        };
+
+        const oldGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'processOrder', qualified_name: 'src/order.ts::processOrder',
+                    file_path: 'src/order.ts', line_start: 10, line_end: 25, language: 'typescript',
+                    params: '(id: number)', return_type: 'string',
+                    is_test: false, file_hash: 'x', content_hash: 'old_hash',
+                },
+            ],
+            edges: [],
+        };
+
+        const result = buildContextV2({
+            mergedGraph,
+            oldGraph,
+            changedFiles: ['src/order.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const depth1 = result.analysis.blast_radius.by_depth['1'];
+        expect(depth1).toBeDefined();
+        const handler = depth1?.find(e => e.qualified_name === 'src/handler.ts::handleRequest');
+        expect(handler).toBeDefined();
+        expect(handler!.impact_category).toBe('contract_breaking');
+    });
+
+    it('should mark blast radius entries as behavior_affected when seed has only body changes', () => {
+        const mergedGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'compute', qualified_name: 'src/calc.ts::compute',
+                    file_path: 'src/calc.ts', line_start: 1, line_end: 20, language: 'typescript',
+                    params: '(x: number)', return_type: 'number',
+                    is_test: false, file_hash: 'a', content_hash: 'new_hash',
+                },
+                {
+                    kind: 'Function', name: 'report', qualified_name: 'src/report.ts::report',
+                    file_path: 'src/report.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    is_test: false, file_hash: 'b',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS', source_qualified: 'src/report.ts::report',
+                    target_qualified: 'src/calc.ts::compute',
+                    file_path: 'src/report.ts', line: 5, confidence: 0.9,
+                },
+            ],
+        };
+
+        const oldGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'compute', qualified_name: 'src/calc.ts::compute',
+                    file_path: 'src/calc.ts', line_start: 1, line_end: 18, language: 'typescript',
+                    params: '(x: number)', return_type: 'number',
+                    is_test: false, file_hash: 'a', content_hash: 'old_hash',
+                },
+            ],
+            edges: [],
+        };
+
+        const result = buildContextV2({
+            mergedGraph,
+            oldGraph,
+            changedFiles: ['src/calc.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const depth1 = result.analysis.blast_radius.by_depth['1'];
+        expect(depth1).toBeDefined();
+        const report = depth1?.find(e => e.qualified_name === 'src/report.ts::report');
+        expect(report).toBeDefined();
+        expect(report!.impact_category).toBe('behavior_affected');
+    });
+
     it('should compute structural diff when oldGraph is provided', () => {
         const oldGraph: GraphData = {
             nodes: [

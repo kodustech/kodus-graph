@@ -93,7 +93,12 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         });
     }
 
-    const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence);
+    const contractBreakingSeeds = new Set(
+        structuralDiff.nodes.modified
+            .filter((m) => m.contract_diffs.length > 0)
+            .map((m) => m.qualified_name),
+    );
+    const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence, contractBreakingSeeds);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
