@@ -355,4 +355,78 @@ describe('computeBlastRadius', () => {
         }
         expect(allReached.has('consumer.ts::consumer')).toBe(true);
     });
+
+    it('should NOT propagate IMPORTS in forward direction (importer change should not affect imported)', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'app', qualified_name: 'app.ts::app',
+                    file_path: 'app.ts', line_start: 1, line_end: 10,
+                    language: 'typescript', is_test: false, file_hash: 'a',
+                },
+                {
+                    kind: 'Function', name: 'utils', qualified_name: 'utils.ts::utils',
+                    file_path: 'utils.ts', line_start: 1, line_end: 10,
+                    language: 'typescript', is_test: false, file_hash: 'b',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'app.ts::app',
+                    target_qualified: 'utils.ts::utils',
+                    file_path: 'app.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['app.ts::app'], 2);
+        expect(result.total_functions).toBe(1);
+
+        const allReached = new Set<string>(['app.ts::app']);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(typeof e === 'string' ? e : e.qualified_name);
+            }
+        }
+        expect(allReached.has('utils.ts::utils')).toBe(false);
+    });
+
+    it('should propagate IMPORTS in reverse direction (imported change affects importer)', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'app', qualified_name: 'app.ts::app',
+                    file_path: 'app.ts', line_start: 1, line_end: 10,
+                    language: 'typescript', is_test: false, file_hash: 'a',
+                },
+                {
+                    kind: 'Function', name: 'utils', qualified_name: 'utils.ts::utils',
+                    file_path: 'utils.ts', line_start: 1, line_end: 10,
+                    language: 'typescript', is_test: false, file_hash: 'b',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'app.ts::app',
+                    target_qualified: 'utils.ts::utils',
+                    file_path: 'app.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['utils.ts::utils'], 2);
+        expect(result.total_functions).toBe(2);
+
+        const allReached = new Set<string>(['utils.ts::utils']);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(typeof e === 'string' ? e : e.qualified_name);
+            }
+        }
+        expect(allReached.has('app.ts::app')).toBe(true);
+    });
 });

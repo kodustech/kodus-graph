@@ -20,9 +20,8 @@ export function computeBlastRadius(
 
     for (const edge of graph.edges) {
         if (edge.kind === 'IMPORTS') {
-            // IMPORTS: no confidence filter, bidirectional
+            // IMPORTS: unidirectional — change in imported affects importer
             addEdge(edge.target_qualified, edge.source_qualified);
-            addEdge(edge.source_qualified, edge.target_qualified);
         } else if (edge.kind === 'CALLS' && (edge.confidence ?? 1.0) >= minConf) {
             // CALLS: only edges with sufficient confidence, reverse direction
             addEdge(edge.target_qualified, edge.source_qualified);
