@@ -2,7 +2,9 @@ import { performance } from 'perf_hooks';
 import { type IndexedGraph, indexGraph } from '../graph/loader';
 import type {
     AffectedFlow,
+    BlastRadiusResult,
     ContextAnalysisMetadata,
+    FlowRef,
     GraphData,
     GraphEdge,
     GraphNode,
@@ -13,7 +15,7 @@ import { computeBlastRadius } from './blast-radius';
 import { computeStructuralDiff, type DiffResult } from './diff';
 import { type DiffHunk, overlapsWithDiff } from './diff-lines';
 import { enrichChangedFunctions } from './enrich';
-import { detectFlows } from './flows';
+import { detectFlows, type FlowsResult } from './flows';
 import { extractInheritance } from './inheritance';
 import { computeRiskScore } from './risk-score';
 import { findTestGaps } from './test-gaps';
@@ -100,6 +102,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     );
     const blastRadius = computeBlastRadius(mergedGraph, [...trulyChangedQN], maxDepth, minConfidence, contractBreakingSeeds);
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
+    enrichBlastRadiusWithFlows(blastRadius, allFlows);
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
     const inheritance = extractInheritance(indexed, changedFiles);
@@ -172,4 +175,53 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
             metadata,
         },
     };
+}
+
+function enrichBlastRadiusWithFlows(
+    blastRadius: BlastRadiusResult,
+    allFlows: FlowsResult,
+): void {
+    // Build flow index: qualified_name → FlowRef[]
+    const flowIndex = new Map<string, FlowRef[]>();
+    for (const flow of allFlows.flows) {
+        for (const qn of flow.path) {
+            if (!flowIndex.has(qn)) {
+                flowIndex.set(qn, []);
+            }
+            const refs = flowIndex.get(qn)!;
+            if (!refs.some((r) => r.entry_point === flow.entry_point)) {
+                refs.push({
+                    entry_point: flow.entry_point,
+                    type: flow.type,
+                    criticality: flow.criticality,
+                });
+            }
+        }
+    }
+
+    const maxCriticality = allFlows.summary.max_criticality || 1;
+
+    for (const entries of Object.values(blastRadius.by_depth)) {
+        for (const entry of entries) {
+            entry.flows = flowIndex.get(entry.qualified_name) || [];
+
+            let flowWeight = 0.1;
+            if (entry.flows.length > 0) {
+                const httpFlows = entry.flows.filter((f) => f.type === 'http');
+                const testFlows = entry.flows.filter((f) => f.type === 'test');
+
+                if (httpFlows.length > 0) {
+                    const maxHttpCrit = Math.max(...httpFlows.map((f) => f.criticality));
+                    flowWeight = Math.min(maxHttpCrit / maxCriticality, 1.0);
+                } else if (testFlows.length > 0) {
+                    const maxTestCrit = Math.max(...testFlows.map((f) => f.criticality));
+                    flowWeight = 0.3 * Math.min(maxTestCrit / maxCriticality, 1.0);
+                }
+            }
+
+            entry.impact_score = Math.round(entry.accumulated_confidence * flowWeight * 100) / 100;
+        }
+
+        entries.sort((a, b) => b.impact_score - a.impact_score);
+    }
 }

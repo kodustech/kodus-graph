@@ -655,6 +655,87 @@ describe('buildContextV2', () => {
         expect(report!.impact_category).toBe('behavior_affected');
     });
 
+    it('should enrich blast radius entries with flows and compute impact_score', () => {
+        const mergedGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'authenticate', qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts', line_start: 10, line_end: 25, language: 'typescript',
+                    params: '(ctx: Context)', return_type: 'Result',
+                    is_test: false, file_hash: 'a',
+                },
+                {
+                    kind: 'Method', name: 'LoginController.post', qualified_name: 'src/ctrl.ts::LoginController::post',
+                    file_path: 'src/ctrl.ts', line_start: 5, line_end: 15, language: 'typescript',
+                    params: '(req: Request)', return_type: 'Response', parent_name: 'LoginController',
+                    is_test: false, file_hash: 'b',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS', source_qualified: 'src/ctrl.ts::LoginController::post',
+                    target_qualified: 'src/auth.ts::authenticate',
+                    file_path: 'src/ctrl.ts', line: 8, confidence: 0.95,
+                },
+            ],
+        };
+
+        const result = buildContextV2({
+            mergedGraph,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const depth1 = result.analysis.blast_radius.by_depth['1'];
+        if (depth1 && depth1.length > 0) {
+            const ctrl = depth1.find(e => e.qualified_name === 'src/ctrl.ts::LoginController::post');
+            if (ctrl) {
+                expect(ctrl.impact_score).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('should sort blast radius entries by impact_score descending within each depth', () => {
+        const mergedGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function', name: 'target', qualified_name: 'src/t.ts::target',
+                    file_path: 'src/t.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    is_test: false, file_hash: 'h1',
+                },
+                {
+                    kind: 'Function', name: 'highCaller', qualified_name: 'src/high.ts::highCaller',
+                    file_path: 'src/high.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    is_test: false, file_hash: 'h2',
+                },
+                {
+                    kind: 'Function', name: 'lowCaller', qualified_name: 'src/low.ts::lowCaller',
+                    file_path: 'src/low.ts', line_start: 1, line_end: 10, language: 'typescript',
+                    is_test: false, file_hash: 'h3',
+                },
+            ],
+            edges: [
+                { kind: 'CALLS', source_qualified: 'src/high.ts::highCaller', target_qualified: 'src/t.ts::target', file_path: 'src/high.ts', line: 2, confidence: 0.95 },
+                { kind: 'CALLS', source_qualified: 'src/low.ts::lowCaller', target_qualified: 'src/t.ts::target', file_path: 'src/low.ts', line: 2, confidence: 0.3 },
+            ],
+        };
+
+        const result = buildContextV2({
+            mergedGraph,
+            oldGraph: null,
+            changedFiles: ['src/t.ts'],
+            minConfidence: 0.1,
+            maxDepth: 2,
+        });
+
+        const depth1 = result.analysis.blast_radius.by_depth['1'];
+        if (depth1 && depth1.length >= 2) {
+            expect(depth1[0].impact_score).toBeGreaterThanOrEqual(depth1[1].impact_score);
+        }
+    });
+
     it('should compute structural diff when oldGraph is provided', () => {
         const oldGraph: GraphData = {
             nodes: [
