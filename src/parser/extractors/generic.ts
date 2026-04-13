@@ -296,6 +296,24 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
         }
     }
 
+    // ── Rust: impl Trait for Struct → implements relationship ──────────────
+    if (lang === 'rust') {
+        try {
+            for (const implNode of rootNode.findAll({ rule: { kind: 'impl_item' } })) {
+                const traitName = implNode.field('trait')?.text();
+                const typeName = implNode.field('type')?.text();
+                if (traitName && typeName) {
+                    const structClass = graph.classes.find((c) => c.file === fp && c.name === typeName);
+                    if (structClass && !structClass.implements.includes(traitName)) {
+                        structClass.implements.push(traitName);
+                    }
+                }
+            }
+        } catch (err) {
+            log.debug('Rust impl-trait extraction failed', { file: fp, lang, error: String(err) });
+        }
+    }
+
     // ── Interfaces / Traits ───────────────────────────────────────────────
     if (config.interface?.length) {
         for (const ifaceKind of config.interface) {
@@ -423,8 +441,17 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     }
                 }
 
-                // For non-Go (or Go function_declaration), use ancestor lookup
-                if (!className) {
+                // Rust: extract className from enclosing impl block
+                if (!className && lang === 'rust') {
+                    const implAncestor = node.ancestors().find((a: SgNode) => a.kind() === 'impl_item');
+                    if (implAncestor) {
+                        // field('type') gives the concrete type: impl Type { } or impl Trait for Type { }
+                        className = implAncestor.field('type')?.text() || '';
+                    }
+                }
+
+                // For non-Go, non-Rust (or Go function_declaration), use ancestor lookup
+                if (!className && lang !== 'rust') {
                     const classAncestor = node.ancestors().find((a: SgNode) => {
                         const k = String(a.kind());
                         return k.includes('class') || k.includes('struct') || k.includes('impl');

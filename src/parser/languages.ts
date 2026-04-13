@@ -176,7 +176,7 @@ const javaConfig: LangConfig = {
 
 const rustConfig: LangConfig = {
     function: ['function_item'],
-    class: ['struct_item', 'impl_item'],
+    class: ['struct_item'],
     interface: ['trait_item'],
     enum: ['enum_item'],
     import: ['use_declaration'],

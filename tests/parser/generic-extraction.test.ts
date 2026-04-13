@@ -305,6 +305,97 @@ describe('extractGeneric – Rust', () => {
         const testFunc = graph.tests.find((t) => t.name === 'test_new_user_service');
         expect(testFunc).toBeDefined();
     });
+
+    test('impl block methods have className set to struct name', async () => {
+        const code =
+            'pub struct User { name: String }\nimpl User { pub fn new(name: String) -> Self { Self { name } } fn validate(&self) -> bool { true } }';
+        const fp = 'file.rs';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        const newFn = graph.functions.find((f) => f.name === 'new');
+        expect(newFn).toBeDefined();
+        expect(newFn!.className).toBe('User');
+        expect(newFn!.qualified).toBe('file.rs::User.new');
+        expect(newFn!.kind).toBe('Method');
+
+        const validateFn = graph.functions.find((f) => f.name === 'validate');
+        expect(validateFn).toBeDefined();
+        expect(validateFn!.className).toBe('User');
+        expect(validateFn!.qualified).toBe('file.rs::User.validate');
+        expect(validateFn!.kind).toBe('Method');
+    });
+
+    test('impl_item does NOT create a class node', async () => {
+        const code = 'pub struct User {}\nimpl User { fn new() -> Self { Self {} } }';
+        const fp = 'file.rs';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        // Only 1 class node (User struct), NOT 2
+        expect(graph.classes.length).toBe(1);
+        expect(graph.classes[0].name).toBe('User');
+        expect(graph.classes[0].ast_kind).toBe('struct_item');
+    });
+
+    test('impl Trait for Struct adds trait to implements', async () => {
+        const code =
+            'pub struct Repo {}\npub trait Repository { fn find(&self); }\nimpl Repository for Repo { fn find(&self) {} }';
+        const fp = 'file.rs';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        const repo = graph.classes.find((c) => c.name === 'Repo');
+        expect(repo).toBeDefined();
+        expect(repo!.implements).toContain('Repository');
+    });
+
+    test('impl Display for UserService adds Display to implements (sample.rs)', async () => {
+        const fp = join(FIXTURES, 'rust/sample.rs');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.implements).toContain('fmt::Display');
+    });
+
+    test('standalone functions (not in impl) have no className', async () => {
+        const code = 'fn main() { println!("hello"); }';
+        const fp = 'file.rs';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        const mainFn = graph.functions.find((f) => f.name === 'main');
+        expect(mainFn).toBeDefined();
+        expect(mainFn!.className).toBe('');
+        expect(mainFn!.kind).toBe('Function');
+    });
+
+    test('sample.rs methods inside impl have className = UserService', async () => {
+        const fp = join(FIXTURES, 'rust/sample.rs');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'rust', new Set(), graph);
+
+        const newFn = graph.functions.find((f) => f.name === 'new');
+        expect(newFn).toBeDefined();
+        expect(newFn!.className).toBe('UserService');
+        expect(newFn!.kind).toBe('Method');
+        expect(newFn!.qualified).toBe(`${fp}::UserService.new`);
+
+        const getNameFn = graph.functions.find((f) => f.name === 'get_name');
+        expect(getNameFn).toBeDefined();
+        expect(getNameFn!.className).toBe('UserService');
+        expect(getNameFn!.kind).toBe('Method');
+    });
 });
 
 // ---------------------------------------------------------------------------
