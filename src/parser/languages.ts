@@ -296,7 +296,10 @@ const phpConfig: LangConfig = {
             if (!baseClause) {
                 return undefined;
             }
-            const name = baseClause.children().find((c: SgNode) => c.kind() === 'name');
+            // PHP base_clause child is `name` for simple names, `qualified_name` for namespaced ones
+            const name = baseClause
+                .children()
+                .find((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name');
             return name?.text();
         },
         implements: (node: SgNode) => {
@@ -306,7 +309,7 @@ const phpConfig: LangConfig = {
             }
             return ifaceClause
                 .children()
-                .filter((c: SgNode) => c.kind() === 'name')
+                .filter((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name')
                 .map((c: SgNode) => c.text());
         },
     },
