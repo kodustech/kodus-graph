@@ -3,6 +3,8 @@ import type { RawCallSite, RawGraph } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { LANG_KINDS } from '../languages';
+import { registerExtractor } from './engine';
+import type { ExtractionResult, LanguageExtractors } from './spec';
 
 export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
     const kinds = LANG_KINDS.python;
@@ -149,3 +151,66 @@ const PYTHON_CALL_CONFIG: CallExtractionConfig = {
 export function extractCallsFromPython(root: SgRoot, fp: string, calls: RawCallSite[]): void {
     extractCalls(root.root(), fp, PYTHON_CALL_CONFIG, calls);
 }
+
+// ---------------------------------------------------------------------------
+// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// ---------------------------------------------------------------------------
+
+const pythonAdapter: LanguageExtractors = {
+    extract(rootNode: SgNode, fp: string): ExtractionResult {
+        const tempGraph: RawGraph = {
+            functions: [], classes: [], interfaces: [], enums: [],
+            tests: [], imports: [], reExports: [], rawCalls: [],
+            diMaps: new Map(),
+        };
+        const seen = new Set<string>();
+        const fakeRoot = { root: () => rootNode } as SgRoot;
+
+        extractPython(fakeRoot, fp, seen, tempGraph);
+
+        // Track which (name, line) pairs are tests so we can mark them
+        const testKeys = new Set(tempGraph.tests.map((t) => `${t.name}:${t.line_start}`));
+
+        return {
+            classes: tempGraph.classes.map((c) => ({
+                name: c.name,
+                line_start: c.line_start,
+                line_end: c.line_end,
+                extends: c.extends,
+                implements: c.implements,
+                modifiers: c.modifiers || '',
+                ast_kind: c.ast_kind,
+                content_hash: c.content_hash,
+            })),
+            functions: tempGraph.functions.map((f) => ({
+                name: f.name,
+                line_start: f.line_start,
+                line_end: f.line_end,
+                params: f.params,
+                returnType: f.returnType,
+                kind: f.kind,
+                className: f.className,
+                modifiers: f.modifiers || '',
+                ast_kind: f.ast_kind,
+                content_hash: f.content_hash,
+                isTest: testKeys.has(`${f.name}:${f.line_start}`),
+            })),
+            imports: tempGraph.imports.map((i) => ({
+                module: i.module,
+                line: i.line,
+                names: i.names,
+                lang: i.lang,
+            })),
+            reExports: [],
+            interfaces: [],
+            enums: [],
+            diEntries: [],
+        };
+    },
+    extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+        const fakeRoot = { root: () => rootNode } as SgRoot;
+        extractCallsFromPython(fakeRoot, fp, calls);
+    },
+};
+
+registerExtractor('python', pythonAdapter);

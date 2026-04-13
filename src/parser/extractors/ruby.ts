@@ -5,6 +5,8 @@ import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
+import { registerExtractor } from './engine';
+import type { ExtractionResult, LanguageExtractors } from './spec';
 
 export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
     const kinds = LANG_KINDS.ruby;
@@ -228,3 +230,87 @@ export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSit
         });
     }
 }
+
+// ---------------------------------------------------------------------------
+// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// ---------------------------------------------------------------------------
+
+const rubyAdapter: LanguageExtractors = {
+    extract(rootNode: SgNode, fp: string): ExtractionResult {
+        const tempGraph: RawGraph = {
+            functions: [], classes: [], interfaces: [], enums: [],
+            tests: [], imports: [], reExports: [], rawCalls: [],
+            diMaps: new Map(),
+        };
+        const seen = new Set<string>();
+        const fakeRoot = { root: () => rootNode } as SgRoot;
+
+        extractRuby(fakeRoot, fp, seen, tempGraph);
+
+        // Track which (name, line) pairs are tests so we can mark them
+        const testKeys = new Set(tempGraph.tests.map((t) => `${t.name}:${t.line_start}`));
+
+        return {
+            classes: tempGraph.classes.map((c) => ({
+                name: c.name,
+                line_start: c.line_start,
+                line_end: c.line_end,
+                extends: c.extends,
+                implements: c.implements,
+                modifiers: c.modifiers || '',
+                ast_kind: c.ast_kind,
+                content_hash: c.content_hash,
+            })),
+            functions: [
+                ...tempGraph.functions.map((f) => ({
+                    name: f.name,
+                    line_start: f.line_start,
+                    line_end: f.line_end,
+                    params: f.params,
+                    returnType: f.returnType,
+                    kind: f.kind,
+                    className: f.className,
+                    modifiers: f.modifiers || '',
+                    ast_kind: f.ast_kind,
+                    content_hash: f.content_hash,
+                    isTest: false,
+                })),
+                // Test blocks (describe/it/context) — not real functions, but
+                // the engine only creates graph.tests from isTest functions.
+                ...tempGraph.tests
+                    .filter((t) => !tempGraph.functions.some(
+                        (f) => f.name === t.name && f.line_start === t.line_start,
+                    ))
+                    .map((t) => ({
+                        name: t.name,
+                        line_start: t.line_start,
+                        line_end: t.line_end,
+                        params: '',
+                        returnType: '',
+                        kind: 'Function' as const,
+                        className: '',
+                        modifiers: '',
+                        ast_kind: t.ast_kind,
+                        content_hash: t.content_hash,
+                        isTest: true,
+                    })),
+            ],
+            imports: tempGraph.imports.map((i) => ({
+                module: i.module,
+                line: i.line,
+                names: i.names,
+                lang: i.lang,
+            })),
+            reExports: [],
+            interfaces: [],
+            enums: [],
+            diEntries: [],
+        };
+    },
+    extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+        const fakeRoot = { root: () => rootNode } as SgRoot;
+        extractCallsFromRuby(fakeRoot, fp, calls);
+    },
+};
+
+registerExtractor('ruby', rubyAdapter);

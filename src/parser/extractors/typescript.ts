@@ -5,6 +5,8 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
+import { registerExtractor } from './engine';
+import type { ExtractionResult, LanguageExtractors } from './spec';
 
 export function extractTypeScript(
     root: SgRoot,
@@ -407,3 +409,112 @@ export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawC
     // Direct calls + self/super detection via shared function
     extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);
 }
+
+// ---------------------------------------------------------------------------
+// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// ---------------------------------------------------------------------------
+
+function createTsAdapter(lang: Lang): LanguageExtractors {
+    return {
+        extract(rootNode: SgNode, fp: string): ExtractionResult {
+            const tempGraph: RawGraph = {
+                functions: [], classes: [], interfaces: [], enums: [],
+                tests: [], imports: [], reExports: [], rawCalls: [],
+                diMaps: new Map(),
+            };
+            const seen = new Set<string>();
+            const fakeRoot = { root: () => rootNode } as SgRoot;
+
+            extractTypeScript(fakeRoot, fp, seen, tempGraph, lang);
+
+            return {
+                classes: tempGraph.classes.map((c) => ({
+                    name: c.name,
+                    line_start: c.line_start,
+                    line_end: c.line_end,
+                    extends: c.extends,
+                    implements: c.implements,
+                    modifiers: c.modifiers || '',
+                    ast_kind: c.ast_kind,
+                    content_hash: c.content_hash,
+                })),
+                functions: [
+                    ...tempGraph.functions.map((f) => ({
+                        name: f.name,
+                        line_start: f.line_start,
+                        line_end: f.line_end,
+                        params: f.params,
+                        returnType: f.returnType,
+                        kind: f.kind,
+                        className: f.className,
+                        modifiers: f.modifiers || '',
+                        ast_kind: f.ast_kind,
+                        content_hash: f.content_hash,
+                        isTest: false,
+                    })),
+                    // Test blocks (describe/it/test) — not real functions, but
+                    // the engine only creates graph.tests from isTest functions.
+                    ...tempGraph.tests
+                        .filter((t) => !tempGraph.functions.some(
+                            (f) => f.name === t.name && f.line_start === t.line_start,
+                        ))
+                        .map((t) => ({
+                            name: t.name,
+                            line_start: t.line_start,
+                            line_end: t.line_end,
+                            params: '',
+                            returnType: '',
+                            kind: 'Function' as const,
+                            className: '',
+                            modifiers: '',
+                            ast_kind: t.ast_kind,
+                            content_hash: t.content_hash,
+                            isTest: true,
+                        })),
+                ],
+                imports: tempGraph.imports.map((i) => ({
+                    module: i.module,
+                    line: i.line,
+                    names: i.names,
+                    lang: i.lang,
+                })),
+                reExports: tempGraph.reExports.map((r) => ({
+                    module: r.module,
+                    line: r.line,
+                })),
+                interfaces: tempGraph.interfaces.map((i) => ({
+                    name: i.name,
+                    line_start: i.line_start,
+                    line_end: i.line_end,
+                    methods: i.methods,
+                    ast_kind: i.ast_kind,
+                    content_hash: i.content_hash,
+                })),
+                enums: tempGraph.enums.map((e) => ({
+                    name: e.name,
+                    line_start: e.line_start,
+                    line_end: e.line_end,
+                    ast_kind: e.ast_kind,
+                    content_hash: e.content_hash,
+                })),
+                diEntries: [...(tempGraph.diMaps.get(fp)?.entries() ?? [])].map(
+                    ([k, v]) => ({ fieldName: k, typeName: v }),
+                ),
+            };
+        },
+        extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+            const fakeRoot = { root: () => rootNode } as SgRoot;
+            extractCallsFromTypeScript(fakeRoot, fp, calls);
+        },
+    };
+}
+
+const tsAdapter = createTsAdapter(Lang.TypeScript);
+const tsxAdapter = createTsAdapter(Lang.TypeScript);  // TSX uses the same TS extraction
+const jsAdapter = createTsAdapter(Lang.JavaScript);
+
+// Register with the exact strings that getLanguageName / Lang enum produce.
+// Lang.TypeScript === "TypeScript", Lang.Tsx === "Tsx", Lang.JavaScript === "JavaScript"
+registerExtractor('TypeScript', tsAdapter);
+registerExtractor('Tsx', tsxAdapter);
+registerExtractor('JavaScript', jsAdapter);
