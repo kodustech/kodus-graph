@@ -207,12 +207,41 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                             continue;
                         }
                         seen.add(`c:${fp}:${name}`);
+
+                        // Go struct embedding: field_declaration with type but no name
+                        let goExtends = '';
+                        const typeSpec = node.children().find((c) => c.kind() === 'type_spec');
+                        const structType = typeSpec?.children().find((c) => c.kind() === 'struct_type');
+                        if (structType) {
+                            const fieldDeclList = structType
+                                .children()
+                                .find((c) => c.kind() === 'field_declaration_list');
+                            if (fieldDeclList) {
+                                for (const field of fieldDeclList.children()) {
+                                    if (field.kind() !== 'field_declaration') continue;
+                                    // Embedded field: has type but no explicit field name
+                                    const fieldName = field.field('name');
+                                    const fieldType = field.field('type');
+                                    if (!fieldName && fieldType) {
+                                        // Use the type_identifier text (handles both plain and pointer types)
+                                        const typeId = field
+                                            .children()
+                                            .find((c) => c.kind() === 'type_identifier');
+                                        if (typeId) {
+                                            goExtends = typeId.text();
+                                            break; // first embedded field becomes extends
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         graph.classes.push({
                             name,
                             file: fp,
                             line_start: node.range().start.line,
                             line_end: node.range().end.line,
-                            extends: '',
+                            extends: goExtends,
                             implements: [],
                             ast_kind: String(node.kind()),
                             qualified: `${fp}::${name}`,
@@ -363,11 +392,45 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                 }
                 seen.add(`f:${fp}:${name}:${line}`);
 
-                const classAncestor = node.ancestors().find((a: SgNode) => {
-                    const k = String(a.kind());
-                    return k.includes('class') || k.includes('struct') || k.includes('impl');
-                });
-                const className = classAncestor?.field('name')?.text() || '';
+                let className = '';
+
+                // Go methods: extract className from receiver parameter
+                if (lang === 'go' && node.kind() === 'method_declaration') {
+                    const receiver = node.field('receiver');
+                    if (receiver) {
+                        // receiver is a parameter_list: "(s *UserService)" or "(s UserService)"
+                        // Find type_identifier inside (handles both pointer and non-pointer receivers)
+                        for (const child of receiver.children()) {
+                            if (child.kind() === 'parameter_declaration') {
+                                for (const gc of child.children()) {
+                                    if (gc.kind() === 'type_identifier') {
+                                        className = gc.text();
+                                        break;
+                                    }
+                                    // pointer receiver: *UserService → pointer_type → type_identifier
+                                    if (gc.kind() === 'pointer_type') {
+                                        for (const pt of gc.children()) {
+                                            if (pt.kind() === 'type_identifier') {
+                                                className = pt.text();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (className) break;
+                            }
+                        }
+                    }
+                }
+
+                // For non-Go (or Go function_declaration), use ancestor lookup
+                if (!className) {
+                    const classAncestor = node.ancestors().find((a: SgNode) => {
+                        const k = String(a.kind());
+                        return k.includes('class') || k.includes('struct') || k.includes('impl');
+                    });
+                    className = classAncestor?.field('name')?.text() || '';
+                }
 
                 // Determine function kind
                 let kind: 'Function' | 'Method' | 'Constructor';

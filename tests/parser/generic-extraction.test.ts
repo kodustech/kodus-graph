@@ -94,6 +94,80 @@ describe('extractGeneric – Go', () => {
         const benchFunc = graph.tests.find((t) => t.name === 'BenchmarkGetName');
         expect(benchFunc).toBeDefined();
     });
+
+    test('method with pointer receiver has className set', async () => {
+        const code =
+            'package main\ntype UserService struct{}\nfunc (s *UserService) GetUser(id int) error { return nil }';
+        const fp = 'file.go';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'go', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'GetUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.className).toBe('UserService');
+        expect(getUser!.qualified).toBe('file.go::UserService.GetUser');
+        expect(getUser!.kind).toBe('Method');
+    });
+
+    test('method with value receiver has className set', async () => {
+        const code =
+            'package main\ntype UserService struct{}\nfunc (s UserService) GetName() string { return s.Name }';
+        const fp = 'file.go';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'go', new Set(), graph);
+
+        const getName = graph.functions.find((f) => f.name === 'GetName');
+        expect(getName).toBeDefined();
+        expect(getName!.className).toBe('UserService');
+        expect(getName!.qualified).toBe('file.go::UserService.GetName');
+        expect(getName!.kind).toBe('Method');
+    });
+
+    test('standalone function has no className', async () => {
+        const code = 'package main\nfunc NewService() *Service { return nil }';
+        const fp = 'file.go';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'go', new Set(), graph);
+
+        const newService = graph.functions.find((f) => f.name === 'NewService');
+        expect(newService).toBeDefined();
+        expect(newService!.className).toBe('');
+        expect(newService!.kind).toBe('Function');
+    });
+
+    test('struct embedding sets extends', async () => {
+        const code =
+            'package main\ntype Base struct{ Name string }\ntype Admin struct{ Base\n AdminLevel int }';
+        const fp = 'file.go';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'go', new Set(), graph);
+
+        const admin = graph.classes.find((c) => c.name === 'Admin');
+        expect(admin).toBeDefined();
+        expect(admin!.extends).toBe('Base');
+
+        // Base struct has no embedding, so extends should be empty
+        const base = graph.classes.find((c) => c.name === 'Base');
+        expect(base).toBeDefined();
+        expect(base!.extends).toBe('');
+    });
+
+    test('existing sample.go GetName method has className = UserService', async () => {
+        const fp = join(FIXTURES, 'go/sample.go');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'go', new Set(), graph);
+
+        const getName = graph.functions.find((f) => f.name === 'GetName');
+        expect(getName).toBeDefined();
+        expect(getName!.className).toBe('UserService');
+        expect(getName!.kind).toBe('Method');
+    });
 });
 
 // ---------------------------------------------------------------------------
