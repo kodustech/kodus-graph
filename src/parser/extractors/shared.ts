@@ -113,3 +113,121 @@ export function emptyResult(): ExtractionResult {
         diEntries: [],
     };
 }
+
+// ---------------------------------------------------------------------------
+// Shared extraction helpers for new graph fields
+// ---------------------------------------------------------------------------
+
+export interface ExportRules {
+    /** Keywords that mark a declaration as exported (e.g., 'export', 'pub', 'public') */
+    exportKeywords?: string[];
+    /** Check modifiers node for these keywords */
+    modifierKeywords?: string[];
+    /** Custom check based on name/node (Go uppercase, Python no underscore) */
+    customCheck?: (name: string, node: SgNode) => boolean;
+}
+
+/**
+ * Check if a node is exported based on language-specific rules.
+ */
+export function isExported(name: string, node: SgNode, rules: ExportRules): boolean {
+    if (rules.customCheck?.(name, node)) return true;
+
+    // Check for export keyword as sibling or parent
+    if (rules.exportKeywords?.length) {
+        // Check parent node (export_statement wrapping the declaration)
+        const parent = node.parent();
+        if (parent && rules.exportKeywords.some(kw => String(parent.kind()).includes(kw))) return true;
+        // Check previous siblings
+        for (const sib of node.prevAll()) {
+            if (rules.exportKeywords.some(kw => String(sib.kind()) === kw || sib.text() === kw)) return true;
+        }
+    }
+
+    // Check modifiers child
+    if (rules.modifierKeywords?.length) {
+        const mods = node.children().find(c => String(c.kind()) === 'modifiers');
+        if (mods) {
+            const modText = mods.text();
+            return rules.modifierKeywords.some(kw => modText.includes(kw));
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Check if a function node has async keyword.
+ */
+export function isAsync(node: SgNode): boolean {
+    // Check direct children for 'async' keyword
+    for (const child of node.children()) {
+        if (String(child.kind()) === 'async' || child.text() === 'async') return true;
+    }
+    return false;
+}
+
+/**
+ * Extract decorator/annotation text from sibling or parent nodes.
+ */
+export function extractDecorators(node: SgNode, decoratorKinds: string[]): string[] {
+    const decorators: string[] = [];
+    if (!decoratorKinds.length) return decorators;
+
+    // Check previous siblings (TS/Python decorators come before the declaration)
+    for (const sib of node.prevAll()) {
+        if (decoratorKinds.includes(String(sib.kind()))) {
+            decorators.push(sib.text());
+        }
+    }
+
+    // Check parent for decorated_definition (Python) or annotation containers
+    const parent = node.parent();
+    if (parent) {
+        for (const child of parent.children()) {
+            if (decoratorKinds.includes(String(child.kind())) && child !== node) {
+                decorators.push(child.text());
+            }
+        }
+    }
+
+    // Check inside modifiers (Java/Kotlin annotations inside modifiers node)
+    const mods = node.children().find(c => String(c.kind()) === 'modifiers');
+    if (mods) {
+        for (const child of mods.children()) {
+            if (decoratorKinds.includes(String(child.kind()))) {
+                decorators.push(child.text());
+            }
+        }
+    }
+
+    return [...new Set(decorators)]; // deduplicate
+}
+
+/**
+ * Extract throw/raise types from a function body.
+ */
+export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
+    const throws: string[] = [];
+    if (!throwKinds.length) return throws;
+
+    const body = node.field('body') || node.children().find(c => {
+        const k = String(c.kind());
+        return k === 'statement_block' || k === 'block' ||
+            k === 'function_body' || k === 'compound_statement';
+    });
+    if (!body) return throws;
+
+    for (const kind of throwKinds) {
+        const throwNodes = body.findAll({ rule: { kind } });
+        for (const t of throwNodes) {
+            // Extract the exception type/name
+            const text = t.text().replace(/^(throw|raise)\s+/, '').replace(/[;(].*/, '').trim();
+            if (text && text !== 'error' && !throws.includes(text)) {
+                throws.push(text);
+            }
+        }
+    }
+
+    return throws;
+}
