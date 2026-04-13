@@ -157,6 +157,14 @@ export function enrichChangedFunctions(
                 if (returnDiff) {
                     impacts.push(`${callers.length} callers may assume old return type`);
                 }
+                const asyncDiff = contractDiffs.find((d) => d.field === 'is_async');
+                if (asyncDiff) {
+                    if (asyncDiff.new_value === 'true') {
+                        impacts.push(`${callers.length} callers must add await (sync->async)`);
+                    } else {
+                        impacts.push(`${callers.length} callers may remove await (async->sync)`);
+                    }
+                }
                 callerImpact = impacts.length > 0 ? impacts.join('; ') : undefined;
             }
 

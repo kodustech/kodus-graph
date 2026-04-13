@@ -11,7 +11,7 @@ export interface NodeChange {
 }
 
 export interface ContractDiff {
-    field: 'params' | 'return_type' | 'modifiers';
+    field: 'params' | 'return_type' | 'modifiers' | 'is_async' | 'decorators';
     old_value: string;
     new_value: string;
 }
@@ -146,6 +146,26 @@ export function computeStructuralDiff(
                     field: 'modifiers',
                     old_value: n.modifiers || '',
                     new_value: newN.modifiers || '',
+                });
+            }
+            const oldAsync = n.is_async ?? false;
+            const newAsync = newN.is_async ?? false;
+            if (oldAsync !== newAsync) {
+                changes.push('is_async');
+                contractDiffs.push({
+                    field: 'is_async',
+                    old_value: String(oldAsync),
+                    new_value: String(newAsync),
+                });
+            }
+            const oldDecs = (n.decorators ?? []).join(', ');
+            const newDecs = (newN.decorators ?? []).join(', ');
+            if (oldDecs !== newDecs) {
+                changes.push('decorators');
+                contractDiffs.push({
+                    field: 'decorators',
+                    old_value: oldDecs || '(none)',
+                    new_value: newDecs || '(none)',
                 });
             }
             if (changes.length > 0) {

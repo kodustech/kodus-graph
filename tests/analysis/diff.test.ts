@@ -200,6 +200,64 @@ describe('computeStructuralDiff', () => {
         expect(result.nodes.modified[0].contract_diffs).toEqual([]);
     });
 
+    it('should detect is_async change as contract diff', () => {
+        const oldNode = { ...node('foo', 'src/a.ts', 1, 5), is_async: false };
+        const newNode = { ...node('foo', 'src/a.ts', 1, 5), is_async: true };
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].changes).toContain('is_async');
+        expect(result.nodes.modified[0].contract_diffs).toContainEqual({
+            field: 'is_async',
+            old_value: 'false',
+            new_value: 'true',
+        });
+    });
+
+    it('should detect decorators change as contract diff', () => {
+        const oldNode = { ...node('foo', 'src/a.ts', 1, 5), decorators: ['@Service'] };
+        const newNode = { ...node('foo', 'src/a.ts', 1, 5), decorators: ['@Service', '@Singleton'] };
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].changes).toContain('decorators');
+        expect(result.nodes.modified[0].contract_diffs).toContainEqual({
+            field: 'decorators',
+            old_value: '@Service',
+            new_value: '@Service, @Singleton',
+        });
+    });
+
+    it('should detect decorators added from none', () => {
+        const oldNode = node('foo', 'src/a.ts', 1, 5);
+        const newNode = { ...node('foo', 'src/a.ts', 1, 5), decorators: ['@Injectable', '@Singleton'] };
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        expect(result.nodes.modified).toHaveLength(1);
+        expect(result.nodes.modified[0].changes).toContain('decorators');
+        expect(result.nodes.modified[0].contract_diffs).toContainEqual({
+            field: 'decorators',
+            old_value: '(none)',
+            new_value: '@Injectable, @Singleton',
+        });
+    });
+
+    it('should NOT detect is_async change when both are undefined (default false)', () => {
+        const oldNode = node('foo', 'src/a.ts', 1, 5);
+        const newNode = node('foo', 'src/a.ts', 1, 5);
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        // No changes at all (both default to false)
+        const asyncDiffs = result.nodes.modified.flatMap((m) =>
+            m.contract_diffs.filter((d) => d.field === 'is_async'),
+        );
+        expect(asyncDiffs).toHaveLength(0);
+    });
+
     it('should compute risk_by_file using reverse adjacency', () => {
         const oldNodes = [node('foo', 'src/a.ts'), node('bar', 'src/b.ts')];
         const oldEdges: GraphEdge[] = [
