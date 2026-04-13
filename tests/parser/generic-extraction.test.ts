@@ -3,7 +3,7 @@ import { parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { RawGraph } from '../../src/graph/types';
-import { extractGeneric } from '../../src/parser/extractors/generic';
+import { extractFromFile } from '../../src/parser/extractor';
 import '../../src/parser/languages'; // trigger registration
 
 const FIXTURES = join(import.meta.dir, '../fixtures');
@@ -32,7 +32,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -44,7 +44,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const logger = graph.interfaces.find((i) => i.name === 'Logger');
         expect(logger).toBeDefined();
@@ -56,7 +56,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         expect(graph.functions.some((f) => f.name === 'NewUserService')).toBe(true);
         const newUserService = graph.functions.find((f) => f.name === 'NewUserService');
@@ -76,7 +76,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
@@ -86,7 +86,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const testFunc = graph.tests.find((t) => t.name === 'TestNewUserService');
         expect(testFunc).toBeDefined();
@@ -101,7 +101,7 @@ describe('extractGeneric – Go', () => {
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const getUser = graph.functions.find((f) => f.name === 'GetUser');
         expect(getUser).toBeDefined();
@@ -116,7 +116,7 @@ describe('extractGeneric – Go', () => {
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const getName = graph.functions.find((f) => f.name === 'GetName');
         expect(getName).toBeDefined();
@@ -130,7 +130,7 @@ describe('extractGeneric – Go', () => {
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const newService = graph.functions.find((f) => f.name === 'NewService');
         expect(newService).toBeDefined();
@@ -144,7 +144,7 @@ describe('extractGeneric – Go', () => {
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const admin = graph.classes.find((c) => c.name === 'Admin');
         expect(admin).toBeDefined();
@@ -161,7 +161,7 @@ describe('extractGeneric – Go', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'go', new Set(), graph);
+        extractFromFile(root, fp, 'go', new Set(), graph);
 
         const getName = graph.functions.find((f) => f.name === 'GetName');
         expect(getName).toBeDefined();
@@ -180,7 +180,7 @@ describe('extractGeneric – Java', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -194,7 +194,7 @@ describe('extractGeneric – Java', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const greetable = graph.interfaces.find((i) => i.name === 'Greetable');
         expect(greetable).toBeDefined();
@@ -206,7 +206,7 @@ describe('extractGeneric – Java', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const statusEnum = graph.enums.find((e) => e.name === 'Status');
         expect(statusEnum).toBeDefined();
@@ -218,7 +218,7 @@ describe('extractGeneric – Java', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
@@ -228,7 +228,7 @@ describe('extractGeneric – Java', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
     });
@@ -238,7 +238,7 @@ describe('extractGeneric – Java', () => {
         const fp = 'Test.java';
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const cls = graph.classes.find((c) => c.name === 'UserService');
         expect(cls).toBeDefined();
@@ -259,7 +259,7 @@ describe('extractGeneric – Java', () => {
         const fp = 'Test.java';
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const runFn = graph.functions.find((f) => f.name === 'run');
         expect(runFn).toBeDefined();
@@ -277,7 +277,7 @@ describe('extractGeneric – Java', () => {
         const fp = 'Test.java';
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const cls = graph.classes.find((c) => c.name === 'OrderService');
         expect(cls).toBeDefined();
@@ -295,7 +295,7 @@ describe('extractGeneric – Java', () => {
         const fp = 'Test.java';
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'java', new Set(), graph);
+        extractFromFile(root, fp, 'java', new Set(), graph);
 
         const ctor = graph.functions.find((f) => f.kind === 'Constructor');
         expect(ctor).toBeDefined();
@@ -313,7 +313,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -325,7 +325,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const greetable = graph.interfaces.find((i) => i.name === 'Greetable');
         expect(greetable).toBeDefined();
@@ -337,7 +337,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const statusEnum = graph.enums.find((e) => e.name === 'Status');
         expect(statusEnum).toBeDefined();
@@ -349,7 +349,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         expect(graph.functions.length).toBeGreaterThanOrEqual(1);
     });
@@ -359,7 +359,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
@@ -369,7 +369,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const testFunc = graph.tests.find((t) => t.name === 'test_new_user_service');
         expect(testFunc).toBeDefined();
@@ -381,7 +381,7 @@ describe('extractGeneric – Rust', () => {
         const fp = 'file.rs';
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const newFn = graph.functions.find((f) => f.name === 'new');
         expect(newFn).toBeDefined();
@@ -401,7 +401,7 @@ describe('extractGeneric – Rust', () => {
         const fp = 'file.rs';
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         // Only 1 class node (User struct), NOT 2
         expect(graph.classes.length).toBe(1);
@@ -415,7 +415,7 @@ describe('extractGeneric – Rust', () => {
         const fp = 'file.rs';
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const repo = graph.classes.find((c) => c.name === 'Repo');
         expect(repo).toBeDefined();
@@ -427,7 +427,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -439,7 +439,7 @@ describe('extractGeneric – Rust', () => {
         const fp = 'file.rs';
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const mainFn = graph.functions.find((f) => f.name === 'main');
         expect(mainFn).toBeDefined();
@@ -452,7 +452,7 @@ describe('extractGeneric – Rust', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('rust', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'rust', new Set(), graph);
+        extractFromFile(root, fp, 'rust', new Set(), graph);
 
         const newFn = graph.functions.find((f) => f.name === 'new');
         expect(newFn).toBeDefined();
@@ -477,7 +477,7 @@ describe('extractGeneric – C#', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'csharp', new Set(), graph);
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -491,7 +491,7 @@ describe('extractGeneric – C#', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'csharp', new Set(), graph);
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
 
         const iGreetable = graph.interfaces.find((i) => i.name === 'IGreetable');
         expect(iGreetable).toBeDefined();
@@ -503,7 +503,7 @@ describe('extractGeneric – C#', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'csharp', new Set(), graph);
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
 
         const statusEnum = graph.enums.find((e) => e.name === 'Status');
         expect(statusEnum).toBeDefined();
@@ -515,7 +515,7 @@ describe('extractGeneric – C#', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'csharp', new Set(), graph);
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
@@ -525,7 +525,7 @@ describe('extractGeneric – C#', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'csharp', new Set(), graph);
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
 
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
     });
@@ -541,7 +541,7 @@ describe('extractGeneric – PHP', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -555,7 +555,7 @@ describe('extractGeneric – PHP', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         expect(graph.interfaces.length).toBeGreaterThanOrEqual(1);
         const loggable = graph.interfaces.find((i) => i.name === 'Loggable');
@@ -567,7 +567,7 @@ describe('extractGeneric – PHP', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         expect(graph.functions.some((f) => f.name === 'helperFunction')).toBe(true);
     });
@@ -577,7 +577,7 @@ describe('extractGeneric – PHP', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(1);
     });
@@ -587,7 +587,7 @@ describe('extractGeneric – PHP', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         // PHP test detection uses OR: funcPattern (^test) matches testGetName even
         // though the file does not match Test.php$, so testGetName is in tests.
@@ -603,7 +603,7 @@ describe('extractGeneric – PHP', () => {
         const fp = 'test.php';
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         const admin = graph.classes.find((c) => c.name === 'Admin');
         expect(admin).toBeDefined();
@@ -615,7 +615,7 @@ describe('extractGeneric – PHP', () => {
         const fp = 'test.php';
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         const svc = graph.classes.find((c) => c.name === 'Svc');
         expect(svc).toBeDefined();
@@ -628,7 +628,7 @@ describe('extractGeneric – PHP', () => {
         const fp = 'test.php';
         const root = await parseAsync('php', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'php', new Set(), graph);
+        extractFromFile(root, fp, 'php', new Set(), graph);
 
         const admin = graph.classes.find((c) => c.name === 'Admin');
         expect(admin).toBeDefined();
@@ -648,7 +648,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const userService = graph.classes.find((c) => c.name === 'UserService');
         expect(userService).toBeDefined();
@@ -662,7 +662,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const baseService = graph.classes.find((c) => c.name === 'BaseService');
         expect(baseService).toBeDefined();
@@ -674,7 +674,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const userDto = graph.classes.find((c) => c.name === 'UserDto');
         expect(userDto).toBeDefined();
@@ -686,7 +686,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const singleton = graph.classes.find((c) => c.name === 'SingletonHelper');
         expect(singleton).toBeDefined();
@@ -698,7 +698,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const greetable = graph.interfaces.find((i) => i.name === 'Greetable');
         expect(greetable).toBeDefined();
@@ -710,7 +710,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const statusEnum = graph.enums.find((e) => e.name === 'Status');
         expect(statusEnum).toBeDefined();
@@ -722,7 +722,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         expect(graph.functions.some((f) => f.name === 'getName')).toBe(true);
         expect(graph.functions.some((f) => f.name === 'createUser')).toBe(true);
@@ -734,7 +734,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const getName = graph.functions.find((f) => f.name === 'getName');
         expect(getName).toBeDefined();
@@ -747,7 +747,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         const testGetName = graph.functions.find((f) => f.name === 'testGetName');
         expect(testGetName).toBeDefined();
@@ -760,7 +760,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         expect(graph.imports.length).toBeGreaterThanOrEqual(2);
         expect(graph.imports.some((i) => i.module === 'com.example.models.User')).toBe(true);
@@ -771,7 +771,7 @@ describe('extractGeneric – Kotlin', () => {
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
-        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
         const testFunc = graph.tests.find((t) => t.name === 'testGetName');

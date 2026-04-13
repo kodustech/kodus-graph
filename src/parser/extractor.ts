@@ -1,7 +1,7 @@
 import type { Lang, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
-import { extractAll as engineExtractAll, extractCallsFromEngine, hasExtractor } from './extractors/engine';
-import { extractCallsFromGeneric, extractGeneric } from './extractors/generic';
+import { extractAll as engineExtractAll, extractCallsFromEngine } from './extractors/engine';
+import { log } from '../shared/logger';
 import { getLanguageName } from './languages';
 
 // Import language files to trigger registration
@@ -23,19 +23,10 @@ export function extractFromFile(
     graph: RawGraph,
 ): void {
     const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
-    if (hasExtractor(langStr)) {
-        engineExtractAll(root, filePath, langStr, seen, graph);
-        return;
-    }
-    // Fallback for any language without a dedicated extractor
-    extractGeneric(root, filePath, lang as string, seen, graph);
+    engineExtractAll(root, filePath, langStr, seen, graph);
 }
 
 export function extractCallsFromFile(root: SgRoot, filePath: string, lang: Lang | string, calls: RawCallSite[]): void {
     const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
-    if (hasExtractor(langStr)) {
-        extractCallsFromEngine(root, filePath, langStr, calls);
-        return;
-    }
-    extractCallsFromGeneric(root, filePath, lang as string, calls);
+    extractCallsFromEngine(root, filePath, langStr, calls);
 }

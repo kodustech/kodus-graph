@@ -76,7 +76,7 @@ describe('extractCallsFromTypeScript', () => {
     });
 });
 
-import { extractCallsFromGeneric } from '../../src/parser/extractors/generic';
+import { extractCallsFromFile } from '../../src/parser/extractor';
 import { extractCallsFromPython } from '../../src/parser/extractors/python';
 import { extractCallsFromRuby } from '../../src/parser/extractors/ruby';
 
@@ -215,7 +215,7 @@ describe('extractCallsFromGeneric', () => {
     ): Promise<RawCallSite[]> {
         const root = await parseAsync(lang as any, source);
         const calls: RawCallSite[] = [];
-        extractCallsFromGeneric(root, fp, lang, calls);
+        extractCallsFromFile(root, fp, lang as any, calls);
         return calls;
     }
 
