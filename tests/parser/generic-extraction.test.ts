@@ -232,6 +232,75 @@ describe('extractGeneric – Java', () => {
 
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
     });
+
+    test('extracts class annotations in modifiers (marker_annotation)', async () => {
+        const code = '@Service\npublic class UserService { }';
+        const fp = 'Test.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'java', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.modifiers).toBeDefined();
+        expect(cls!.modifiers).toContain('@Service');
+        expect(cls!.modifiers).toContain('public');
+    });
+
+    test('extracts method annotations in modifiers (marker_annotation and annotation)', async () => {
+        const code = [
+            'public class Ctrl {',
+            '    @Override',
+            '    public void run() {}',
+            '    @GetMapping("/users")',
+            '    public void getUsers() {}',
+            '}',
+        ].join('\n');
+        const fp = 'Test.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'java', new Set(), graph);
+
+        const runFn = graph.functions.find((f) => f.name === 'run');
+        expect(runFn).toBeDefined();
+        expect(runFn!.modifiers).toContain('@Override');
+        expect(runFn!.modifiers).toContain('public');
+
+        const getUsersFn = graph.functions.find((f) => f.name === 'getUsers');
+        expect(getUsersFn).toBeDefined();
+        expect(getUsersFn!.modifiers).toContain('@GetMapping("/users")');
+        expect(getUsersFn!.modifiers).toContain('public');
+    });
+
+    test('extracts multiple annotations on a class', async () => {
+        const code = '@Service\n@Transactional\npublic class OrderService { }';
+        const fp = 'Test.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'java', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'OrderService');
+        expect(cls).toBeDefined();
+        expect(cls!.modifiers).toContain('@Service');
+        expect(cls!.modifiers).toContain('@Transactional');
+    });
+
+    test('constructor modifiers include annotations', async () => {
+        const code = [
+            'public class Svc {',
+            '    @Autowired',
+            '    public Svc(Repo repo) {}',
+            '}',
+        ].join('\n');
+        const fp = 'Test.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'java', new Set(), graph);
+
+        const ctor = graph.functions.find((f) => f.kind === 'Constructor');
+        expect(ctor).toBeDefined();
+        expect(ctor!.modifiers).toContain('@Autowired');
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -527,6 +596,45 @@ describe('extractGeneric – PHP', () => {
         expect(testGetName).toBeDefined();
         // It is also still present in functions (tests are dual-listed)
         expect(graph.functions.some((f) => f.name === 'testGetName')).toBe(true);
+    });
+
+    test('extracts extends from qualified_name (namespaced parent)', async () => {
+        const code = '<?php class Admin extends App\\Models\\User { }';
+        const fp = 'test.php';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'php', new Set(), graph);
+
+        const admin = graph.classes.find((c) => c.name === 'Admin');
+        expect(admin).toBeDefined();
+        expect(admin!.extends).toBe('App\\Models\\User');
+    });
+
+    test('extracts implements from qualified_name (namespaced interfaces)', async () => {
+        const code = '<?php class Svc implements App\\Contracts\\Loggable, App\\Contracts\\Greetable { }';
+        const fp = 'test.php';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'php', new Set(), graph);
+
+        const svc = graph.classes.find((c) => c.name === 'Svc');
+        expect(svc).toBeDefined();
+        expect(svc!.implements).toContain('App\\Contracts\\Loggable');
+        expect(svc!.implements).toContain('App\\Contracts\\Greetable');
+    });
+
+    test('extracts simple extends and implements together', async () => {
+        const code = '<?php class Admin extends User implements Serializable, JsonSerializable { }';
+        const fp = 'test.php';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'php', new Set(), graph);
+
+        const admin = graph.classes.find((c) => c.name === 'Admin');
+        expect(admin).toBeDefined();
+        expect(admin!.extends).toBe('User');
+        expect(admin!.implements).toContain('Serializable');
+        expect(admin!.implements).toContain('JsonSerializable');
     });
 });
 
