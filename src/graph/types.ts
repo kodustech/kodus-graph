@@ -211,6 +211,7 @@ export interface RawFunction {
     ast_kind: string;
     className: string;
     qualified: string;
+    modifiers?: string;
     content_hash?: string;
 }
 
@@ -223,6 +224,7 @@ export interface RawClass {
     implements: string[];
     ast_kind: string;
     qualified: string;
+    modifiers?: string;
     content_hash?: string;
 }
 

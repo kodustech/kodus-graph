@@ -224,6 +224,25 @@ function extractImportNames(node: SgNode): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Modifiers extraction helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the full modifiers string from a node, including annotations.
+ * For Java, this finds the `modifiers` child and returns its text
+ * (e.g., "@Service @Autowired public static").
+ * For other languages with `modifiers` children, returns the text as-is.
+ */
+function extractModifiers(node: SgNode, lang: string): string {
+    const modifiersNode = node.children().find((c) => c.kind() === 'modifiers');
+    if (modifiersNode) {
+        // Return the full modifiers text which includes annotations and access modifiers
+        return modifiersNode.text().replace(/\s+/g, ' ').trim();
+    }
+    return '';
+}
+
+// ---------------------------------------------------------------------------
 // Main extractor
 // ---------------------------------------------------------------------------
 
@@ -331,6 +350,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                         }
                     }
 
+                    // Modifiers extraction (includes annotations for Java, access modifiers, etc.)
+                    const classModifiers = extractModifiers(node, lang);
+
                     graph.classes.push({
                         name,
                         file: fp,
@@ -340,6 +362,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                         implements: implementsVal,
                         ast_kind: String(node.kind()),
                         qualified: `${fp}::${name}`,
+                        modifiers: classModifiers || undefined,
                         content_hash: computeContentHash(node.text()),
                     });
                 }
@@ -572,6 +595,9 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     // Also push to functions so call resolution still works
                 }
 
+                // Modifiers extraction (includes annotations for Java, access modifiers, etc.)
+                const funcModifiers = extractModifiers(node, lang);
+
                 graph.functions.push({
                     name,
                     file: fp,
@@ -583,6 +609,7 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                     ast_kind: String(node.kind()),
                     className,
                     qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+                    modifiers: funcModifiers || undefined,
                     content_hash: computeContentHash(node.text()),
                 });
             }
