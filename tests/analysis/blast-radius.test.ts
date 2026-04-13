@@ -847,6 +847,160 @@ describe('computeBlastRadius', () => {
         expect(Object.keys(result.by_depth)).toHaveLength(0);
     });
 
+    it('should NOT propagate blast radius through non-exported function to other files', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'funcA',
+                    qualified_name: 'file1.ts::funcA',
+                    file_path: 'file1.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'funcB',
+                    qualified_name: 'file2.ts::funcB',
+                    file_path: 'file2.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'file1.ts::funcA',
+                    target_qualified: 'file2.ts::funcB',
+                    file_path: 'file1.ts',
+                    line: 5,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        // Change funcB (non-exported) -> blast radius should NOT reach funcA (different file)
+        const result = computeBlastRadius(graph, ['file2.ts::funcB'], 2);
+
+        // Only the seed itself
+        expect(result.total_functions).toBe(1);
+        const allReached = new Set<string>(['file2.ts::funcB']);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
+            }
+        }
+        expect(allReached.has('file1.ts::funcA')).toBe(false);
+    });
+
+    it('should propagate blast radius through exported function normally', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'funcA',
+                    qualified_name: 'file1.ts::funcA',
+                    file_path: 'file1.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'funcB',
+                    qualified_name: 'file2.ts::funcB',
+                    file_path: 'file2.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'file1.ts::funcA',
+                    target_qualified: 'file2.ts::funcB',
+                    file_path: 'file1.ts',
+                    line: 5,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        // Change funcB (exported) -> blast radius should reach funcA
+        const result = computeBlastRadius(graph, ['file2.ts::funcB'], 2);
+
+        expect(result.total_functions).toBe(2);
+        const allReached = new Set<string>(['file2.ts::funcB']);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
+            }
+        }
+        expect(allReached.has('file1.ts::funcA')).toBe(true);
+    });
+
+    it('should propagate blast radius through non-exported function in SAME file', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'funcA',
+                    qualified_name: 'file1.ts::funcA',
+                    file_path: 'file1.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'funcB',
+                    qualified_name: 'file1.ts::funcB',
+                    file_path: 'file1.ts',
+                    line_start: 11,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'file1.ts::funcA',
+                    target_qualified: 'file1.ts::funcB',
+                    file_path: 'file1.ts',
+                    line: 5,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        // Change funcB (non-exported, same file) -> blast radius should reach funcA
+        const result = computeBlastRadius(graph, ['file1.ts::funcB'], 2);
+
+        expect(result.total_functions).toBe(2);
+        const allReached = new Set<string>(['file1.ts::funcB']);
+        for (const entries of Object.values(result.by_depth)) {
+            for (const e of entries) {
+                allReached.add(e.qualified_name);
+            }
+        }
+        expect(allReached.has('file1.ts::funcA')).toBe(true);
+    });
+
     it('should set accumulated_confidence to 1.0 for IMPORTS edges', () => {
         const graph: GraphData = {
             nodes: [

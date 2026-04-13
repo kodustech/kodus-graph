@@ -47,6 +47,9 @@ export function computeBlastRadius(
     const minConf = minConfidence ?? 0.5;
     const cbSeeds = contractBreakingSeeds ?? new Set<string>();
 
+    // Build node lookup for is_exported checks
+    const nodeByQN = new Map(graph.nodes.map((n) => [n.qualified_name, n]));
+
     // Build adjacency list with metadata
     const adj = new Map<string, AdjEntry[]>();
     const adjSeen = new Set<string>();
@@ -74,6 +77,15 @@ export function computeBlastRadius(
             // IMPORTS: unidirectional — change in imported affects importer
             addEdge(edge.target_qualified, edge.source_qualified, 1.0, 'IMPORTS');
         } else if (edge.kind === 'CALLS' && (edge.confidence ?? 1.0) >= minConf) {
+            // Skip cross-file calls to non-exported functions (likely wrong resolution)
+            const targetNode = nodeByQN.get(edge.target_qualified);
+            if (targetNode && targetNode.is_exported === false) {
+                const sourceFile = edge.source_qualified.split('::')[0];
+                const targetFile = edge.target_qualified.split('::')[0];
+                if (sourceFile !== targetFile) {
+                    continue;
+                }
+            }
             // CALLS: only edges with sufficient confidence, reverse direction
             addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
         }
