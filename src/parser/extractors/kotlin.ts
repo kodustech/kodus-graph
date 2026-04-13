@@ -192,6 +192,8 @@ export const kotlinExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
+                decorators: [],
             });
         }
 
@@ -226,6 +228,8 @@ export const kotlinExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
+                decorators: [],
             });
         }
 
@@ -248,6 +252,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -269,6 +274,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -310,6 +316,10 @@ export const kotlinExtractors: LanguageExtractors = {
                 modifiers: funcModifiers,
                 content_hash: computeContentHash(node.text()),
                 isTest,
+                is_exported: false,
+                is_async: false,
+                decorators: [],
+                throws: [],
             });
         }
 

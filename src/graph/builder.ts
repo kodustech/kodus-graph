@@ -31,6 +31,10 @@ export function buildGraphData(
             is_test: false,
             file_hash: fileHashes.get(f.file) || '',
             content_hash: f.content_hash,
+            is_exported: f.is_exported || undefined,
+            is_async: f.is_async || undefined,
+            decorators: f.decorators?.length ? f.decorators : undefined,
+            throws: f.throws?.length ? f.throws : undefined,
         });
     }
 
@@ -49,6 +53,8 @@ export function buildGraphData(
             is_test: false,
             file_hash: fileHashes.get(c.file) || '',
             content_hash: c.content_hash,
+            is_exported: c.is_exported || undefined,
+            decorators: c.decorators?.length ? c.decorators : undefined,
         });
     }
 
@@ -66,6 +72,7 @@ export function buildGraphData(
             is_test: false,
             file_hash: fileHashes.get(i.file) || '',
             content_hash: i.content_hash,
+            is_exported: i.is_exported || undefined,
         });
     }
 
@@ -83,6 +90,7 @@ export function buildGraphData(
             is_test: false,
             file_hash: fileHashes.get(e.file) || '',
             content_hash: e.content_hash,
+            is_exported: e.is_exported || undefined,
         });
     }
 

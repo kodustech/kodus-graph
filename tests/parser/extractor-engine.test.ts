@@ -67,6 +67,8 @@ describe('extractor engine — extractAll', () => {
                     modifiers: 'public',
                     ast_kind: 'class_declaration',
                     content_hash: 'abc123',
+                    is_exported: false,
+                    decorators: [],
                 },
             ],
         };
@@ -110,6 +112,10 @@ describe('extractor engine — extractAll', () => {
                     ast_kind: 'method_definition',
                     content_hash: 'def456',
                     isTest: false,
+                    is_exported: false,
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
                 },
                 {
                     name: 'TestGetUser',
@@ -123,6 +129,10 @@ describe('extractor engine — extractAll', () => {
                     ast_kind: 'function_declaration',
                     content_hash: 'test789',
                     isTest: true,
+                    is_exported: false,
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
                 },
             ],
         };
@@ -167,6 +177,7 @@ describe('extractor engine — extractAll', () => {
                     methods: ['findById', 'save'],
                     ast_kind: 'interface_declaration',
                     content_hash: 'iface001',
+                    is_exported: false,
                 },
             ],
             enums: [
@@ -176,6 +187,7 @@ describe('extractor engine — extractAll', () => {
                     line_end: 25,
                     ast_kind: 'enum_declaration',
                     content_hash: 'enum001',
+                    is_exported: false,
                 },
             ],
             diEntries: [{ fieldName: 'repo', typeName: 'UserRepository' }],

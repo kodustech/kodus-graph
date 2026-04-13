@@ -131,6 +131,8 @@ export const phpExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
+                decorators: [],
             });
         }
 
@@ -149,6 +151,7 @@ export const phpExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -197,6 +200,10 @@ export const phpExtractors: LanguageExtractors = {
                     modifiers: funcModifiers,
                     content_hash: computeContentHash(node.text()),
                     isTest,
+                    is_exported: false,
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
                 });
             }
         }

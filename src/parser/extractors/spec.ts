@@ -10,6 +10,8 @@ export interface ExtractedClass {
     modifiers: string;
     ast_kind: string;
     content_hash: string;
+    is_exported: boolean;
+    decorators: string[];
 }
 
 export interface ExtractedFunction {
@@ -24,6 +26,10 @@ export interface ExtractedFunction {
     ast_kind: string;
     content_hash: string;
     isTest: boolean;
+    is_exported: boolean;
+    is_async: boolean;
+    decorators: string[];
+    throws: string[];
 }
 
 export interface ExtractedImport {
@@ -45,6 +51,7 @@ export interface ExtractedInterface {
     methods: string[];
     ast_kind: string;
     content_hash: string;
+    is_exported: boolean;
 }
 
 export interface ExtractedEnum {
@@ -53,6 +60,7 @@ export interface ExtractedEnum {
     line_end: number;
     ast_kind: string;
     content_hash: string;
+    is_exported: boolean;
 }
 
 export interface ExtractedDI {

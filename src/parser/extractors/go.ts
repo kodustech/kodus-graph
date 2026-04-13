@@ -157,6 +157,8 @@ export const goExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: '',
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
+                decorators: [],
             });
         }
 
@@ -179,6 +181,7 @@ export const goExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -238,6 +241,10 @@ export const goExtractors: LanguageExtractors = {
                     modifiers: '',
                     content_hash: computeContentHash(node.text()),
                     isTest,
+                    is_exported: false,
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
                 });
             }
         }

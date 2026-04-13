@@ -181,6 +181,8 @@ const pythonAdapter: LanguageExtractors = {
                 modifiers: c.modifiers || '',
                 ast_kind: c.ast_kind,
                 content_hash: c.content_hash,
+                is_exported: c.is_exported ?? false,
+                decorators: c.decorators ?? [],
             })),
             functions: tempGraph.functions.map((f) => ({
                 name: f.name,
@@ -194,6 +196,10 @@ const pythonAdapter: LanguageExtractors = {
                 ast_kind: f.ast_kind,
                 content_hash: f.content_hash,
                 isTest: testKeys.has(`${f.name}:${f.line_start}`),
+                is_exported: f.is_exported ?? false,
+                is_async: f.is_async ?? false,
+                decorators: f.decorators ?? [],
+                throws: f.throws ?? [],
             })),
             imports: tempGraph.imports.map((i) => ({
                 module: i.module,

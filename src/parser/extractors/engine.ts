@@ -67,6 +67,8 @@ export function extractAll(
             qualified: `${fp}::${c.name}`,
             modifiers: c.modifiers || undefined,
             content_hash: c.content_hash,
+            is_exported: c.is_exported || undefined,
+            decorators: c.decorators?.length ? c.decorators : undefined,
         });
     }
 
@@ -112,6 +114,10 @@ export function extractAll(
             qualified,
             modifiers: f.modifiers || undefined,
             content_hash: f.content_hash,
+            is_exported: f.is_exported || undefined,
+            is_async: f.is_async || undefined,
+            decorators: f.decorators?.length ? f.decorators : undefined,
+            throws: f.throws?.length ? f.throws : undefined,
         });
     }
 
@@ -151,6 +157,7 @@ export function extractAll(
             ast_kind: iface.ast_kind,
             qualified: `${fp}::${iface.name}`,
             content_hash: iface.content_hash,
+            is_exported: iface.is_exported || undefined,
         });
     }
 
@@ -169,6 +176,7 @@ export function extractAll(
             ast_kind: en.ast_kind,
             qualified: `${fp}::${en.name}`,
             content_hash: en.content_hash,
+            is_exported: en.is_exported || undefined,
         });
     }
 

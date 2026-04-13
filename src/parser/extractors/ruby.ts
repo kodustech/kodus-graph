@@ -260,6 +260,8 @@ const rubyAdapter: LanguageExtractors = {
                 modifiers: c.modifiers || '',
                 ast_kind: c.ast_kind,
                 content_hash: c.content_hash,
+                is_exported: c.is_exported ?? false,
+                decorators: c.decorators ?? [],
             })),
             functions: [
                 ...tempGraph.functions.map((f) => ({
@@ -274,6 +276,10 @@ const rubyAdapter: LanguageExtractors = {
                     ast_kind: f.ast_kind,
                     content_hash: f.content_hash,
                     isTest: false,
+                    is_exported: f.is_exported ?? false,
+                    is_async: f.is_async ?? false,
+                    decorators: f.decorators ?? [],
+                    throws: f.throws ?? [],
                 })),
                 // Test blocks (describe/it/context) — not real functions, but
                 // the engine only creates graph.tests from isTest functions.
@@ -293,6 +299,10 @@ const rubyAdapter: LanguageExtractors = {
                         ast_kind: t.ast_kind,
                         content_hash: t.content_hash,
                         isTest: true,
+                        is_exported: false,
+                        is_async: false,
+                        decorators: [] as string[],
+                        throws: [] as string[],
                     })),
             ],
             imports: tempGraph.imports.map((i) => ({

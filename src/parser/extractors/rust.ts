@@ -94,6 +94,8 @@ export const rustExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: '',
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
+                decorators: [],
             });
         }
 
@@ -124,6 +126,7 @@ export const rustExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -141,6 +144,7 @@ export const rustExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                is_exported: false,
             });
         }
 
@@ -179,6 +183,10 @@ export const rustExtractors: LanguageExtractors = {
                 modifiers: funcModifiers,
                 content_hash: computeContentHash(node.text()),
                 isTest,
+                is_exported: false,
+                is_async: false,
+                decorators: [],
+                throws: [],
             });
         }
 

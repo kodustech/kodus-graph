@@ -437,6 +437,8 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                     modifiers: c.modifiers || '',
                     ast_kind: c.ast_kind,
                     content_hash: c.content_hash,
+                    is_exported: c.is_exported ?? false,
+                    decorators: c.decorators ?? [],
                 })),
                 functions: [
                     ...tempGraph.functions.map((f) => ({
@@ -451,6 +453,10 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                         ast_kind: f.ast_kind,
                         content_hash: f.content_hash,
                         isTest: false,
+                        is_exported: f.is_exported ?? false,
+                        is_async: f.is_async ?? false,
+                        decorators: f.decorators ?? [],
+                        throws: f.throws ?? [],
                     })),
                     // Test blocks (describe/it/test) — not real functions, but
                     // the engine only creates graph.tests from isTest functions.
@@ -470,6 +476,10 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                             ast_kind: t.ast_kind,
                             content_hash: t.content_hash,
                             isTest: true,
+                            is_exported: false,
+                            is_async: false,
+                            decorators: [] as string[],
+                            throws: [] as string[],
                         })),
                 ],
                 imports: tempGraph.imports.map((i) => ({
@@ -489,6 +499,7 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                     methods: i.methods,
                     ast_kind: i.ast_kind,
                     content_hash: i.content_hash,
+                    is_exported: i.is_exported ?? false,
                 })),
                 enums: tempGraph.enums.map((e) => ({
                     name: e.name,
@@ -496,6 +507,7 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                     line_end: e.line_end,
                     ast_kind: e.ast_kind,
                     content_hash: e.content_hash,
+                    is_exported: e.is_exported ?? false,
                 })),
                 diEntries: [...(tempGraph.diMaps.get(fp)?.entries() ?? [])].map(
                     ([k, v]) => ({ fieldName: k, typeName: v }),

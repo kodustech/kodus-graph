@@ -23,6 +23,10 @@ export interface GraphNode {
     is_test: boolean;
     file_hash?: string;
     content_hash?: string;
+    is_exported?: boolean;
+    is_async?: boolean;
+    decorators?: string[];
+    throws?: string[];
 }
 
 // ── Graph edge (matches ast_edges table) ──
@@ -213,6 +217,10 @@ export interface RawFunction {
     qualified: string;
     modifiers?: string;
     content_hash?: string;
+    is_exported?: boolean;
+    is_async?: boolean;
+    decorators?: string[];
+    throws?: string[];
 }
 
 export interface RawClass {
@@ -226,6 +234,8 @@ export interface RawClass {
     qualified: string;
     modifiers?: string;
     content_hash?: string;
+    is_exported?: boolean;
+    decorators?: string[];
 }
 
 export interface RawInterface {
@@ -237,6 +247,7 @@ export interface RawInterface {
     ast_kind: string;
     qualified: string;
     content_hash?: string;
+    is_exported?: boolean;
 }
 
 export interface RawEnum {
@@ -247,6 +258,7 @@ export interface RawEnum {
     ast_kind: string;
     qualified: string;
     content_hash?: string;
+    is_exported?: boolean;
 }
 
 export interface RawTest {
