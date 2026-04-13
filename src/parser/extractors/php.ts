@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from './shared';
+import { computeContentHash, emptyResult, extractModifiers, extractThrows, isExported, isTestByNaming, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ export const phpExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: true, // PHP classes are public by default
                 decorators: [],
             });
         }
@@ -151,7 +151,7 @@ export const phpExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: true, // PHP interfaces are public by default
             });
         }
 
@@ -188,6 +188,10 @@ export const phpExtractors: LanguageExtractors = {
                 const funcModifiers = extractModifiers(node);
                 const range = nodeRange(node);
 
+                // PHP: public by default unless private/protected visibility_modifier
+                const visibilityMod = node.children().find((c) => String(c.kind()) === 'visibility_modifier');
+                const phpExported = !visibilityMod || visibilityMod.text() === 'public';
+
                 result.functions.push({
                     name,
                     line_start: range.line_start,
@@ -200,10 +204,10 @@ export const phpExtractors: LanguageExtractors = {
                     modifiers: funcModifiers,
                     content_hash: computeContentHash(node.text()),
                     isTest,
-                    is_exported: false,
+                    is_exported: phpExported,
                     is_async: false,
                     decorators: [],
-                    throws: [],
+                    throws: extractThrows(node, ['throw_expression']),
                 });
             }
         }

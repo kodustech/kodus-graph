@@ -5,6 +5,7 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
+import { extractDecorators, extractThrows, isAsync, isExported } from './shared';
 import { registerExtractor } from './engine';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
@@ -62,6 +63,8 @@ export function extractTypeScript(
                 ast_kind: String(node.kind()),
                 qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+                decorators: extractDecorators(node, ['decorator']),
             });
         }
     }
@@ -136,6 +139,10 @@ export function extractTypeScript(
                 className,
                 qualified: `${fp}::${className}.constructor`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: isExported(className, classAncestor || node, { exportKeywords: ['export_statement', 'export'] }),
+                is_async: false,
+                decorators: extractDecorators(node, ['decorator']),
+                throws: extractThrows(node, ['throw_statement']),
             });
         } else {
             graph.functions.push({
@@ -150,6 +157,12 @@ export function extractTypeScript(
                 className,
                 qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: className
+                    ? isExported(className, classAncestor || node, { exportKeywords: ['export_statement', 'export'] })
+                    : isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+                is_async: isAsync(node),
+                decorators: extractDecorators(node, ['decorator']),
+                throws: extractThrows(node, ['throw_statement']),
             });
         }
     }
@@ -183,6 +196,10 @@ export function extractTypeScript(
             className: '',
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+            is_async: isAsync(node),
+            decorators: extractDecorators(node, ['decorator']),
+            throws: extractThrows(node, ['throw_statement']),
         });
     }
 
@@ -201,6 +218,9 @@ export function extractTypeScript(
         seen.add(`f:${fp}:${name}:${line}`);
 
         const arrow = node.children().find((c: SgNode) => c.kind() === kinds.arrowFunction);
+        // For arrow functions, check the variable_declarator's parent (lexical_declaration)
+        // for export_statement wrapping
+        const arrowExported = isExported(name, node, { exportKeywords: ['export_statement', 'export'] });
         graph.functions.push({
             name,
             file: fp,
@@ -213,6 +233,10 @@ export function extractTypeScript(
             className: '',
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: arrowExported,
+            is_async: arrow ? isAsync(arrow) : false,
+            decorators: [],
+            throws: arrow ? extractThrows(arrow, ['throw_statement']) : [],
         });
     }
 
@@ -245,6 +269,7 @@ export function extractTypeScript(
                 ast_kind: String(node.kind()),
                 qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
             });
         }
     }
@@ -265,6 +290,7 @@ export function extractTypeScript(
                 ast_kind: String(node.kind()),
                 qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
             });
         }
     }

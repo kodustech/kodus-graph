@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractModifiers, hasTestAnnotation, nodeRange } from './shared';
+import { computeContentHash, emptyResult, extractDecorators, extractModifiers, extractThrows, hasTestAnnotation, isExported, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -134,8 +134,8 @@ export const javaExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
-                decorators: [],
+                is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
+                decorators: extractDecorators(node, ['marker_annotation', 'annotation']),
             });
         }
 
@@ -154,7 +154,7 @@ export const javaExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
             });
         }
 
@@ -172,7 +172,7 @@ export const javaExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
             });
         }
 
@@ -212,6 +212,17 @@ export const javaExtractors: LanguageExtractors = {
                 const funcModifiers = extractModifiers(node);
                 const range = nodeRange(node);
 
+                // Java throws clause: find `throws` child and extract type names
+                const javaThrows: string[] = [];
+                const throwsClause = node.children().find((c) => String(c.kind()) === 'throws');
+                if (throwsClause) {
+                    for (const child of throwsClause.children()) {
+                        if (String(child.kind()) === 'type_identifier') {
+                            javaThrows.push(child.text());
+                        }
+                    }
+                }
+
                 result.functions.push({
                     name,
                     line_start: range.line_start,
@@ -224,10 +235,10 @@ export const javaExtractors: LanguageExtractors = {
                     modifiers: funcModifiers,
                     content_hash: computeContentHash(node.text()),
                     isTest,
-                    is_exported: false,
+                    is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
                     is_async: false,
-                    decorators: [],
-                    throws: [],
+                    decorators: extractDecorators(node, ['marker_annotation', 'annotation']),
+                    throws: javaThrows,
                 });
             }
         }

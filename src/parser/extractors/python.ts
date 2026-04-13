@@ -3,6 +3,7 @@ import type { RawCallSite, RawGraph } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { LANG_KINDS } from '../languages';
+import { extractDecorators, extractThrows, isExported } from './shared';
 import { registerExtractor } from './engine';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
@@ -35,6 +36,8 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: isExported(name, node, { customCheck: (n) => !n.startsWith('_') }),
+            decorators: extractDecorators(node, ['decorator']),
         });
     }
 
@@ -71,6 +74,12 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             });
         }
 
+        // Python async: node kind could be 'function_definition' with 'async' keyword child,
+        // or the node itself may have text starting with 'async'
+        const pyIsAsync = String(node.kind()) === 'async_function_definition' ||
+            node.children().some((c: SgNode) => c.text() === 'async') ||
+            (node.parent()?.kind() === 'async_function_definition');
+
         graph.functions.push({
             name,
             file: fp,
@@ -83,6 +92,10 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             className,
             qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: isExported(name, node, { customCheck: (n) => !n.startsWith('_') }),
+            is_async: pyIsAsync,
+            decorators: extractDecorators(node, ['decorator']),
+            throws: extractThrows(node, ['raise_statement']),
         });
     }
 

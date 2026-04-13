@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractModifiers, hasTestAnnotation, isTestByNaming, nodeRange } from './shared';
+import { computeContentHash, emptyResult, extractDecorators, extractModifiers, hasTestAnnotation, isExported, isTestByNaming, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -150,6 +150,41 @@ const ANNOTATION_KIND = 'annotation';
 const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 
 // ---------------------------------------------------------------------------
+// Kotlin-specific helpers for new fields
+// ---------------------------------------------------------------------------
+
+/** Kotlin is public by default — exported unless private/protected/internal modifier is present. */
+const kotlinExportRules = {
+    customCheck: (_name: string, node: SgNode) => {
+        const mods = extractModifiers(node);
+        if (mods.includes('private') || mods.includes('protected') || mods.includes('internal')) {
+            return false;
+        }
+        return true;
+    },
+};
+
+/** Check if a Kotlin function has `suspend` modifier. */
+function kotlinIsAsync(node: SgNode): boolean {
+    const mods = extractModifiers(node);
+    return mods.includes('suspend');
+}
+
+/** Extract throws from Kotlin `@Throws(...)` annotation. */
+function kotlinThrows(node: SgNode): string[] {
+    const decorators = extractDecorators(node, ['annotation']);
+    const throws: string[] = [];
+    for (const d of decorators) {
+        const match = d.match(/@Throws\(([^)]+)\)/);
+        if (match) {
+            const types = match[1].split(',').map(t => t.replace(/::class/g, '').trim()).filter(Boolean);
+            throws.push(...types);
+        }
+    }
+    return throws;
+}
+
+// ---------------------------------------------------------------------------
 // Kotlin extractor
 // ---------------------------------------------------------------------------
 
@@ -192,8 +227,8 @@ export const kotlinExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
-                decorators: [],
+                is_exported: isExported(name, node, kotlinExportRules),
+                decorators: extractDecorators(node, ['annotation']),
             });
         }
 
@@ -228,8 +263,8 @@ export const kotlinExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
-                decorators: [],
+                is_exported: isExported(name, node, kotlinExportRules),
+                decorators: extractDecorators(node, ['annotation']),
             });
         }
 
@@ -252,7 +287,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, kotlinExportRules),
             });
         }
 
@@ -274,7 +309,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, kotlinExportRules),
             });
         }
 
@@ -316,10 +351,10 @@ export const kotlinExtractors: LanguageExtractors = {
                 modifiers: funcModifiers,
                 content_hash: computeContentHash(node.text()),
                 isTest,
-                is_exported: false,
-                is_async: false,
-                decorators: [],
-                throws: [],
+                is_exported: isExported(name, node, kotlinExportRules),
+                is_async: kotlinIsAsync(node),
+                decorators: extractDecorators(node, ['annotation']),
+                throws: kotlinThrows(node),
             });
         }
 

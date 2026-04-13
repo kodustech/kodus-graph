@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractModifiers, hasTestAnnotation, nodeRange } from './shared';
+import { computeContentHash, emptyResult, extractDecorators, extractModifiers, extractThrows, hasTestAnnotation, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -93,6 +93,20 @@ function extractImportNames(node: SgNode): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// C#-specific helpers
+// ---------------------------------------------------------------------------
+
+/** Check if a C# node has 'public' modifier. C# tree-sitter uses 'modifier' kind nodes. */
+function csharpIsExported(node: SgNode): boolean {
+    return node.children().some((c) => String(c.kind()) === 'modifier' && c.text() === 'public');
+}
+
+/** Check if a C# node has 'async' modifier. */
+function csharpIsAsync(node: SgNode): boolean {
+    return node.children().some((c) => String(c.kind()) === 'modifier' && c.text() === 'async');
+}
+
+// ---------------------------------------------------------------------------
 // Test detection config
 // ---------------------------------------------------------------------------
 
@@ -134,8 +148,8 @@ export const csharpExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
-                decorators: [],
+                is_exported: csharpIsExported(node),
+                decorators: extractDecorators(node, ['attribute_list']),
             });
         }
 
@@ -154,7 +168,7 @@ export const csharpExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: csharpIsExported(node),
             });
         }
 
@@ -172,7 +186,7 @@ export const csharpExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: csharpIsExported(node),
             });
         }
 
@@ -224,10 +238,10 @@ export const csharpExtractors: LanguageExtractors = {
                     modifiers: funcModifiers,
                     content_hash: computeContentHash(node.text()),
                     isTest,
-                    is_exported: false,
-                    is_async: false,
-                    decorators: [],
-                    throws: [],
+                    is_exported: csharpIsExported(node),
+                    is_async: csharpIsAsync(node),
+                    decorators: extractDecorators(node, ['attribute_list']),
+                    throws: extractThrows(node, ['throw_statement']),
                 });
             }
         }

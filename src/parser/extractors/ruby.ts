@@ -31,6 +31,8 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: true, // Ruby classes are public by default
+            decorators: [],
         });
     }
 
@@ -51,6 +53,8 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             ast_kind: String(node.kind()),
             qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
+            is_exported: true, // Ruby modules are public by default
+            decorators: [],
         });
     }
 
@@ -84,6 +88,10 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
                 className,
                 qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
+                is_exported: true, // Ruby methods are public by default
+                is_async: false,
+                decorators: [],
+                throws: [],
             });
         }
     }

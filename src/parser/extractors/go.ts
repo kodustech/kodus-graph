@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, hasTestAnnotation, isTestByNaming, nodeRange } from './shared';
+import { computeContentHash, emptyResult, hasTestAnnotation, isExported, isTestByNaming, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ export const goExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: '',
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, { customCheck: (n) => /^[A-Z]/.test(n) }),
                 decorators: [],
             });
         }
@@ -181,7 +181,7 @@ export const goExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: false,
+                is_exported: isExported(name, node, { customCheck: (n) => /^[A-Z]/.test(n) }),
             });
         }
 
@@ -241,7 +241,7 @@ export const goExtractors: LanguageExtractors = {
                     modifiers: '',
                     content_hash: computeContentHash(node.text()),
                     isTest,
-                    is_exported: false,
+                    is_exported: isExported(name, node, { customCheck: (n) => /^[A-Z]/.test(n) }),
                     is_async: false,
                     decorators: [],
                     throws: [],

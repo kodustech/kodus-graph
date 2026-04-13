@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseAsync } from '@ast-grep/napi';
+import { Lang, parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { RawGraph } from '../../src/graph/types';
@@ -776,5 +776,441 @@ describe('extractGeneric – Kotlin', () => {
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
         const testFunc = graph.tests.find((t) => t.name === 'testGetName');
         expect(testFunc).toBeDefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// New field extraction tests: is_exported, is_async, decorators, throws
+// ---------------------------------------------------------------------------
+
+describe('new fields – Go', () => {
+    test('exported function (uppercase) has is_exported=true', async () => {
+        const code = 'package main\nfunc GetUser() {}';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.go', 'go', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'GetUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('private function (lowercase) has is_exported=false', async () => {
+        const code = 'package main\nfunc getUser() {}';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.go', 'go', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('exported struct has is_exported=true', async () => {
+        const code = 'package main\ntype UserService struct{}';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.go', 'go', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('private struct has is_exported=false', async () => {
+        const code = 'package main\ntype userService struct{}';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.go', 'go', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'userService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBeFalsy();
+    });
+
+    test('Go functions have is_async=false (no async in Go)', async () => {
+        const code = 'package main\nfunc GetUser() {}';
+        const root = await parseAsync('go', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.go', 'go', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'GetUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+});
+
+describe('new fields – Java', () => {
+    test('public class has is_exported=true', async () => {
+        const code = 'public class UserService { }';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('package-private class has is_exported=false', async () => {
+        const code = 'class InternalService { }';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'InternalService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBeFalsy();
+    });
+
+    test('annotated class has decorators populated', async () => {
+        const code = '@Service\npublic class UserService { }';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.decorators).toBeDefined();
+        expect(cls!.decorators!.some((d) => d.includes('@Service'))).toBe(true);
+    });
+
+    test('method with throws clause has throws populated', async () => {
+        const code = [
+            'public class Svc {',
+            '    public void process() throws IOException, ParseException { }',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'process');
+        expect(fn).toBeDefined();
+        expect(fn!.throws).toBeDefined();
+        expect(fn!.throws).toContain('IOException');
+        expect(fn!.throws).toContain('ParseException');
+    });
+
+    test('public method has is_exported=true', async () => {
+        const code = 'public class Svc { public void run() {} }';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('private method has is_exported=false', async () => {
+        const code = 'public class Svc { private void helper() {} }';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('method with annotation has decorators populated', async () => {
+        const code = [
+            'public class Ctrl {',
+            '    @GetMapping("/users")',
+            '    public void getUsers() {}',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.java', 'java', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUsers');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators!.some((d) => d.includes('@GetMapping'))).toBe(true);
+    });
+});
+
+describe('new fields – Rust', () => {
+    test('pub function has is_exported=true', async () => {
+        const code = 'pub fn get_user() {}';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rs', 'rust', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'get_user');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('non-pub function has is_exported=false', async () => {
+        const code = 'fn helper() {}';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rs', 'rust', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('pub struct has is_exported=true', async () => {
+        const code = 'pub struct User { name: String }';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rs', 'rust', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'User');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('async fn has is_async=true', async () => {
+        const code = 'async fn fetch_data() {}';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rs', 'rust', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetch_data');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBe(true);
+    });
+
+    test('#[derive(Debug)] attribute is captured in decorators', async () => {
+        const code = '#[derive(Debug)]\npub struct User {}';
+        const root = await parseAsync('rust', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rs', 'rust', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'User');
+        expect(cls).toBeDefined();
+        expect(cls!.decorators).toBeDefined();
+        expect(cls!.decorators!.some((d) => d.includes('derive(Debug)'))).toBe(true);
+    });
+});
+
+describe('new fields – C#', () => {
+    test('public class has is_exported=true', async () => {
+        const code = 'public class UserService { }';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.cs', 'csharp', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('internal class has is_exported=false', async () => {
+        const code = 'internal class InternalService { }';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.cs', 'csharp', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'InternalService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBeFalsy();
+    });
+
+    test('async method has is_async=true', async () => {
+        const code = [
+            'public class Svc {',
+            '    public async Task RunAsync() { }',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.cs', 'csharp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'RunAsync');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBe(true);
+    });
+});
+
+describe('new fields – Kotlin', () => {
+    test('public class (default) has is_exported=true', async () => {
+        const code = 'class UserService { }';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.kt', 'kotlin', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('public function (default) has is_exported=true', async () => {
+        const code = 'fun getUser() { }';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.kt', 'kotlin', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+});
+
+describe('new fields – PHP', () => {
+    test('PHP class is exported by default', async () => {
+        const code = '<?php class UserService { }';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.php', 'php', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('PHP public method is exported', async () => {
+        const code = '<?php class Svc { public function run() {} }';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.php', 'php', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('PHP private method is not exported', async () => {
+        const code = '<?php class Svc { private function helper() {} }';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.php', 'php', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+});
+
+describe('new fields – TypeScript', () => {
+    test('exported function has is_exported=true', async () => {
+        const code = 'export function fetchUser() {}';
+        const root = await parseAsync(Lang.TypeScript, code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.ts', Lang.TypeScript, new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetchUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('non-exported function has is_exported=false', async () => {
+        const code = 'function helper() {}';
+        const root = await parseAsync(Lang.TypeScript, code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.ts', Lang.TypeScript, new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('async function has is_async=true', async () => {
+        const code = 'export async function fetchUser() {}';
+        const root = await parseAsync(Lang.TypeScript, code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.ts', Lang.TypeScript, new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetchUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBe(true);
+    });
+
+    test('non-async function has is_async=false', async () => {
+        const code = 'export function syncFunc() {}';
+        const root = await parseAsync(Lang.TypeScript, code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.ts', Lang.TypeScript, new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'syncFunc');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('exported class has is_exported=true', async () => {
+        const code = 'export class UserService {}';
+        const root = await parseAsync(Lang.TypeScript, code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.ts', Lang.TypeScript, new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+});
+
+describe('new fields – Python', () => {
+    test('public function (no underscore) has is_exported=true', async () => {
+        const code = 'def get_user():\n    pass';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.py', 'python', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'get_user');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('private function (underscore prefix) has is_exported=false', async () => {
+        const code = 'def _helper():\n    pass';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.py', 'python', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === '_helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('public class (no underscore) has is_exported=true', async () => {
+        const code = 'class UserService:\n    pass';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.py', 'python', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+});
+
+describe('new fields – Ruby', () => {
+    test('Ruby method is exported by default', async () => {
+        const code = 'class Svc\n  def run\n  end\nend';
+        const root = await parseAsync('ruby', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rb', 'ruby', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('Ruby class is exported by default', async () => {
+        const code = 'class UserService\nend';
+        const root = await parseAsync('ruby', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rb', 'ruby', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('Ruby has is_async=false (no async in Ruby)', async () => {
+        const code = 'def run\nend';
+        const root = await parseAsync('ruby', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.rb', 'ruby', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
     });
 });
