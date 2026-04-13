@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
 import { cachedExists, cachedReaddir } from '../fs-cache';
 
-const STDLIB_PREFIXES = ['java.', 'javax.', 'sun.', 'com.sun.', 'jdk.'];
+const STDLIB_PREFIXES = ['java.', 'javax.', 'sun.', 'com.sun.', 'jdk.', 'kotlin.', 'kotlinx.'];
 const SOURCE_ROOTS = ['src/main/java', 'src/main/kotlin', 'src', ''];
 const EXTENSIONS = ['.java', '.kt'];
 

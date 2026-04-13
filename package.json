@@ -60,6 +60,7 @@
     "@ast-grep/lang-csharp": "^0.0.6",
     "@ast-grep/lang-go": "^0.0.6",
     "@ast-grep/lang-java": "^0.0.7",
+    "@ast-grep/lang-kotlin": "^0.0.7",
     "@ast-grep/lang-php": "^0.0.7",
     "@ast-grep/lang-python": "^0.0.6",
     "@ast-grep/lang-ruby": "^0.0.7",

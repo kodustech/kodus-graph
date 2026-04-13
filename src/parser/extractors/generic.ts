@@ -33,6 +33,49 @@ function goTypeName(node: SgNode): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Kotlin disambiguation helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a Kotlin `class_declaration` node is a class, interface, or enum.
+ * In Kotlin's tree-sitter grammar, all three share the `class_declaration` kind
+ * and are distinguished by the presence of `interface` or `enum` child tokens.
+ */
+function kotlinClassKind(node: SgNode): 'class' | 'interface' | 'enum' {
+    const children = node.children();
+    if (children.some((c) => c.kind() === 'interface')) {
+        return 'interface';
+    }
+    if (children.some((c) => c.kind() === 'enum')) {
+        return 'enum';
+    }
+    return 'class';
+}
+
+/**
+ * Get the name for a Kotlin `class_declaration` or `object_declaration` node.
+ * Kotlin's tree-sitter grammar does not expose `field('name')` — the name
+ * lives in a `type_identifier` child node instead.
+ */
+function kotlinTypeName(node: SgNode): string | undefined {
+    return node
+        .children()
+        .find((c) => c.kind() === 'type_identifier')
+        ?.text();
+}
+
+/**
+ * Get the name for a Kotlin `function_declaration` node.
+ * The function name is a `simple_identifier` child (not exposed via `field('name')`).
+ */
+function kotlinFuncName(node: SgNode): string | undefined {
+    return node
+        .children()
+        .find((c) => c.kind() === 'simple_identifier')
+        ?.text();
+}
+
+// ---------------------------------------------------------------------------
 // Test detection helpers
 // ---------------------------------------------------------------------------
 
@@ -250,7 +293,17 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                         continue;
                     }
 
-                    const name = node.field('name')?.text();
+                    // Kotlin disambiguation: class_declaration is shared among class, interface, and enum.
+                    // Only pick actual classes here (interfaces/enums handled in their own sections).
+                    if (lang === 'kotlin' && classKind === 'class_declaration') {
+                        const ktKind = kotlinClassKind(node);
+                        if (ktKind !== 'class') {
+                            continue; // interfaces and enums handled separately below
+                        }
+                    }
+
+                    // Kotlin does not expose field('name'); use type_identifier child instead
+                    const name = lang === 'kotlin' ? kotlinTypeName(node) : node.field('name')?.text();
                     if (!name || seen.has(`c:${fp}:${name}`)) {
                         continue;
                     }
@@ -343,7 +396,16 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                         continue;
                     }
 
-                    const name = node.field('name')?.text();
+                    // Kotlin disambiguation: only pick interface declarations
+                    if (lang === 'kotlin' && ifaceKind === 'class_declaration') {
+                        const ktKind = kotlinClassKind(node);
+                        if (ktKind !== 'interface') {
+                            continue;
+                        }
+                    }
+
+                    // Kotlin does not expose field('name'); use type_identifier child instead
+                    const name = lang === 'kotlin' ? kotlinTypeName(node) : node.field('name')?.text();
                     if (!name || seen.has(`i:${fp}:${name}`)) {
                         continue;
                     }
@@ -370,7 +432,16 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
         for (const enumKind of config.enum) {
             try {
                 for (const node of rootNode.findAll({ rule: { kind: enumKind } })) {
-                    const name = node.field('name')?.text();
+                    // Kotlin disambiguation: only pick enum declarations
+                    if (lang === 'kotlin' && enumKind === 'class_declaration') {
+                        const ktKind = kotlinClassKind(node);
+                        if (ktKind !== 'enum') {
+                            continue;
+                        }
+                    }
+
+                    // Kotlin does not expose field('name'); use type_identifier child instead
+                    const name = lang === 'kotlin' ? kotlinTypeName(node) : node.field('name')?.text();
                     if (!name || seen.has(`e:${fp}:${name}`)) {
                         continue;
                     }
@@ -400,7 +471,8 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
     for (const funcKind of funcKinds) {
         try {
             for (const node of rootNode.findAll({ rule: { kind: funcKind } })) {
-                const name = node.field('name')?.text();
+                // Kotlin does not expose field('name'); use simple_identifier child instead
+                const name = lang === 'kotlin' ? kotlinFuncName(node) : node.field('name')?.text();
                 if (!name) {
                     continue;
                 }
@@ -454,9 +526,19 @@ export function extractGeneric(root: SgRoot, fp: string, lang: string, seen: Set
                 if (!className && lang !== 'rust') {
                     const classAncestor = node.ancestors().find((a: SgNode) => {
                         const k = String(a.kind());
+                        // Kotlin: match specific declaration kinds to avoid matching class_body
+                        if (lang === 'kotlin') {
+                            return k === 'class_declaration' || k === 'object_declaration';
+                        }
                         return k.includes('class') || k.includes('struct') || k.includes('impl');
                     });
-                    className = classAncestor?.field('name')?.text() || '';
+                    // Kotlin doesn't expose field('name') — use type_identifier child instead
+                    if (classAncestor) {
+                        className =
+                            lang === 'kotlin'
+                                ? kotlinTypeName(classAncestor) || ''
+                                : classAncestor.field('name')?.text() || '';
+                    }
                 }
 
                 // Determine function kind
@@ -583,6 +665,23 @@ const GENERIC_CONFIGS: Record<string, CallExtractionConfig> = {
         selfPrefixes: ['$this->'],
         superPrefixes: ['parent::'],
         findEnclosingClass: findEnclosingClassGeneric,
+    },
+    kotlin: {
+        selfPrefixes: ['this.'],
+        superPrefixes: ['super.'],
+        findEnclosingClass: findEnclosingClassGeneric,
+        getParentClass: (classNode) => {
+            // Kotlin delegation_specifier with constructor_invocation = superclass
+            const delegations = classNode.children().filter((c) => c.kind() === 'delegation_specifier');
+            for (const d of delegations) {
+                const ctorInvocation = d.children().find((c) => c.kind() === 'constructor_invocation');
+                if (ctorInvocation) {
+                    const userType = ctorInvocation.children().find((c) => c.kind() === 'user_type');
+                    return userType?.children().find((c) => c.kind() === 'type_identifier')?.text();
+                }
+            }
+            return undefined;
+        },
     },
 };
 

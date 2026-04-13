@@ -297,6 +297,8 @@ const RUBY_STDLIB = new Set([
 
 const JAVA_STDLIB_PREFIXES = ['java.', 'javax.', 'jakarta.', 'sun.', 'com.sun.', 'jdk.'];
 
+const KOTLIN_STDLIB_PREFIXES = ['kotlin.', 'kotlinx.', ...JAVA_STDLIB_PREFIXES];
+
 const RUST_STDLIB_CRATES = new Set(['std', 'core', 'alloc']);
 
 // ---------------------------------------------------------------------------
@@ -609,7 +611,10 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
         cachedExists(join(repoRoot, 'build.gradle')) ||
         cachedExists(join(repoRoot, 'build.gradle.kts'))
     ) {
-        result.set('java', loadJavaDeps(repoRoot));
+        const javaDeps = loadJavaDeps(repoRoot);
+        result.set('java', javaDeps);
+        // Kotlin shares Java's build systems (Maven/Gradle)
+        result.set('kotlin', javaDeps);
     }
 
     // PHP
@@ -799,6 +804,33 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
 
         // Match groupId prefix against import path
         // e.g. groupId "org.springframework.boot" -> import "org.springframework.boot.SpringApplication"
+        for (const dep of langDeps.packages) {
+            const [groupId, artifactId] = dep.split(':');
+            if (modulePath.startsWith(groupId)) {
+                return artifactId;
+            }
+        }
+
+        return null;
+    }
+
+    // ----- Kotlin -----
+    if (langKey === 'kotlin') {
+        // Kotlin stdlib (includes Java stdlib prefixes)
+        for (const prefix of KOTLIN_STDLIB_PREFIXES) {
+            if (modulePath.startsWith(prefix)) {
+                const parts = modulePath.split('.');
+                return parts.slice(0, 2).join('.');
+            }
+        }
+
+        const deps = loadDeps(repoRoot);
+        const langDeps = deps.get('kotlin');
+        if (!langDeps) {
+            return null;
+        }
+
+        // Same as Java: match groupId prefix against import path
         for (const dep of langDeps.packages) {
             const [groupId, artifactId] = dep.split(':');
             if (modulePath.startsWith(groupId)) {

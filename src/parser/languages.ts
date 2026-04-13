@@ -1,6 +1,7 @@
 import csharp from '@ast-grep/lang-csharp';
 import go from '@ast-grep/lang-go';
 import java from '@ast-grep/lang-java';
+import kotlin from '@ast-grep/lang-kotlin';
 import php from '@ast-grep/lang-php';
 import python from '@ast-grep/lang-python';
 import ruby from '@ast-grep/lang-ruby';
@@ -10,7 +11,7 @@ import { Lang, registerDynamicLanguage } from '@ast-grep/napi';
 
 // Register dynamic languages at import time (side effect).
 // This must happen before parseAsync can parse these languages.
-registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp });
+registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp, kotlin });
 
 // ---------------------------------------------------------------------------
 // LangConfig types
@@ -65,6 +66,8 @@ const EXT_TO_LANG: Record<string, Lang | string> = {
     '.rs': 'rust',
     '.cs': 'csharp',
     '.php': 'php',
+    '.kt': 'kotlin',
+    '.kts': 'kotlin',
 };
 
 export function getLanguage(ext: string): Lang | string | null {
@@ -228,6 +231,59 @@ const csharpConfig: LangConfig = {
     },
 };
 
+const kotlinConfig: LangConfig = {
+    // Kotlin uses class_declaration for classes, interfaces, and enums.
+    // Disambiguation is handled in the generic extractor using child node checks
+    // (similar to how Go disambiguates struct vs interface in type_declaration).
+    class: ['class_declaration', 'object_declaration'],
+    interface: ['class_declaration'],
+    // Kotlin uses function_declaration for both methods and top-level functions.
+    // We list it only in 'function' and rely on className-based detection to
+    // promote to Method kind (same approach Go uses with method_declaration/function_declaration).
+    function: ['function_declaration'],
+    enum: ['class_declaration'],
+    import: ['import_header'],
+    heritage: {
+        extends: (node: SgNode) => {
+            // In Kotlin, delegation_specifier with constructor_invocation = superclass call
+            const delegations = node.children().filter((c: SgNode) => c.kind() === 'delegation_specifier');
+            for (const d of delegations) {
+                const ctorInvocation = d.children().find((c: SgNode) => c.kind() === 'constructor_invocation');
+                if (ctorInvocation) {
+                    const userType = ctorInvocation.children().find((c: SgNode) => c.kind() === 'user_type');
+                    const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+                    if (typeId) {
+                        return typeId.text();
+                    }
+                }
+            }
+            return undefined;
+        },
+        implements: (node: SgNode) => {
+            // In Kotlin, delegation_specifier with just user_type (no constructor_invocation) = interface
+            const delegations = node.children().filter((c: SgNode) => c.kind() === 'delegation_specifier');
+            const interfaces: string[] = [];
+            for (const d of delegations) {
+                const hasCtorInvocation = d.children().some((c: SgNode) => c.kind() === 'constructor_invocation');
+                if (!hasCtorInvocation) {
+                    const userType = d.children().find((c: SgNode) => c.kind() === 'user_type');
+                    const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+                    if (typeId) {
+                        interfaces.push(typeId.text());
+                    }
+                }
+            }
+            return interfaces;
+        },
+    },
+    tests: {
+        filePatterns: [/test/i],
+        funcPatterns: [/^test/i],
+        annotationKind: 'annotation',
+        annotationNames: ['Test', 'ParameterizedTest'],
+    },
+};
+
 const phpConfig: LangConfig = {
     class: ['class_declaration'],
     interface: ['interface_declaration'],
@@ -273,6 +329,7 @@ export const LANG_CONFIGS: Record<string, LangConfig> = {
     rust: rustConfig,
     csharp: csharpConfig,
     php: phpConfig,
+    kotlin: kotlinConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -356,6 +413,12 @@ export const LANG_KINDS: Record<string, Record<string, string>> = {
     php: {
         ...derivedKinds(phpConfig),
         namespace: 'namespace_use_declaration',
+    },
+    kotlin: {
+        ...derivedKinds(kotlinConfig),
+        annotation: 'annotation',
+        object: 'object_declaration',
+        companionObject: 'companion_object',
     },
 };
 

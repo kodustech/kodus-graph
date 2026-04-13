@@ -46,6 +46,7 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
     ruby: resolveRbImport,
     go: resolveGoImport,
     java: resolveJavaImport,
+    kotlin: resolveJavaImport,
     rust: resolveRustImport,
     csharp: resolveCsImport,
     php: resolvePhpImport,

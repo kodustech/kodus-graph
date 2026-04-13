@@ -529,3 +529,144 @@ describe('extractGeneric – PHP', () => {
         expect(graph.functions.some((f) => f.name === 'testGetName')).toBe(true);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Kotlin
+// ---------------------------------------------------------------------------
+
+describe('extractGeneric – Kotlin', () => {
+    test('extracts UserService class with extends from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.ast_kind).toBe('class_declaration');
+        expect(userService!.extends).toBe('BaseService');
+        expect(userService!.implements).toContain('Greetable');
+    });
+
+    test('extracts BaseService class from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const baseService = graph.classes.find((c) => c.name === 'BaseService');
+        expect(baseService).toBeDefined();
+        expect(baseService!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts data class UserDto from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const userDto = graph.classes.find((c) => c.name === 'UserDto');
+        expect(userDto).toBeDefined();
+        expect(userDto!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts object declaration SingletonHelper as class from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const singleton = graph.classes.find((c) => c.name === 'SingletonHelper');
+        expect(singleton).toBeDefined();
+        expect(singleton!.ast_kind).toBe('object_declaration');
+    });
+
+    test('extracts Greetable interface from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const greetable = graph.interfaces.find((i) => i.name === 'Greetable');
+        expect(greetable).toBeDefined();
+        expect(greetable!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts Status enum from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const statusEnum = graph.enums.find((e) => e.name === 'Status');
+        expect(statusEnum).toBeDefined();
+        expect(statusEnum!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts functions from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        expect(graph.functions.some((f) => f.name === 'getName')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'createUser')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'greet')).toBe(true);
+    });
+
+    test('methods inside class have className set', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const getName = graph.functions.find((f) => f.name === 'getName');
+        expect(getName).toBeDefined();
+        expect(getName!.className).toBe('UserService');
+        expect(getName!.kind).toBe('Method');
+    });
+
+    test('standalone function has no className', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        const testGetName = graph.functions.find((f) => f.name === 'testGetName');
+        expect(testGetName).toBeDefined();
+        expect(testGetName!.className).toBe('');
+        expect(testGetName!.kind).toBe('Function');
+    });
+
+    test('extracts imports from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        expect(graph.imports.length).toBeGreaterThanOrEqual(2);
+        expect(graph.imports.some((i) => i.module === 'com.example.models.User')).toBe(true);
+    });
+
+    test('extracts @Test annotated function as test from Sample.kt', async () => {
+        const fp = join(FIXTURES, 'kotlin/Sample.kt');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractGeneric(root, fp, 'kotlin', new Set(), graph);
+
+        expect(graph.tests.length).toBeGreaterThanOrEqual(1);
+        const testFunc = graph.tests.find((t) => t.name === 'testGetName');
+        expect(testFunc).toBeDefined();
+    });
+});
