@@ -1,15 +1,36 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import type { RawCallSite, RawGraph } from '../../graph/types';
+import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
-import { computeContentHash } from '../../shared/file-hash';
 import { LANG_KINDS } from '../languages';
 import { registerExtractor } from './engine';
-import { extractDecorators, extractThrows, isExported } from './shared';
-import type { ExtractionResult, LanguageExtractors } from './spec';
+import { computeContentHash, extractDecorators, extractThrows, isExported } from './shared';
+import type {
+    ExtractedClass,
+    ExtractedFunction,
+    ExtractedImport,
+    ExtractionResult,
+    LanguageExtractors,
+} from './spec';
 
-export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
+// ---------------------------------------------------------------------------
+// Shared constants
+// ---------------------------------------------------------------------------
+
+const EXPORT_RULES = { customCheck: (n: string) => !n.startsWith('_') } as const;
+const DECORATOR_KINDS = ['decorator'] as const;
+const THROW_KINDS = ['raise_statement'] as const;
+
+// ---------------------------------------------------------------------------
+// Core extraction (returns ExtractionResult directly)
+// ---------------------------------------------------------------------------
+
+function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
     const kinds = LANG_KINDS.python;
-    const rootNode = root.root();
+    const seen = new Set<string>();
+
+    const classes: ExtractedClass[] = [];
+    const functions: ExtractedFunction[] = [];
+    const imports: ExtractedImport[] = [];
 
     // ── Classes ──
     for (const node of rootNode.findAll({ rule: { kind: kinds.class } })) {
@@ -26,18 +47,17 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
                 .find((c: SgNode) => c.kind() === 'identifier')
                 ?.text() || '';
 
-        graph.classes.push({
+        classes.push({
             name,
-            file: fp,
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: extendsName,
             implements: [],
+            modifiers: '',
             ast_kind: String(node.kind()),
-            qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
-            is_exported: isExported(name, node, { customCheck: (n) => !n.startsWith('_') }),
-            decorators: extractDecorators(node, ['decorator']),
+            is_exported: isExported(name, node, EXPORT_RULES),
+            decorators: extractDecorators(node, [...DECORATOR_KINDS]),
         });
     }
 
@@ -62,17 +82,6 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
                 ?.replace(/^->\s*/, '') || '';
 
         const isTest = name.startsWith('test_');
-        if (isTest) {
-            graph.tests.push({
-                name,
-                file: fp,
-                line_start: line,
-                line_end: node.range().end.line,
-                ast_kind: String(node.kind()),
-                qualified: `${fp}::test:${name}`,
-                content_hash: computeContentHash(node.text()),
-            });
-        }
 
         // Python async: node kind could be 'function_definition' with 'async' keyword child,
         // or the node itself may have text starting with 'async'
@@ -81,22 +90,22 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
             node.children().some((c: SgNode) => c.text() === 'async') ||
             node.parent()?.kind() === 'async_function_definition';
 
-        graph.functions.push({
+        functions.push({
             name,
-            file: fp,
             line_start: line,
             line_end: node.range().end.line,
             params: node.field('parameters')?.text() || '()',
             returnType: retType,
             kind: name === '__init__' ? 'Constructor' : className ? 'Method' : 'Function',
-            ast_kind: String(node.kind()),
             className,
-            qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+            modifiers: '',
+            ast_kind: String(node.kind()),
             content_hash: computeContentHash(node.text()),
-            is_exported: isExported(name, node, { customCheck: (n) => !n.startsWith('_') }),
+            isTest: isTest,
+            is_exported: isExported(name, node, EXPORT_RULES),
             is_async: pyIsAsync,
-            decorators: extractDecorators(node, ['decorator']),
-            throws: extractThrows(node, ['raise_statement']),
+            decorators: extractDecorators(node, [...DECORATOR_KINDS]),
+            throws: extractThrows(node, [...THROW_KINDS]),
         });
     }
 
@@ -119,9 +128,8 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
                 names.push(child.text());
             }
         }
-        graph.imports.push({
+        imports.push({
             module: modulePath,
-            file: fp,
             line: node.range().start.line,
             names,
             lang: 'python',
@@ -132,16 +140,29 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
     for (const node of rootNode.findAll({ rule: { kind: kinds.importRegular } })) {
         const modNode = node.children().find((c: SgNode) => c.kind() === 'dotted_name');
         if (modNode) {
-            graph.imports.push({
+            imports.push({
                 module: modNode.text(),
-                file: fp,
                 line: node.range().start.line,
                 names: [modNode.text()],
                 lang: 'python',
             });
         }
     }
+
+    return {
+        classes,
+        functions,
+        imports,
+        reExports: [],
+        interfaces: [],
+        enums: [],
+        diEntries: [],
+    };
 }
+
+// ---------------------------------------------------------------------------
+// Call extraction
+// ---------------------------------------------------------------------------
 
 /** Python-specific call extraction config for shared extractCalls(). */
 const PYTHON_CALL_CONFIG: CallExtractionConfig = {
@@ -158,85 +179,33 @@ const PYTHON_CALL_CONFIG: CallExtractionConfig = {
     },
 };
 
+function extractCallsPython(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+    extractCalls(rootNode, fp, PYTHON_CALL_CONFIG, calls);
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compat export used by tests/parser/call-extraction.test.ts
+// ---------------------------------------------------------------------------
+
 /**
  * Extract raw call sites from a Python AST.
  * Detects self.X() and super().X() to preserve class resolution context.
  */
 export function extractCallsFromPython(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-    extractCalls(root.root(), fp, PYTHON_CALL_CONFIG, calls);
+    extractCallsPython(root.root(), fp, calls);
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// LanguageExtractors implementation
 // ---------------------------------------------------------------------------
 
-const pythonAdapter: LanguageExtractors = {
+const pythonExtractors: LanguageExtractors = {
     extract(rootNode: SgNode, fp: string): ExtractionResult {
-        const tempGraph: RawGraph = {
-            functions: [],
-            classes: [],
-            interfaces: [],
-            enums: [],
-            tests: [],
-            imports: [],
-            reExports: [],
-            rawCalls: [],
-            diMaps: new Map(),
-        };
-        const seen = new Set<string>();
-        const fakeRoot = { root: () => rootNode } as SgRoot;
-
-        extractPython(fakeRoot, fp, seen, tempGraph);
-
-        // Track which (name, line) pairs are tests so we can mark them
-        const testKeys = new Set(tempGraph.tests.map((t) => `${t.name}:${t.line_start}`));
-
-        return {
-            classes: tempGraph.classes.map((c) => ({
-                name: c.name,
-                line_start: c.line_start,
-                line_end: c.line_end,
-                extends: c.extends,
-                implements: c.implements,
-                modifiers: c.modifiers || '',
-                ast_kind: c.ast_kind,
-                content_hash: c.content_hash,
-                is_exported: c.is_exported ?? false,
-                decorators: c.decorators ?? [],
-            })),
-            functions: tempGraph.functions.map((f) => ({
-                name: f.name,
-                line_start: f.line_start,
-                line_end: f.line_end,
-                params: f.params,
-                returnType: f.returnType,
-                kind: f.kind,
-                className: f.className,
-                modifiers: f.modifiers || '',
-                ast_kind: f.ast_kind,
-                content_hash: f.content_hash,
-                isTest: testKeys.has(`${f.name}:${f.line_start}`),
-                is_exported: f.is_exported ?? false,
-                is_async: f.is_async ?? false,
-                decorators: f.decorators ?? [],
-                throws: f.throws ?? [],
-            })),
-            imports: tempGraph.imports.map((i) => ({
-                module: i.module,
-                line: i.line,
-                names: i.names,
-                lang: i.lang,
-            })),
-            reExports: [],
-            interfaces: [],
-            enums: [],
-            diEntries: [],
-        };
+        return extractPythonDirect(rootNode, fp);
     },
     extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
-        const fakeRoot = { root: () => rootNode } as SgRoot;
-        extractCallsFromPython(fakeRoot, fp, calls);
+        extractCallsPython(rootNode, fp, calls);
     },
 };
 
-registerExtractor('python', pythonAdapter);
+registerExtractor('python', pythonExtractors);
