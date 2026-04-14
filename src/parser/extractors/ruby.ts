@@ -1,16 +1,30 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import type { RawCallSite, RawGraph } from '../../graph/types';
+import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
-import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
 import { registerExtractor } from './engine';
-import type { ExtractionResult, LanguageExtractors } from './spec';
+import { computeContentHash } from './shared';
+import type {
+    ExtractedClass,
+    ExtractedFunction,
+    ExtractedImport,
+    ExtractionResult,
+    LanguageExtractors,
+} from './spec';
 
-export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
+// ---------------------------------------------------------------------------
+// Core extraction (returns ExtractionResult directly)
+// ---------------------------------------------------------------------------
+
+function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
     const kinds = LANG_KINDS.ruby;
-    const rootNode = root.root();
+    const seen = new Set<string>();
+
+    const classes: ExtractedClass[] = [];
+    const functions: ExtractedFunction[] = [];
+    const imports: ExtractedImport[] = [];
 
     // ── Classes ──
     for (const node of rootNode.findAll({ rule: { kind: kinds.class } })) {
@@ -21,15 +35,14 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
         seen.add(`c:${fp}:${name}`);
 
         const superclass = node.field('superclass')?.text() || '';
-        graph.classes.push({
+        classes.push({
             name,
-            file: fp,
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: superclass,
             implements: [],
+            modifiers: '',
             ast_kind: String(node.kind()),
-            qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
             is_exported: true, // Ruby classes are public by default
             decorators: [],
@@ -43,15 +56,14 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             continue;
         }
         seen.add(`c:${fp}:${name}`);
-        graph.classes.push({
+        classes.push({
             name,
-            file: fp,
             line_start: node.range().start.line,
             line_end: node.range().end.line,
             extends: '',
             implements: [],
+            modifiers: '',
             ast_kind: String(node.kind()),
-            qualified: `${fp}::${name}`,
             content_hash: computeContentHash(node.text()),
             is_exported: true, // Ruby modules are public by default
             decorators: [],
@@ -76,22 +88,22 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
                 .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
             const className = classAncestor?.field('name')?.text() || '';
 
-            graph.functions.push({
+            functions.push({
                 name,
-                file: fp,
                 line_start: line,
                 line_end: node.range().end.line,
                 params: node.field('parameters')?.text() || '()',
                 returnType: '',
                 kind: className ? 'Method' : 'Function',
-                ast_kind: String(node.kind()),
                 className,
-                qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+                modifiers: '',
+                ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                isTest: false,
                 is_exported: true, // Ruby methods are public by default
-                is_async: false,
-                decorators: [],
-                throws: [],
+                is_async: false, // Ruby has no native async
+                decorators: [], // Ruby has no decorators
+                throws: [], // Ruby uses raise but no declaration
             });
         }
     }
@@ -116,15 +128,29 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
                     continue;
                 }
                 seen.add(key);
-                graph.tests.push({
-                    name,
-                    file: fp,
-                    line_start: m.range().start.line,
-                    line_end: m.range().end.line,
-                    ast_kind: String(m.kind()),
-                    qualified: `${fp}::test:${name}`,
-                    content_hash: computeContentHash(m.text()),
-                });
+                // Emit test blocks as functions with isTest=true so the engine
+                // creates graph.tests entries.
+                // Skip if an identical function was already extracted at the same location.
+                const duplicate = functions.some((f) => f.name === name && f.line_start === m.range().start.line);
+                if (!duplicate) {
+                    functions.push({
+                        name,
+                        line_start: m.range().start.line,
+                        line_end: m.range().end.line,
+                        params: '',
+                        returnType: '',
+                        kind: 'Function',
+                        className: '',
+                        modifiers: '',
+                        ast_kind: String(m.kind()),
+                        content_hash: computeContentHash(m.text()),
+                        isTest: true,
+                        is_exported: false,
+                        is_async: false,
+                        decorators: [],
+                        throws: [],
+                    });
+                }
             }
         } catch (err) {
             log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
@@ -142,9 +168,8 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             for (const m of rootNode.findAll(p)) {
                 const mod = m.getMatch('MODULE')?.text();
                 if (mod) {
-                    graph.imports.push({
+                    imports.push({
                         module: mod,
-                        file: fp,
                         line: m.range().start.line,
                         names: [],
                         lang: 'ruby',
@@ -155,7 +180,21 @@ export function extractRuby(root: SgRoot, fp: string, seen: Set<string>, graph: 
             log.debug('Ruby pattern mismatch', { file: fp, pattern: p, error: String(err) });
         }
     }
+
+    return {
+        classes,
+        functions,
+        imports,
+        reExports: [],
+        interfaces: [],
+        enums: [],
+        diEntries: [],
+    };
 }
+
+// ---------------------------------------------------------------------------
+// Call extraction
+// ---------------------------------------------------------------------------
 
 /** Ruby-specific call extraction config for shared extractCalls(). */
 function createRubyCallConfig(): CallExtractionConfig {
@@ -169,12 +208,7 @@ function createRubyCallConfig(): CallExtractionConfig {
     };
 }
 
-/**
- * Extract raw call sites from a Ruby AST.
- * Detects self.X() and super() to preserve class resolution context.
- */
-export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-    const rootNode = root.root();
+function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
     const config = createRubyCallConfig();
 
     // Track lines already captured by the pattern-based extraction to avoid duplicates
@@ -240,99 +274,28 @@ export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSit
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// Backward-compat export used by tests/parser/call-extraction.test.ts
 // ---------------------------------------------------------------------------
 
-const rubyAdapter: LanguageExtractors = {
+/**
+ * Extract raw call sites from a Ruby AST.
+ * Detects self.X() and super() to preserve class resolution context.
+ */
+export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSite[]): void {
+    extractCallsRuby(root.root(), fp, calls);
+}
+
+// ---------------------------------------------------------------------------
+// LanguageExtractors implementation
+// ---------------------------------------------------------------------------
+
+const rubyExtractors: LanguageExtractors = {
     extract(rootNode: SgNode, fp: string): ExtractionResult {
-        const tempGraph: RawGraph = {
-            functions: [],
-            classes: [],
-            interfaces: [],
-            enums: [],
-            tests: [],
-            imports: [],
-            reExports: [],
-            rawCalls: [],
-            diMaps: new Map(),
-        };
-        const seen = new Set<string>();
-        const fakeRoot = { root: () => rootNode } as SgRoot;
-
-        extractRuby(fakeRoot, fp, seen, tempGraph);
-
-        // Track which (name, line) pairs are tests so we can mark them
-        const testKeys = new Set(tempGraph.tests.map((t) => `${t.name}:${t.line_start}`));
-
-        return {
-            classes: tempGraph.classes.map((c) => ({
-                name: c.name,
-                line_start: c.line_start,
-                line_end: c.line_end,
-                extends: c.extends,
-                implements: c.implements,
-                modifiers: c.modifiers || '',
-                ast_kind: c.ast_kind,
-                content_hash: c.content_hash,
-                is_exported: c.is_exported ?? false,
-                decorators: c.decorators ?? [],
-            })),
-            functions: [
-                ...tempGraph.functions.map((f) => ({
-                    name: f.name,
-                    line_start: f.line_start,
-                    line_end: f.line_end,
-                    params: f.params,
-                    returnType: f.returnType,
-                    kind: f.kind,
-                    className: f.className,
-                    modifiers: f.modifiers || '',
-                    ast_kind: f.ast_kind,
-                    content_hash: f.content_hash,
-                    isTest: false,
-                    is_exported: f.is_exported ?? false,
-                    is_async: f.is_async ?? false,
-                    decorators: f.decorators ?? [],
-                    throws: f.throws ?? [],
-                })),
-                // Test blocks (describe/it/context) — not real functions, but
-                // the engine only creates graph.tests from isTest functions.
-                ...tempGraph.tests
-                    .filter((t) => !tempGraph.functions.some((f) => f.name === t.name && f.line_start === t.line_start))
-                    .map((t) => ({
-                        name: t.name,
-                        line_start: t.line_start,
-                        line_end: t.line_end,
-                        params: '',
-                        returnType: '',
-                        kind: 'Function' as const,
-                        className: '',
-                        modifiers: '',
-                        ast_kind: t.ast_kind,
-                        content_hash: t.content_hash,
-                        isTest: true,
-                        is_exported: false,
-                        is_async: false,
-                        decorators: [] as string[],
-                        throws: [] as string[],
-                    })),
-            ],
-            imports: tempGraph.imports.map((i) => ({
-                module: i.module,
-                line: i.line,
-                names: i.names,
-                lang: i.lang,
-            })),
-            reExports: [],
-            interfaces: [],
-            enums: [],
-            diEntries: [],
-        };
+        return extractRubyDirect(rootNode, fp);
     },
     extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
-        const fakeRoot = { root: () => rootNode } as SgRoot;
-        extractCallsFromRuby(fakeRoot, fp, calls);
+        extractCallsRuby(rootNode, fp, calls);
     },
 };
 
-registerExtractor('ruby', rubyAdapter);
+registerExtractor('ruby', rubyExtractors);
