@@ -246,8 +246,14 @@ export function extractCallsFromRuby(root: SgRoot, fp: string, calls: RawCallSit
 const rubyAdapter: LanguageExtractors = {
     extract(rootNode: SgNode, fp: string): ExtractionResult {
         const tempGraph: RawGraph = {
-            functions: [], classes: [], interfaces: [], enums: [],
-            tests: [], imports: [], reExports: [], rawCalls: [],
+            functions: [],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
             diMaps: new Map(),
         };
         const seen = new Set<string>();
@@ -292,9 +298,7 @@ const rubyAdapter: LanguageExtractors = {
                 // Test blocks (describe/it/context) — not real functions, but
                 // the engine only creates graph.tests from isTest functions.
                 ...tempGraph.tests
-                    .filter((t) => !tempGraph.functions.some(
-                        (f) => f.name === t.name && f.line_start === t.line_start,
-                    ))
+                    .filter((t) => !tempGraph.functions.some((f) => f.name === t.name && f.line_start === t.line_start))
                     .map((t) => ({
                         name: t.name,
                         line_start: t.line_start,

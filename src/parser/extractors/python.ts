@@ -3,8 +3,8 @@ import type { RawCallSite, RawGraph } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { LANG_KINDS } from '../languages';
-import { extractDecorators, extractThrows, isExported } from './shared';
 import { registerExtractor } from './engine';
+import { extractDecorators, extractThrows, isExported } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph: RawGraph): void {
@@ -76,9 +76,10 @@ export function extractPython(root: SgRoot, fp: string, seen: Set<string>, graph
 
         // Python async: node kind could be 'function_definition' with 'async' keyword child,
         // or the node itself may have text starting with 'async'
-        const pyIsAsync = String(node.kind()) === 'async_function_definition' ||
+        const pyIsAsync =
+            String(node.kind()) === 'async_function_definition' ||
             node.children().some((c: SgNode) => c.text() === 'async') ||
-            (node.parent()?.kind() === 'async_function_definition');
+            node.parent()?.kind() === 'async_function_definition';
 
         graph.functions.push({
             name,
@@ -172,8 +173,14 @@ export function extractCallsFromPython(root: SgRoot, fp: string, calls: RawCallS
 const pythonAdapter: LanguageExtractors = {
     extract(rootNode: SgNode, fp: string): ExtractionResult {
         const tempGraph: RawGraph = {
-            functions: [], classes: [], interfaces: [], enums: [],
-            tests: [], imports: [], reExports: [], rawCalls: [],
+            functions: [],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
             diMaps: new Map(),
         };
         const seen = new Set<string>();

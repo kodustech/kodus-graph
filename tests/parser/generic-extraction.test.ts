@@ -111,8 +111,7 @@ describe('extractGeneric – Go', () => {
     });
 
     test('method with value receiver has className set', async () => {
-        const code =
-            'package main\ntype UserService struct{}\nfunc (s UserService) GetName() string { return s.Name }';
+        const code = 'package main\ntype UserService struct{}\nfunc (s UserService) GetName() string { return s.Name }';
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
@@ -139,8 +138,7 @@ describe('extractGeneric – Go', () => {
     });
 
     test('struct embedding sets extends', async () => {
-        const code =
-            'package main\ntype Base struct{ Name string }\ntype Admin struct{ Base\n AdminLevel int }';
+        const code = 'package main\ntype Base struct{ Name string }\ntype Admin struct{ Base\n AdminLevel int }';
         const fp = 'file.go';
         const root = await parseAsync('go', code);
         const graph = emptyGraph();
@@ -286,12 +284,7 @@ describe('extractGeneric – Java', () => {
     });
 
     test('constructor modifiers include annotations', async () => {
-        const code = [
-            'public class Svc {',
-            '    @Autowired',
-            '    public Svc(Repo repo) {}',
-            '}',
-        ].join('\n');
+        const code = ['public class Svc {', '    @Autowired', '    public Svc(Repo repo) {}', '}'].join('\n');
         const fp = 'Test.java';
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
@@ -915,12 +908,9 @@ describe('new fields – Java', () => {
     });
 
     test('method with annotation has decorators populated', async () => {
-        const code = [
-            'public class Ctrl {',
-            '    @GetMapping("/users")',
-            '    public void getUsers() {}',
-            '}',
-        ].join('\n');
+        const code = ['public class Ctrl {', '    @GetMapping("/users")', '    public void getUsers() {}', '}'].join(
+            '\n',
+        );
         const root = await parseAsync('java', code);
         const graph = emptyGraph();
         extractFromFile(root, 'Test.java', 'java', new Set(), graph);
@@ -1014,11 +1004,7 @@ describe('new fields – C#', () => {
     });
 
     test('async method has is_async=true', async () => {
-        const code = [
-            'public class Svc {',
-            '    public async Task RunAsync() { }',
-            '}',
-        ].join('\n');
+        const code = ['public class Svc {', '    public async Task RunAsync() { }', '}'].join('\n');
         const root = await parseAsync('csharp', code);
         const graph = emptyGraph();
         extractFromFile(root, 'Test.cs', 'csharp', new Set(), graph);
@@ -1410,5 +1396,332 @@ describe('extractGeneric – Swift', () => {
         expect(getUser).toBeDefined();
         expect(getUser!.decorators).toBeDefined();
         expect(getUser!.decorators!.some((d) => d.includes('@discardableResult'))).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Dart
+// ---------------------------------------------------------------------------
+
+describe('extractGeneric – Dart', () => {
+    test('extracts class UserService from Sample.dart', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.ast_kind).toBe('class_definition');
+        expect(userService!.extends).toBe('BaseService');
+        expect(userService!.implements).toContain('Repository');
+    });
+
+    test('extracts abstract class Repository as interface', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const repo = graph.interfaces.find((i) => i.name === 'Repository');
+        expect(repo).toBeDefined();
+        expect(repo!.ast_kind).toBe('class_definition');
+        expect(repo!.methods).toContain('find');
+        expect(repo!.methods).toContain('save');
+    });
+
+    test('extracts enum UserStatus', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const userStatus = graph.enums.find((e) => e.name === 'UserStatus');
+        expect(userStatus).toBeDefined();
+        expect(userStatus!.ast_kind).toBe('enum_declaration');
+    });
+
+    test('extracts mixin Loggable as class', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const loggable = graph.classes.find((c) => c.name === 'Loggable');
+        expect(loggable).toBeDefined();
+        expect(loggable!.ast_kind).toBe('mixin_declaration');
+        expect(loggable!.modifiers).toContain('mixin');
+    });
+
+    test('extracts methods from UserService', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        // find method (with @override)
+        const findMethod = graph.functions.find((f) => f.name === 'find' && f.className === 'UserService');
+        expect(findMethod).toBeDefined();
+        expect(findMethod!.kind).toBe('Method');
+        expect(findMethod!.is_async).toBe(true);
+        expect(findMethod!.decorators).toContain('@override');
+
+        // _validate method (with @protected, private name)
+        const validate = graph.functions.find((f) => f.name === '_validate');
+        expect(validate).toBeDefined();
+        expect(validate!.kind).toBe('Method');
+        expect(validate!.is_exported).toBeFalsy();
+        expect(validate!.decorators).toContain('@protected');
+    });
+
+    test('extracts constructor from UserService', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const ctor = graph.functions.find((f) => f.name === 'UserService' && f.kind === 'Constructor');
+        expect(ctor).toBeDefined();
+        expect(ctor!.className).toBe('UserService');
+    });
+
+    test('extracts top-level function createService', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        const createService = graph.functions.find((f) => f.name === 'createService');
+        expect(createService).toBeDefined();
+        expect(createService!.kind).toBe('Function');
+        expect(createService!.is_async).toBe(true);
+        expect(createService!.className).toBe('');
+    });
+
+    test('extracts imports from Sample.dart', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        expect(graph.imports.length).toBeGreaterThanOrEqual(4);
+        const modules = graph.imports.map((i) => i.module);
+        expect(modules).toContain('dart:async');
+        expect(modules).toContain('package:flutter/material.dart');
+        expect(modules).toContain('package:my_app/models/user.dart');
+        expect(modules).toContain('../relative.dart');
+    });
+
+    test('export detection: underscore prefix = private', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        // UserService is public (no underscore)
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService!.is_exported).toBe(true);
+
+        // _validate starts with underscore → private
+        const validate = graph.functions.find((f) => f.name === '_validate');
+        expect(validate!.is_exported).toBeFalsy();
+
+        // find is public
+        const findMethod = graph.functions.find((f) => f.name === 'find' && f.className === 'UserService');
+        expect(findMethod!.is_exported).toBe(true);
+
+        // createService is public
+        const createService = graph.functions.find((f) => f.name === 'createService');
+        expect(createService!.is_exported).toBe(true);
+    });
+
+    test('throws is always empty/undefined for Dart', async () => {
+        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'dart', new Set(), graph);
+
+        for (const fn of graph.functions) {
+            // Dart has no throws clause; engine converts empty array to undefined
+            expect(fn.throws ?? []).toEqual([]);
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Scala
+// ---------------------------------------------------------------------------
+
+describe('extractGeneric – Scala', () => {
+    test('extracts UserService class with extends and implements from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const userService = graph.classes.find((c) => c.name === 'UserService' && c.ast_kind === 'class_definition');
+        expect(userService).toBeDefined();
+        expect(userService!.extends).toBe('BaseService');
+        expect(userService!.implements).toContain('Repository');
+        expect(userService!.implements).toContain('Serializable');
+    });
+
+    test('extracts case class UserDTO as class from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const userDto = graph.classes.find((c) => c.name === 'UserDTO');
+        expect(userDto).toBeDefined();
+        expect(userDto!.ast_kind).toBe('class_definition');
+    });
+
+    test('extracts Repository trait as interface from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const repo = graph.interfaces.find((i) => i.name === 'Repository');
+        expect(repo).toBeDefined();
+        expect(repo!.ast_kind).toBe('trait_definition');
+        expect(repo!.methods).toContain('find');
+        expect(repo!.methods).toContain('save');
+    });
+
+    test('extracts sealed trait Status as interface from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const status = graph.interfaces.find((i) => i.name === 'Status');
+        expect(status).toBeDefined();
+        expect(status!.ast_kind).toBe('trait_definition');
+    });
+
+    test('extracts object as class (companion object deduped with class)', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        // Scala companion objects share the same name as their class.
+        // The engine deduplicates by name, so only the class_definition is kept.
+        // Verify the class_definition UserService is present.
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+
+        // Verify case objects (Active, Inactive) which have unique names are extracted
+        const active = graph.classes.find((c) => c.name === 'Active');
+        expect(active).toBeDefined();
+        expect(active!.ast_kind).toBe('object_definition');
+    });
+
+    test('extracts case objects Active and Inactive as classes from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const active = graph.classes.find((c) => c.name === 'Active');
+        expect(active).toBeDefined();
+        expect(active!.ast_kind).toBe('object_definition');
+        expect(active!.extends).toBe('Status');
+
+        const inactive = graph.classes.find((c) => c.name === 'Inactive');
+        expect(inactive).toBeDefined();
+        expect(inactive!.extends).toBe('Status');
+    });
+
+    test('extracts methods from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        expect(graph.functions.some((f) => f.name === 'create')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'find')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'validate')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'getUser')).toBe(true);
+    });
+
+    test('methods inside class have className set', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.className).toBe('UserService');
+        expect(getUser!.kind).toBe('Method');
+    });
+
+    test('private method is not exported', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const validate = graph.functions.find((f) => f.name === 'validate');
+        expect(validate).toBeDefined();
+        expect(validate!.is_exported).toBeFalsy();
+    });
+
+    test('public method is exported by default', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.is_exported).toBe(true);
+    });
+
+    test('extracts imports from Sample.scala', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        expect(graph.imports.length).toBeGreaterThanOrEqual(2);
+        expect(graph.imports.some((i) => i.module === 'com.example.models.User')).toBe(true);
+        expect(graph.imports.some((i) => i.module === 'com.example.services._')).toBe(true);
+    });
+
+    test('is_async is always false for Scala (uses Futures, no async keyword)', async () => {
+        const fp = join(FIXTURES, 'scala/Sample.scala');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'scala', new Set(), graph);
+
+        for (const fn of graph.functions) {
+            expect(fn.is_async).toBeFalsy();
+        }
     });
 });

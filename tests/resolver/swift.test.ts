@@ -10,14 +10,8 @@ describe('Swift import resolver', () => {
         rmSync(TMP, { recursive: true, force: true });
         mkdirSync(join(TMP, 'Sources/MyModule'), { recursive: true });
         mkdirSync(join(TMP, 'Sources/Networking'), { recursive: true });
-        writeFileSync(
-            join(TMP, 'Sources/MyModule/MyModule.swift'),
-            'public struct MyModule {}\n',
-        );
-        writeFileSync(
-            join(TMP, 'Sources/Networking/Client.swift'),
-            'public class Client {}\n',
-        );
+        writeFileSync(join(TMP, 'Sources/MyModule/MyModule.swift'), 'public struct MyModule {}\n');
+        writeFileSync(join(TMP, 'Sources/Networking/Client.swift'), 'public class Client {}\n');
     });
 
     test('resolves local module in Sources directory', () => {
@@ -80,14 +74,8 @@ describe('Swift SPM multi-target resolution', () => {
         rmSync(TMP_SPM, { recursive: true, force: true });
         mkdirSync(join(TMP_SPM, 'Sources/App'), { recursive: true });
         mkdirSync(join(TMP_SPM, 'Sources/Models'), { recursive: true });
-        writeFileSync(
-            join(TMP_SPM, 'Sources/App/App.swift'),
-            'import Models\n@main struct App {}\n',
-        );
-        writeFileSync(
-            join(TMP_SPM, 'Sources/Models/User.swift'),
-            'public struct User {}\n',
-        );
+        writeFileSync(join(TMP_SPM, 'Sources/App/App.swift'), 'import Models\n@main struct App {}\n');
+        writeFileSync(join(TMP_SPM, 'Sources/Models/User.swift'), 'public struct User {}\n');
     });
 
     test('resolves Models target in SPM multi-target project', () => {

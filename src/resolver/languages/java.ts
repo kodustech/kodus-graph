@@ -2,9 +2,20 @@ import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
 import { cachedExists, cachedReaddir } from '../fs-cache';
 
-const STDLIB_PREFIXES = ['java.', 'javax.', 'sun.', 'com.sun.', 'jdk.', 'kotlin.', 'kotlinx.'];
-const SOURCE_ROOTS = ['src/main/java', 'src/main/kotlin', 'src', ''];
-const EXTENSIONS = ['.java', '.kt'];
+const STDLIB_PREFIXES = [
+    'java.',
+    'javax.',
+    'sun.',
+    'com.sun.',
+    'jdk.',
+    'kotlin.',
+    'kotlinx.',
+    'scala.',
+    'akka.',
+    'play.',
+];
+const SOURCE_ROOTS = ['src/main/java', 'src/main/kotlin', 'src/main/scala', 'src', ''];
+const EXTENSIONS = ['.java', '.kt', '.scala'];
 
 /**
  * Collect all source roots, including those inside Gradle subproject directories.

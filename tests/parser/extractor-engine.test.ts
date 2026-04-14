@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../src/graph/types';
-import { extractAll, extractCallsFromEngine, hasExtractor, registerExtractor } from '../../src/parser/extractors/engine';
-import type { ExtractionResult, LanguageExtractors } from '../../src/parser/extractors/spec';
+import {
+    extractAll,
+    extractCallsFromEngine,
+    hasExtractor,
+    registerExtractor,
+} from '../../src/parser/extractors/engine';
 import { emptyResult } from '../../src/parser/extractors/shared';
+import type { ExtractionResult, LanguageExtractors } from '../../src/parser/extractors/spec';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,7 +34,7 @@ function emptyGraph(): RawGraph {
  * so the node itself is opaque to the engine — the mock extractor ignores it.
  */
 function mockSgRoot(): { root(): SgNode } {
-    return { root: () => ({} as SgNode) };
+    return { root: () => ({}) as SgNode };
 }
 
 // ---------------------------------------------------------------------------

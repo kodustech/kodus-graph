@@ -252,9 +252,7 @@ describe('computeStructuralDiff', () => {
         const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
 
         // No changes at all (both default to false)
-        const asyncDiffs = result.nodes.modified.flatMap((m) =>
-            m.contract_diffs.filter((d) => d.field === 'is_async'),
-        );
+        const asyncDiffs = result.nodes.modified.flatMap((m) => m.contract_diffs.filter((d) => d.field === 'is_async'));
         expect(asyncDiffs).toHaveLength(0);
     });
 

@@ -2,7 +2,16 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractDecorators, extractModifiers, hasTestAnnotation, isExported, isTestByNaming, nodeRange } from './shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractDecorators,
+    extractModifiers,
+    hasTestAnnotation,
+    isExported,
+    isTestByNaming,
+    nodeRange,
+} from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -177,7 +186,10 @@ function kotlinThrows(node: SgNode): string[] {
     for (const d of decorators) {
         const match = d.match(/@Throws\(([^)]+)\)/);
         if (match) {
-            const types = match[1].split(',').map(t => t.replace(/::class/g, '').trim()).filter(Boolean);
+            const types = match[1]
+                .split(',')
+                .map((t) => t.replace(/::class/g, '').trim())
+                .filter(Boolean);
             throws.push(...types);
         }
     }
@@ -395,7 +407,10 @@ export const kotlinExtractors: LanguageExtractors = {
                     const ctorInvocation = d.children().find((c) => c.kind() === 'constructor_invocation');
                     if (ctorInvocation) {
                         const userType = ctorInvocation.children().find((c) => c.kind() === 'user_type');
-                        return userType?.children().find((c) => c.kind() === 'type_identifier')?.text();
+                        return userType
+                            ?.children()
+                            .find((c) => c.kind() === 'type_identifier')
+                            ?.text();
                     }
                 }
                 return undefined;

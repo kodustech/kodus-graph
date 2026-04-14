@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Lang, parseAsync } from '@ast-grep/napi';
-import { isExported, isAsync, extractDecorators, extractThrows } from '../../src/parser/extractors/shared';
 import type { ExportRules } from '../../src/parser/extractors/shared';
+import { extractDecorators, extractThrows, isAsync, isExported } from '../../src/parser/extractors/shared';
 
 describe('isExported', () => {
     it('should detect export keyword via parent node', async () => {

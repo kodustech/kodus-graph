@@ -299,26 +299,178 @@ const JAVA_STDLIB_PREFIXES = ['java.', 'javax.', 'jakarta.', 'sun.', 'com.sun.',
 
 const KOTLIN_STDLIB_PREFIXES = ['kotlin.', 'kotlinx.', ...JAVA_STDLIB_PREFIXES];
 
+const SCALA_STDLIB_PREFIXES = ['scala.', 'akka.', 'play.', ...JAVA_STDLIB_PREFIXES];
+
 const RUST_STDLIB_CRATES = new Set(['std', 'core', 'alloc']);
 
+/** Elixir/Erlang stdlib modules (top-level segment or full name). */
+const ELIXIR_STDLIB_MODULES = new Set([
+    // Elixir stdlib
+    'GenServer',
+    'Agent',
+    'Task',
+    'Supervisor',
+    'DynamicSupervisor',
+    'Logger',
+    'Enum',
+    'Stream',
+    'Map',
+    'Keyword',
+    'List',
+    'Tuple',
+    'String',
+    'Regex',
+    'File',
+    'IO',
+    'Path',
+    'Port',
+    'Process',
+    'Application',
+    'Code',
+    'Kernel',
+    'Module',
+    'Protocol',
+    'Access',
+    'Base',
+    'Bitwise',
+    'Calendar',
+    'Date',
+    'DateTime',
+    'NaiveDateTime',
+    'Time',
+    'Exception',
+    'Float',
+    'Function',
+    'Integer',
+    'MapSet',
+    'Node',
+    'OptionParser',
+    'Range',
+    'Record',
+    'Registry',
+    'System',
+    'URI',
+    'Version',
+    'Inspect',
+    'Collectable',
+    'Enumerable',
+    'GenEvent',
+    'HashDict',
+    'HashSet',
+    'Set',
+    'Dict',
+    'Macro',
+    'Config',
+    'Mix',
+    'ExUnit',
+    'EEx',
+    'IEx',
+    // Common Elixir standard library prefixes
+    'Supervisor.Spec',
+    'Task.Supervisor',
+    // Erlang modules (commonly used from Elixir via :module syntax)
+    ':erlang',
+    ':ets',
+    ':dets',
+    ':mnesia',
+    ':gen_server',
+    ':gen_statem',
+    ':gen_event',
+    ':supervisor',
+    ':application',
+    ':crypto',
+    ':ssl',
+    ':timer',
+    ':io',
+    ':file',
+    ':lists',
+    ':maps',
+    ':string',
+    ':binary',
+    ':os',
+    ':calendar',
+    ':math',
+    ':rand',
+    ':unicode',
+    ':httpc',
+    ':inets',
+    ':xmerl',
+    ':public_key',
+    ':ssh',
+    ':logger',
+]);
+
+const DART_FRAMEWORK_PACKAGES = new Set([
+    'flutter',
+    'flutter_test',
+    'flutter_driver',
+    'flutter_localizations',
+    'flutter_web_plugins',
+    'sky_engine',
+]);
+
 const SWIFT_FRAMEWORKS = new Set([
-    'Foundation', 'Swift', 'SwiftUI', 'Combine', 'Observation',
-    'UIKit', 'AppKit', 'WatchKit', 'WidgetKit',
-    'CoreData', 'SwiftData', 'CloudKit',
-    'Network', 'WebKit',
-    'AVFoundation', 'AVKit', 'CoreGraphics', 'CoreImage', 'CoreAnimation',
-    'QuartzCore', 'Metal', 'MetalKit', 'SpriteKit', 'SceneKit',
-    'RealityKit', 'ARKit', 'Vision', 'CoreML', 'CreateML', 'NaturalLanguage',
-    'CoreLocation', 'MapKit',
-    'CoreBluetooth', 'CoreMotion', 'CoreTelephony', 'CoreNFC',
-    'LocalAuthentication', 'Security', 'CryptoKit',
-    'UserNotifications', 'BackgroundTasks',
+    'Foundation',
+    'Swift',
+    'SwiftUI',
+    'Combine',
+    'Observation',
+    'UIKit',
+    'AppKit',
+    'WatchKit',
+    'WidgetKit',
+    'CoreData',
+    'SwiftData',
+    'CloudKit',
+    'Network',
+    'WebKit',
+    'AVFoundation',
+    'AVKit',
+    'CoreGraphics',
+    'CoreImage',
+    'CoreAnimation',
+    'QuartzCore',
+    'Metal',
+    'MetalKit',
+    'SpriteKit',
+    'SceneKit',
+    'RealityKit',
+    'ARKit',
+    'Vision',
+    'CoreML',
+    'CreateML',
+    'NaturalLanguage',
+    'CoreLocation',
+    'MapKit',
+    'CoreBluetooth',
+    'CoreMotion',
+    'CoreTelephony',
+    'CoreNFC',
+    'LocalAuthentication',
+    'Security',
+    'CryptoKit',
+    'UserNotifications',
+    'BackgroundTasks',
     'Accessibility',
-    'StoreKit', 'GameKit', 'HealthKit', 'HomeKit', 'EventKit',
-    'Contacts', 'ContactsUI', 'MessageUI', 'Messages',
-    'MultipeerConnectivity', 'Photos', 'PhotosUI',
-    'XCTest', 'Testing',
-    'os', 'Darwin', 'Dispatch', 'ObjectiveC', 'PlaygroundSupport',
+    'StoreKit',
+    'GameKit',
+    'HealthKit',
+    'HomeKit',
+    'EventKit',
+    'Contacts',
+    'ContactsUI',
+    'MessageUI',
+    'Messages',
+    'MultipeerConnectivity',
+    'Photos',
+    'PhotosUI',
+    'XCTest',
+    'Testing',
+    'os',
+    'Darwin',
+    'Dispatch',
+    'ObjectiveC',
+    'PlaygroundSupport',
     'PackageDescription',
 ]);
 
@@ -561,6 +713,43 @@ function loadRubyDeps(repoRoot: string): LangDeps {
     return { packages: pkgs };
 }
 
+function loadDartDeps(repoRoot: string): LangDeps {
+    const pkgs = new Set<string>();
+    const meta: Record<string, string> = {};
+    const pubspec = safeRead(join(repoRoot, 'pubspec.yaml'));
+    if (pubspec) {
+        // Extract package name
+        const nameMatch = pubspec.match(/^name:\s*(.+)$/m);
+        if (nameMatch) {
+            meta.name = nameMatch[1].trim();
+        }
+
+        // Extract dependency names (simple line-based parsing)
+        let inDeps = false;
+        for (const line of pubspec.split('\n')) {
+            const trimmed = line.trim();
+            if (/^(dependencies|dev_dependencies|dependency_overrides):/.test(trimmed)) {
+                inDeps = true;
+                continue;
+            }
+            // New top-level key — stop collecting
+            if (/^[a-zA-Z_].*:/.test(trimmed) && !trimmed.startsWith(' ') && !trimmed.startsWith('#')) {
+                if (inDeps) {
+                    inDeps = false;
+                }
+                continue;
+            }
+            if (inDeps) {
+                const depMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*):/);
+                if (depMatch) {
+                    pkgs.add(depMatch[1]);
+                }
+            }
+        }
+    }
+    return { packages: pkgs, meta };
+}
+
 function loadSwiftDeps(repoRoot: string): LangDeps {
     const pkgs = new Set<string>();
     const packageSwift = safeRead(join(repoRoot, 'Package.swift'));
@@ -581,6 +770,22 @@ function loadSwiftDeps(repoRoot: string): LangDeps {
                 }
             }
             m = urlRegex.exec(packageSwift);
+        }
+    }
+    return { packages: pkgs };
+}
+
+function loadElixirDeps(repoRoot: string): LangDeps {
+    const pkgs = new Set<string>();
+    const mixExs = safeRead(join(repoRoot, 'mix.exs'));
+    if (mixExs) {
+        // Match {:dep_name, "~> version"} or {:dep_name, ">= version"}
+        // or {:dep_name, git: "..."} etc.
+        const regex = /\{:([a-z_][a-z0-9_]*)\s*,/g;
+        let m: RegExpExecArray | null = regex.exec(mixExs);
+        while (m !== null) {
+            pkgs.add(m[1]);
+            m = regex.exec(mixExs);
         }
     }
     return { packages: pkgs };
@@ -655,12 +860,15 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
     if (
         cachedExists(join(repoRoot, 'pom.xml')) ||
         cachedExists(join(repoRoot, 'build.gradle')) ||
-        cachedExists(join(repoRoot, 'build.gradle.kts'))
+        cachedExists(join(repoRoot, 'build.gradle.kts')) ||
+        cachedExists(join(repoRoot, 'build.sbt'))
     ) {
         const javaDeps = loadJavaDeps(repoRoot);
         result.set('java', javaDeps);
         // Kotlin shares Java's build systems (Maven/Gradle)
         result.set('kotlin', javaDeps);
+        // Scala shares Java's build systems (Maven/Gradle/SBT)
+        result.set('scala', javaDeps);
     }
 
     // PHP
@@ -676,6 +884,16 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
     // Swift
     if (cachedExists(join(repoRoot, 'Package.swift'))) {
         result.set('swift', loadSwiftDeps(repoRoot));
+    }
+
+    // Dart
+    if (cachedExists(join(repoRoot, 'pubspec.yaml'))) {
+        result.set('dart', loadDartDeps(repoRoot));
+    }
+
+    // Elixir
+    if (cachedExists(join(repoRoot, 'mix.exs'))) {
+        result.set('elixir', loadElixirDeps(repoRoot));
     }
 
     // C#
@@ -892,6 +1110,33 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
         return null;
     }
 
+    // ----- Scala -----
+    if (langKey === 'scala') {
+        // Scala stdlib (includes Java stdlib prefixes + Scala ecosystem)
+        for (const prefix of SCALA_STDLIB_PREFIXES) {
+            if (modulePath.startsWith(prefix)) {
+                const parts = modulePath.split('.');
+                return parts.slice(0, 2).join('.');
+            }
+        }
+
+        const deps = loadDeps(repoRoot);
+        const langDeps = deps.get('scala');
+        if (!langDeps) {
+            return null;
+        }
+
+        // Same as Java/Kotlin: match groupId prefix against import path
+        for (const dep of langDeps.packages) {
+            const [groupId, artifactId] = dep.split(':');
+            if (modulePath.startsWith(groupId)) {
+                return artifactId;
+            }
+        }
+
+        return null;
+    }
+
     // ----- PHP -----
     if (langKey === 'php') {
         const deps = loadDeps(repoRoot);
@@ -993,6 +1238,44 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
         return null;
     }
 
+    // ----- Dart -----
+    if (langKey === 'dart') {
+        // SDK imports: dart:xxx
+        if (modulePath.startsWith('dart:')) {
+            return modulePath;
+        }
+
+        // Framework packages
+        if (modulePath.startsWith('package:')) {
+            const withoutPrefix = modulePath.slice('package:'.length);
+            const packageName = withoutPrefix.split('/')[0];
+
+            if (DART_FRAMEWORK_PACKAGES.has(packageName)) {
+                return packageName;
+            }
+
+            // Check if it's the project's own package
+            const deps = loadDeps(repoRoot);
+            const langDeps = deps.get('dart');
+            if (langDeps?.meta?.name === packageName) {
+                return null; // own package, not external
+            }
+
+            if (langDeps?.packages.has(packageName)) {
+                return packageName;
+            }
+
+            return null;
+        }
+
+        // Relative imports are never external
+        if (modulePath.startsWith('.') || modulePath.startsWith('/')) {
+            return null;
+        }
+
+        return null;
+    }
+
     // ----- Swift -----
     if (langKey === 'swift') {
         // Framework/system imports
@@ -1007,6 +1290,177 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
         }
 
         if (langDeps.packages.has(modulePath)) {
+            return modulePath;
+        }
+
+        return null;
+    }
+
+    // ----- Elixir -----
+    if (langKey === 'elixir') {
+        // Check Elixir/Erlang stdlib
+        const topSegment = modulePath.split('.')[0];
+        if (ELIXIR_STDLIB_MODULES.has(topSegment) || ELIXIR_STDLIB_MODULES.has(modulePath)) {
+            return topSegment;
+        }
+
+        // Erlang atoms start with ':'
+        if (modulePath.startsWith(':')) {
+            if (ELIXIR_STDLIB_MODULES.has(modulePath)) {
+                return modulePath;
+            }
+            // Erlang module not in known list — likely external
+            return null;
+        }
+
+        const deps = loadDeps(repoRoot);
+        const langDeps = deps.get('elixir');
+        if (!langDeps) {
+            return null;
+        }
+
+        // Elixir deps are atom names like :ecto, :phoenix, :plug
+        // Module names use CamelCase: Ecto.Query → dep name is "ecto"
+        const depName = topSegment.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+        if (langDeps.packages.has(depName)) {
+            return depName;
+        }
+
+        return null;
+    }
+
+    // ----- C / C++ -----
+    if (langKey === 'c' || langKey === 'cpp') {
+        // The extractor stores include paths without angle brackets or quotes.
+        // System headers are identified by common system header names or
+        // well-known standard library headers.
+        // Since we can't distinguish <> from "" at this point, we check
+        // if the path matches known system/stdlib headers.
+        const C_SYSTEM_HEADERS = new Set([
+            'stdio.h',
+            'stdlib.h',
+            'string.h',
+            'math.h',
+            'time.h',
+            'errno.h',
+            'assert.h',
+            'ctype.h',
+            'float.h',
+            'limits.h',
+            'locale.h',
+            'setjmp.h',
+            'signal.h',
+            'stdarg.h',
+            'stddef.h',
+            'stdint.h',
+            'stdbool.h',
+            'wchar.h',
+            'wctype.h',
+            'complex.h',
+            'fenv.h',
+            'inttypes.h',
+            'iso646.h',
+            'tgmath.h',
+            'uchar.h',
+            'threads.h',
+            'stdatomic.h',
+            'stdalign.h',
+            'stdnoreturn.h',
+            'unistd.h',
+            'fcntl.h',
+            'sys/types.h',
+            'sys/stat.h',
+            'sys/socket.h',
+            'netinet/in.h',
+            'arpa/inet.h',
+            'pthread.h',
+            'dirent.h',
+            'dlfcn.h',
+            'semaphore.h',
+        ]);
+
+        const CPP_SYSTEM_HEADERS = new Set([
+            'string',
+            'vector',
+            'map',
+            'set',
+            'unordered_map',
+            'unordered_set',
+            'list',
+            'deque',
+            'queue',
+            'stack',
+            'array',
+            'bitset',
+            'forward_list',
+            'iostream',
+            'fstream',
+            'sstream',
+            'iomanip',
+            'ostream',
+            'istream',
+            'algorithm',
+            'numeric',
+            'functional',
+            'iterator',
+            'ranges',
+            'memory',
+            'utility',
+            'tuple',
+            'optional',
+            'variant',
+            'any',
+            'type_traits',
+            'typeinfo',
+            'typeindex',
+            'chrono',
+            'thread',
+            'mutex',
+            'condition_variable',
+            'future',
+            'atomic',
+            'exception',
+            'stdexcept',
+            'system_error',
+            'cerrno',
+            'cstdio',
+            'cstdlib',
+            'cstring',
+            'cmath',
+            'ctime',
+            'cassert',
+            'cctype',
+            'climits',
+            'cfloat',
+            'cstdint',
+            'cstddef',
+            'regex',
+            'random',
+            'ratio',
+            'complex',
+            'valarray',
+            'filesystem',
+            'span',
+            'format',
+            'source_location',
+            'concepts',
+            'coroutine',
+            'expected',
+            'print',
+            'new',
+            'limits',
+            'locale',
+            'codecvt',
+            'initializer_list',
+            'compare',
+        ]);
+
+        if (C_SYSTEM_HEADERS.has(modulePath) || CPP_SYSTEM_HEADERS.has(modulePath)) {
+            return modulePath;
+        }
+
+        // Anything that doesn't end in a file extension is likely a C++ standard header
+        if (!modulePath.includes('.')) {
             return modulePath;
         }
 

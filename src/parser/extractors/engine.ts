@@ -35,13 +35,7 @@ export function hasExtractor(lang: string): boolean {
  * Does nothing (returns silently) when no extractor is registered for the
  * given language.
  */
-export function extractAll(
-    root: SgRoot,
-    fp: string,
-    lang: string,
-    seen: Set<string>,
-    graph: RawGraph,
-): void {
+export function extractAll(root: SgRoot, fp: string, lang: string, seen: Set<string>, graph: RawGraph): void {
     const extractor = registry.get(lang);
     if (!extractor) {
         return;
@@ -80,9 +74,7 @@ export function extractAll(
         }
         seen.add(key);
 
-        const qualified = f.className
-            ? `${fp}::${f.className}.${f.name}`
-            : `${fp}::${f.name}`;
+        const qualified = f.className ? `${fp}::${f.className}.${f.name}` : `${fp}::${f.name}`;
 
         // If the function is a test, push to graph.tests as well
         if (f.isTest) {
@@ -197,12 +189,7 @@ export function extractAll(
  * Delegate call-site extraction to the registered language extractor.
  * Does nothing when no extractor is registered for the given language.
  */
-export function extractCallsFromEngine(
-    root: SgRoot,
-    fp: string,
-    lang: string,
-    calls: RawCallSite[],
-): void {
+export function extractCallsFromEngine(root: SgRoot, fp: string, lang: string, calls: RawCallSite[]): void {
     const extractor = registry.get(lang);
     if (!extractor) {
         return;

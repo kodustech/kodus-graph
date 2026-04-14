@@ -126,18 +126,14 @@ export const goExtractors: LanguageExtractors = {
             const typeSpec = node.children().find((c) => c.kind() === 'type_spec');
             const structType = typeSpec?.children().find((c) => c.kind() === 'struct_type');
             if (structType) {
-                const fieldDeclList = structType
-                    .children()
-                    .find((c) => c.kind() === 'field_declaration_list');
+                const fieldDeclList = structType.children().find((c) => c.kind() === 'field_declaration_list');
                 if (fieldDeclList) {
                     for (const field of fieldDeclList.children()) {
                         if (field.kind() !== 'field_declaration') continue;
                         const fieldName = field.field('name');
                         const fieldType = field.field('type');
                         if (!fieldName && fieldType) {
-                            const typeId = field
-                                .children()
-                                .find((c) => c.kind() === 'type_identifier');
+                            const typeId = field.children().find((c) => c.kind() === 'type_identifier');
                             if (typeId) {
                                 goExtends = typeId.text();
                                 break;

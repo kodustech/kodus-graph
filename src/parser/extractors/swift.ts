@@ -2,7 +2,16 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractDecorators, extractModifiers, hasTestAnnotation, isExported, isTestByNaming, nodeRange } from './shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractDecorators,
+    extractModifiers,
+    hasTestAnnotation,
+    isExported,
+    isTestByNaming,
+    nodeRange,
+} from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -209,7 +218,13 @@ function swiftReturnType(node: SgNode): string {
         }
         if (afterArrow) {
             const k = child.kind();
-            if (k === 'user_type' || k === 'optional_type' || k === 'tuple_type' || k === 'array_type' || k === 'dictionary_type') {
+            if (
+                k === 'user_type' ||
+                k === 'optional_type' ||
+                k === 'tuple_type' ||
+                k === 'array_type' ||
+                k === 'dictionary_type'
+            ) {
                 return child.text();
             }
         }
@@ -437,7 +452,10 @@ export const swiftExtractors: LanguageExtractors = {
                 const specifiers = classNode.children().filter((c) => c.kind() === 'inheritance_specifier');
                 if (specifiers.length > 0) {
                     const userType = specifiers[0].children().find((c) => c.kind() === 'user_type');
-                    return userType?.children().find((c) => c.kind() === 'type_identifier')?.text();
+                    return userType
+                        ?.children()
+                        .find((c) => c.kind() === 'type_identifier')
+                        ?.text();
                 }
                 return undefined;
             },

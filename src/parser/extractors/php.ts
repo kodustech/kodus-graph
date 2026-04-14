@@ -2,7 +2,15 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractModifiers, extractThrows, isExported, isTestByNaming, nodeRange } from './shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractModifiers,
+    extractThrows,
+    isExported,
+    isTestByNaming,
+    nodeRange,
+} from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -15,9 +23,7 @@ function phpExtends(node: SgNode): string | undefined {
         return undefined;
     }
     // PHP base_clause child is `name` for simple names, `qualified_name` for namespaced ones
-    const name = baseClause
-        .children()
-        .find((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name');
+    const name = baseClause.children().find((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name');
     return name?.text();
 }
 

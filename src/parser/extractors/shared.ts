@@ -137,19 +137,19 @@ export function isExported(name: string, node: SgNode, rules: ExportRules): bool
     if (rules.exportKeywords?.length) {
         // Check parent node (export_statement wrapping the declaration)
         const parent = node.parent();
-        if (parent && rules.exportKeywords.some(kw => String(parent.kind()).includes(kw))) return true;
+        if (parent && rules.exportKeywords.some((kw) => String(parent.kind()).includes(kw))) return true;
         // Check previous siblings
         for (const sib of node.prevAll()) {
-            if (rules.exportKeywords.some(kw => String(sib.kind()) === kw || sib.text() === kw)) return true;
+            if (rules.exportKeywords.some((kw) => String(sib.kind()) === kw || sib.text() === kw)) return true;
         }
     }
 
     // Check modifiers child
     if (rules.modifierKeywords?.length) {
-        const mods = node.children().find(c => String(c.kind()) === 'modifiers');
+        const mods = node.children().find((c) => String(c.kind()) === 'modifiers');
         if (mods) {
             const modText = mods.text();
-            return rules.modifierKeywords.some(kw => modText.includes(kw));
+            return rules.modifierKeywords.some((kw) => modText.includes(kw));
         }
     }
 
@@ -192,7 +192,7 @@ export function extractDecorators(node: SgNode, decoratorKinds: string[]): strin
     }
 
     // Check inside modifiers (Java/Kotlin annotations inside modifiers node)
-    const mods = node.children().find(c => String(c.kind()) === 'modifiers');
+    const mods = node.children().find((c) => String(c.kind()) === 'modifiers');
     if (mods) {
         for (const child of mods.children()) {
             if (decoratorKinds.includes(String(child.kind()))) {
@@ -211,18 +211,23 @@ export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
     const throws: string[] = [];
     if (!throwKinds.length) return throws;
 
-    const body = node.field('body') || node.children().find(c => {
-        const k = String(c.kind());
-        return k === 'statement_block' || k === 'block' ||
-            k === 'function_body' || k === 'compound_statement';
-    });
+    const body =
+        node.field('body') ||
+        node.children().find((c) => {
+            const k = String(c.kind());
+            return k === 'statement_block' || k === 'block' || k === 'function_body' || k === 'compound_statement';
+        });
     if (!body) return throws;
 
     for (const kind of throwKinds) {
         const throwNodes = body.findAll({ rule: { kind } });
         for (const t of throwNodes) {
             // Extract the exception type/name
-            const text = t.text().replace(/^(throw|raise)\s+/, '').replace(/[;(].*/, '').trim();
+            const text = t
+                .text()
+                .replace(/^(throw|raise)\s+/, '')
+                .replace(/[;(].*/, '')
+                .trim();
             if (text && text !== 'error' && !throws.includes(text)) {
                 throws.push(text);
             }

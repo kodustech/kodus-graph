@@ -5,8 +5,8 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
-import { extractDecorators, extractThrows, isAsync, isExported } from './shared';
 import { registerExtractor } from './engine';
+import { extractDecorators, extractThrows, isAsync, isExported } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 export function extractTypeScript(
@@ -139,7 +139,9 @@ export function extractTypeScript(
                 className,
                 qualified: `${fp}::${className}.constructor`,
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(className, classAncestor || node, { exportKeywords: ['export_statement', 'export'] }),
+                is_exported: isExported(className, classAncestor || node, {
+                    exportKeywords: ['export_statement', 'export'],
+                }),
                 is_async: false,
                 decorators: extractDecorators(node, ['decorator']),
                 throws: extractThrows(node, ['throw_statement']),
@@ -444,8 +446,14 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
     return {
         extract(rootNode: SgNode, fp: string): ExtractionResult {
             const tempGraph: RawGraph = {
-                functions: [], classes: [], interfaces: [], enums: [],
-                tests: [], imports: [], reExports: [], rawCalls: [],
+                functions: [],
+                classes: [],
+                interfaces: [],
+                enums: [],
+                tests: [],
+                imports: [],
+                reExports: [],
+                rawCalls: [],
                 diMaps: new Map(),
             };
             const seen = new Set<string>();
@@ -487,9 +495,9 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                     // Test blocks (describe/it/test) — not real functions, but
                     // the engine only creates graph.tests from isTest functions.
                     ...tempGraph.tests
-                        .filter((t) => !tempGraph.functions.some(
-                            (f) => f.name === t.name && f.line_start === t.line_start,
-                        ))
+                        .filter(
+                            (t) => !tempGraph.functions.some((f) => f.name === t.name && f.line_start === t.line_start),
+                        )
                         .map((t) => ({
                             name: t.name,
                             line_start: t.line_start,
@@ -535,9 +543,10 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
                     content_hash: e.content_hash,
                     is_exported: e.is_exported ?? false,
                 })),
-                diEntries: [...(tempGraph.diMaps.get(fp)?.entries() ?? [])].map(
-                    ([k, v]) => ({ fieldName: k, typeName: v }),
-                ),
+                diEntries: [...(tempGraph.diMaps.get(fp)?.entries() ?? [])].map(([k, v]) => ({
+                    fieldName: k,
+                    typeName: v,
+                })),
             };
         },
         extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
@@ -548,7 +557,7 @@ function createTsAdapter(lang: Lang): LanguageExtractors {
 }
 
 const tsAdapter = createTsAdapter(Lang.TypeScript);
-const tsxAdapter = createTsAdapter(Lang.TypeScript);  // TSX uses the same TS extraction
+const tsxAdapter = createTsAdapter(Lang.TypeScript); // TSX uses the same TS extraction
 const jsAdapter = createTsAdapter(Lang.JavaScript);
 
 // Register with the exact strings that getLanguageName / Lang enum produce.

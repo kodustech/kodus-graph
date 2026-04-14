@@ -11,7 +11,10 @@ import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
 import { detectExternal } from './external-detector';
 import { cachedExists } from './fs-cache';
+import { resolve as resolveCImport } from './languages/c';
 import { resolve as resolveCsImport } from './languages/csharp';
+import { resolve as resolveDartImport } from './languages/dart';
+import { resolve as resolveElixirImport } from './languages/elixir';
 import { resolve as resolveGoImport } from './languages/go';
 import { resolve as resolveJavaImport } from './languages/java';
 import { resolve as resolvePhpImport } from './languages/php';
@@ -48,10 +51,15 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
     go: resolveGoImport,
     java: resolveJavaImport,
     kotlin: resolveJavaImport,
+    scala: resolveJavaImport,
     rust: resolveRustImport,
     csharp: resolveCsImport,
     php: resolvePhpImport,
     swift: resolveSwiftImport,
+    dart: resolveDartImport,
+    c: resolveCImport,
+    cpp: resolveCImport,
+    elixir: resolveElixirImport,
 };
 
 /**

@@ -2,7 +2,16 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractDecorators, extractModifiers, hasTestAnnotation, isAsync, isExported, nodeRange } from './shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractDecorators,
+    extractModifiers,
+    hasTestAnnotation,
+    isAsync,
+    isExported,
+    nodeRange,
+} from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -94,7 +103,9 @@ export const rustExtractors: LanguageExtractors = {
                 ast_kind: String(node.kind()),
                 modifiers: '',
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { customCheck: (_n, nd) => nd.children().some(c => String(c.kind()) === 'visibility_modifier') }),
+                is_exported: isExported(name, node, {
+                    customCheck: (_n, nd) => nd.children().some((c) => String(c.kind()) === 'visibility_modifier'),
+                }),
                 decorators: extractDecorators(node, ['attribute_item']),
             });
         }
@@ -126,7 +137,9 @@ export const rustExtractors: LanguageExtractors = {
                 methods: [],
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { customCheck: (_n, nd) => nd.children().some(c => String(c.kind()) === 'visibility_modifier') }),
+                is_exported: isExported(name, node, {
+                    customCheck: (_n, nd) => nd.children().some((c) => String(c.kind()) === 'visibility_modifier'),
+                }),
             });
         }
 
@@ -144,7 +157,9 @@ export const rustExtractors: LanguageExtractors = {
                 line_end: range.line_end,
                 ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { customCheck: (_n, nd) => nd.children().some(c => String(c.kind()) === 'visibility_modifier') }),
+                is_exported: isExported(name, node, {
+                    customCheck: (_n, nd) => nd.children().some((c) => String(c.kind()) === 'visibility_modifier'),
+                }),
             });
         }
 
@@ -183,7 +198,9 @@ export const rustExtractors: LanguageExtractors = {
                 modifiers: funcModifiers,
                 content_hash: computeContentHash(node.text()),
                 isTest,
-                is_exported: isExported(name, node, { customCheck: (_n, nd) => nd.children().some(c => String(c.kind()) === 'visibility_modifier') }),
+                is_exported: isExported(name, node, {
+                    customCheck: (_n, nd) => nd.children().some((c) => String(c.kind()) === 'visibility_modifier'),
+                }),
                 is_async: isAsync(node),
                 decorators: extractDecorators(node, ['attribute_item']),
                 throws: [],

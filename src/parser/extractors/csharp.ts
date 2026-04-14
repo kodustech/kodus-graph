@@ -2,7 +2,15 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, extractDecorators, extractModifiers, extractThrows, hasTestAnnotation, nodeRange } from './shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractDecorators,
+    extractModifiers,
+    extractThrows,
+    hasTestAnnotation,
+    nodeRange,
+} from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
