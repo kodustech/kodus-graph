@@ -8,6 +8,7 @@ import {
     extractDecorators,
     extractModifiers,
     hasTestAnnotation,
+    isAsync,
     isExported,
     isTestByNaming,
     nodeRange,
@@ -160,11 +161,6 @@ const swiftExportRules = {
         return mods.includes('public') || mods.includes('open');
     },
 };
-
-/** Check if a Swift function has the `async` keyword. */
-function swiftIsAsync(node: SgNode): boolean {
-    return node.children().some((c) => c.kind() === 'async');
-}
 
 /** Extract throws from Swift function signature. */
 function swiftThrows(node: SgNode): string[] {
@@ -378,7 +374,7 @@ export const swiftExtractors: LanguageExtractors = {
                 content_hash: computeContentHash(node.text()),
                 isTest,
                 is_exported: isExported(name, node, swiftExportRules),
-                is_async: swiftIsAsync(node),
+                is_async: isAsync(node),
                 decorators: swiftDecorators(node),
                 throws: swiftThrows(node),
             });
@@ -411,7 +407,7 @@ export const swiftExtractors: LanguageExtractors = {
                 content_hash: computeContentHash(node.text()),
                 isTest: false,
                 is_exported: isExported('init', node, swiftExportRules),
-                is_async: swiftIsAsync(node),
+                is_async: isAsync(node),
                 decorators: swiftDecorators(node),
                 throws: swiftThrows(node),
             });

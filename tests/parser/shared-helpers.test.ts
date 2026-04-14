@@ -132,7 +132,7 @@ function validate(x: number) {
 
         const throws = extractThrows(funcNode, ['throw_statement']);
         expect(throws.length).toBeGreaterThan(0);
-        expect(throws[0]).toContain('new ValidationError');
+        expect(throws[0]).toBe('ValidationError');
     });
 
     it('should return empty array when no throws', async () => {

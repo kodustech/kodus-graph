@@ -206,6 +206,12 @@ export function extractDecorators(node: SgNode, decoratorKinds: string[]): strin
 
 /**
  * Extract throw/raise types from a function body.
+ *
+ * Post-processing cleans up raw throw text:
+ * - Strips `new ` prefix: `new Error("msg")` -> `Error`
+ * - Strips arguments: `Error("msg")` -> `Error`
+ * - Skips short names (<=1 char, likely minified): `e`, `yt` -> skip
+ * - Skips generic re-throws: `throw error`, `throw e` -> skip
  */
 export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
     const throws: string[] = [];
@@ -223,12 +229,24 @@ export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
         const throwNodes = body.findAll({ rule: { kind } });
         for (const t of throwNodes) {
             // Extract the exception type/name
-            const text = t
+            let text = t
                 .text()
                 .replace(/^(throw|raise)\s+/, '')
-                .replace(/[;(].*/, '')
+                .replace(/;$/, '')
                 .trim();
-            if (text && text !== 'error' && !throws.includes(text)) {
+
+            // Strip `new ` prefix
+            text = text.replace(/^new\s+/, '');
+
+            // Strip arguments/parens: `Error("msg")` -> `Error`
+            text = text.replace(/\(.*$/, '').trim();
+
+            // Skip empty, generic re-throws, and short/minified names
+            if (!text) continue;
+            if (text.toLowerCase() === 'error') continue;
+            if (text.length <= 2) continue;
+
+            if (!throws.includes(text)) {
                 throws.push(text);
             }
         }
