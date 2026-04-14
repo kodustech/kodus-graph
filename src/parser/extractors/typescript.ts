@@ -1,24 +1,46 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
-import { Lang } from '@ast-grep/napi';
-import type { RawCallSite, RawGraph } from '../../graph/types';
+import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
 import { LANG_KINDS } from '../languages';
 import { registerExtractor } from './engine';
-import { extractDecorators, extractThrows, isAsync, isExported } from './shared';
-import type { ExtractionResult, LanguageExtractors } from './spec';
+import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from './shared';
+import type {
+    ExtractedClass,
+    ExtractedDI,
+    ExtractedEnum,
+    ExtractedFunction,
+    ExtractedImport,
+    ExtractedInterface,
+    ExtractedReExport,
+    ExtractionResult,
+    LanguageExtractors,
+} from './spec';
 
-export function extractTypeScript(
-    root: SgRoot,
-    fp: string,
-    seen: Set<string>,
-    graph: RawGraph,
-    lang: Lang | string = Lang.TypeScript,
-): void {
+// ---------------------------------------------------------------------------
+// Shared constants
+// ---------------------------------------------------------------------------
+
+const EXPORT_RULES = { exportKeywords: ['export_statement', 'export'] } as const;
+const DECORATOR_KINDS = ['decorator'] as const;
+const THROW_KINDS = ['throw_statement'] as const;
+
+// ---------------------------------------------------------------------------
+// Core extraction (returns ExtractionResult directly)
+// ---------------------------------------------------------------------------
+
+function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResult {
     const kinds = LANG_KINDS.typescript;
-    const rootNode = root.root();
-    const isTS = lang === Lang.TypeScript || lang === Lang.Tsx;
+    const seen = new Set<string>();
+
+    const classes: ExtractedClass[] = [];
+    const functions: ExtractedFunction[] = [];
+    const imports: ExtractedImport[] = [];
+    const reExports: ExtractedReExport[] = [];
+    const interfaces: ExtractedInterface[] = [];
+    const enums: ExtractedEnum[] = [];
+    const diEntries: ExtractedDI[] = [];
 
     // ── Classes ──
     const classKinds = isTS ? [kinds.class, kinds.abstractClass] : [kinds.class];
@@ -53,18 +75,17 @@ export function extractTypeScript(
                         .map((c: SgNode) => c.text()) ?? [];
             }
 
-            graph.classes.push({
+            classes.push({
                 name,
-                file: fp,
                 line_start: node.range().start.line,
                 line_end: node.range().end.line,
                 extends: extendsName,
                 implements: implementsNames,
+                modifiers: extractModifiers(node),
                 ast_kind: String(node.kind()),
-                qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
-                decorators: extractDecorators(node, ['decorator']),
+                is_exported: isExported(name, node, EXPORT_RULES),
+                decorators: extractDecorators(node, [...DECORATOR_KINDS]),
             });
         }
     }
@@ -90,7 +111,6 @@ export function extractTypeScript(
 
         if (name === 'constructor' && className) {
             // Constructor DI extraction
-            const fieldTypeMap = new Map<string, string>();
             if (params) {
                 for (const p of params.children()) {
                     if (p.kind() !== 'required_parameter') {
@@ -118,53 +138,48 @@ export function extractTypeScript(
                                           .find((c: SgNode) => c.kind() === 'type_identifier')
                                           ?.text() || typeNode.text()
                                     : typeNode.text();
-                            fieldTypeMap.set(ident.text(), typeName);
+                            diEntries.push({ fieldName: ident.text(), typeName });
                         }
                     }
                 }
             }
-            if (fieldTypeMap.size > 0) {
-                graph.diMaps.set(fp, fieldTypeMap);
-            }
 
-            graph.functions.push({
+            functions.push({
                 name: `${className}.constructor`,
-                file: fp,
                 line_start: line,
                 line_end: node.range().end.line,
                 params: params?.text() || '()',
                 returnType: '',
                 kind: 'Constructor',
-                ast_kind: String(node.kind()),
                 className,
-                qualified: `${fp}::${className}.constructor`,
+                modifiers: extractModifiers(node),
+                ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(className, classAncestor || node, {
-                    exportKeywords: ['export_statement', 'export'],
-                }),
+                isTest: false,
+                is_exported: isExported(className, classAncestor || node, EXPORT_RULES),
                 is_async: false,
-                decorators: extractDecorators(node, ['decorator']),
-                throws: extractThrows(node, ['throw_statement']),
+                decorators: extractDecorators(node, [...DECORATOR_KINDS]),
+                throws: extractThrows(node, [...THROW_KINDS]),
             });
         } else {
-            graph.functions.push({
+            functions.push({
                 name,
-                file: fp,
                 line_start: line,
                 line_end: node.range().end.line,
                 params: params?.text() || '()',
                 returnType: retType,
                 kind: className ? 'Method' : 'Function',
-                ast_kind: String(node.kind()),
                 className,
-                qualified: className ? `${fp}::${className}.${name}` : `${fp}::${name}`,
+                modifiers: extractModifiers(node),
+                ast_kind: String(node.kind()),
                 content_hash: computeContentHash(node.text()),
+                isTest: false,
                 is_exported: className
-                    ? isExported(className, classAncestor || node, { exportKeywords: ['export_statement', 'export'] })
-                    : isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+                    ? isExported(className, classAncestor || node, EXPORT_RULES)
+                    : isExported(name, node, EXPORT_RULES),
                 is_async: isAsync(node),
-                decorators: extractDecorators(node, ['decorator']),
-                throws: extractThrows(node, ['throw_statement']),
+                decorators: extractDecorators(node, [...DECORATOR_KINDS]),
+                throws: extractThrows(node, [...THROW_KINDS]),
             });
         }
     }
@@ -186,22 +201,22 @@ export function extractTypeScript(
         }
         seen.add(`f:${fp}:${name}:${line}`);
 
-        graph.functions.push({
+        functions.push({
             name,
-            file: fp,
             line_start: line,
             line_end: node.range().end.line,
             params: node.field('parameters')?.text() || '()',
             returnType: node.field('return_type')?.text()?.replace(/^:\s*/, '') || '',
             kind: 'Function',
-            ast_kind: String(node.kind()),
             className: '',
-            qualified: `${fp}::${name}`,
+            modifiers: extractModifiers(node),
+            ast_kind: String(node.kind()),
             content_hash: computeContentHash(node.text()),
-            is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+            isTest: false,
+            is_exported: isExported(name, node, EXPORT_RULES),
             is_async: isAsync(node),
-            decorators: extractDecorators(node, ['decorator']),
-            throws: extractThrows(node, ['throw_statement']),
+            decorators: extractDecorators(node, [...DECORATOR_KINDS]),
+            throws: extractThrows(node, [...THROW_KINDS]),
         });
     }
 
@@ -220,25 +235,22 @@ export function extractTypeScript(
         seen.add(`f:${fp}:${name}:${line}`);
 
         const arrow = node.children().find((c: SgNode) => c.kind() === kinds.arrowFunction);
-        // For arrow functions, check the variable_declarator's parent (lexical_declaration)
-        // for export_statement wrapping
-        const arrowExported = isExported(name, node, { exportKeywords: ['export_statement', 'export'] });
-        graph.functions.push({
+        functions.push({
             name,
-            file: fp,
             line_start: line,
             line_end: node.range().end.line,
             params: arrow?.field('parameters')?.text() || '()',
             returnType: arrow?.field('return_type')?.text()?.replace(/^:\s*/, '') || '',
             kind: 'Function',
-            ast_kind: 'arrow_function',
             className: '',
-            qualified: `${fp}::${name}`,
+            modifiers: '',
+            ast_kind: 'arrow_function',
             content_hash: computeContentHash(node.text()),
-            is_exported: arrowExported,
+            isTest: false,
+            is_exported: isExported(name, node, EXPORT_RULES),
             is_async: arrow ? isAsync(arrow) : false,
             decorators: [],
-            throws: arrow ? extractThrows(arrow, ['throw_statement']) : [],
+            throws: arrow ? extractThrows(arrow, [...THROW_KINDS]) : [],
         });
     }
 
@@ -262,16 +274,14 @@ export function extractTypeScript(
                 }
             }
 
-            graph.interfaces.push({
+            interfaces.push({
                 name,
-                file: fp,
                 line_start: node.range().start.line,
                 line_end: node.range().end.line,
                 methods,
                 ast_kind: String(node.kind()),
-                qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+                is_exported: isExported(name, node, EXPORT_RULES),
             });
         }
     }
@@ -284,15 +294,13 @@ export function extractTypeScript(
                 continue;
             }
             seen.add(`e:${fp}:${name}`);
-            graph.enums.push({
+            enums.push({
                 name,
-                file: fp,
                 line_start: node.range().start.line,
                 line_end: node.range().end.line,
                 ast_kind: String(node.kind()),
-                qualified: `${fp}::${name}`,
                 content_hash: computeContentHash(node.text()),
-                is_exported: isExported(name, node, { exportKeywords: ['export_statement', 'export'] }),
+                is_exported: isExported(name, node, EXPORT_RULES),
             });
         }
     }
@@ -332,9 +340,8 @@ export function extractTypeScript(
                 }
             }
         }
-        graph.imports.push({
+        imports.push({
             module: modulePath,
-            file: fp,
             line: node.range().start.line,
             names,
             lang: 'ts',
@@ -346,9 +353,8 @@ export function extractTypeScript(
         const src = node.children().find((c: SgNode) => c.kind() === 'string');
         if (src) {
             const frag = src.children().find((c: SgNode) => c.kind() === 'string_fragment');
-            graph.reExports.push({
+            reExports.push({
                 module: frag?.text() || src.text().replace(/['"]/g, ''),
-                file: fp,
                 line: node.range().start.line,
             });
         }
@@ -373,20 +379,39 @@ export function extractTypeScript(
                 continue;
             }
             seen.add(key);
-            graph.tests.push({
-                name,
-                file: fp,
-                line_start: m.range().start.line,
-                line_end: m.range().end.line,
-                ast_kind: String(m.kind()),
-                qualified: `${fp}::test:${name}`,
-                content_hash: computeContentHash(m.text()),
-            });
+            // Emit test blocks as functions with isTest=true so the engine
+            // creates graph.tests entries.
+            // Skip if an identical function was already extracted at the same location.
+            const duplicate = functions.some((f) => f.name === name && f.line_start === m.range().start.line);
+            if (!duplicate) {
+                functions.push({
+                    name,
+                    line_start: m.range().start.line,
+                    line_end: m.range().end.line,
+                    params: '',
+                    returnType: '',
+                    kind: 'Function',
+                    className: '',
+                    modifiers: '',
+                    ast_kind: String(m.kind()),
+                    content_hash: computeContentHash(m.text()),
+                    isTest: true,
+                    is_exported: false,
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
+                });
+            }
         }
     }
+
+    return { classes, functions, imports, reExports, interfaces, enums, diEntries };
 }
 
-/** TypeScript-specific call extraction config for shared extractCalls(). */
+// ---------------------------------------------------------------------------
+// TypeScript-specific call extraction config for shared extractCalls()
+// ---------------------------------------------------------------------------
+
 const TS_CALL_CONFIG: CallExtractionConfig = {
     selfPrefixes: ['this.'],
     superPrefixes: ['super.'],
@@ -407,18 +432,11 @@ const TS_CALL_CONFIG: CallExtractionConfig = {
             )
             ?.text();
     },
-    // Skip this.field.method — already handled by the DI pattern above
+    // Skip this.field.method — already handled by the DI pattern
     skipCallee: (callee) => callee.startsWith('this.') && callee.substring(5).includes('.'),
 };
 
-/**
- * Extract raw call sites from a TypeScript/JavaScript AST.
- * Finds DI calls (this.field.method) and direct calls ($CALLEE($$$ARGS)).
- * Filters NOISE. Does NOT resolve — just collects raw sites.
- */
-export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawCallSite[]): void {
-    const rootNode = root.root();
-
+function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
     // DI pattern: this.$FIELD.$METHOD($$$ARGS)
     for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
         const field = m.getMatch('FIELD')?.text();
@@ -439,129 +457,38 @@ export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawC
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: wraps the existing push-to-graph functions into LanguageExtractors
+// Backward-compat export used by tests/parser/call-extraction.test.ts
 // ---------------------------------------------------------------------------
 
-function createTsAdapter(lang: Lang): LanguageExtractors {
+/**
+ * Extract raw call sites from a TypeScript/JavaScript AST.
+ * Finds DI calls (this.field.method) and direct calls ($CALLEE($$$ARGS)).
+ * Filters NOISE. Does NOT resolve — just collects raw sites.
+ */
+export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawCallSite[]): void {
+    extractCallsTS(root.root(), fp, calls);
+}
+
+// ---------------------------------------------------------------------------
+// LanguageExtractors implementations
+// ---------------------------------------------------------------------------
+
+function createTsExtractors(isTS: boolean): LanguageExtractors {
     return {
         extract(rootNode: SgNode, fp: string): ExtractionResult {
-            const tempGraph: RawGraph = {
-                functions: [],
-                classes: [],
-                interfaces: [],
-                enums: [],
-                tests: [],
-                imports: [],
-                reExports: [],
-                rawCalls: [],
-                diMaps: new Map(),
-            };
-            const seen = new Set<string>();
-            const fakeRoot = { root: () => rootNode } as SgRoot;
-
-            extractTypeScript(fakeRoot, fp, seen, tempGraph, lang);
-
-            return {
-                classes: tempGraph.classes.map((c) => ({
-                    name: c.name,
-                    line_start: c.line_start,
-                    line_end: c.line_end,
-                    extends: c.extends,
-                    implements: c.implements,
-                    modifiers: c.modifiers || '',
-                    ast_kind: c.ast_kind,
-                    content_hash: c.content_hash,
-                    is_exported: c.is_exported ?? false,
-                    decorators: c.decorators ?? [],
-                })),
-                functions: [
-                    ...tempGraph.functions.map((f) => ({
-                        name: f.name,
-                        line_start: f.line_start,
-                        line_end: f.line_end,
-                        params: f.params,
-                        returnType: f.returnType,
-                        kind: f.kind,
-                        className: f.className,
-                        modifiers: f.modifiers || '',
-                        ast_kind: f.ast_kind,
-                        content_hash: f.content_hash,
-                        isTest: false,
-                        is_exported: f.is_exported ?? false,
-                        is_async: f.is_async ?? false,
-                        decorators: f.decorators ?? [],
-                        throws: f.throws ?? [],
-                    })),
-                    // Test blocks (describe/it/test) — not real functions, but
-                    // the engine only creates graph.tests from isTest functions.
-                    ...tempGraph.tests
-                        .filter(
-                            (t) => !tempGraph.functions.some((f) => f.name === t.name && f.line_start === t.line_start),
-                        )
-                        .map((t) => ({
-                            name: t.name,
-                            line_start: t.line_start,
-                            line_end: t.line_end,
-                            params: '',
-                            returnType: '',
-                            kind: 'Function' as const,
-                            className: '',
-                            modifiers: '',
-                            ast_kind: t.ast_kind,
-                            content_hash: t.content_hash,
-                            isTest: true,
-                            is_exported: false,
-                            is_async: false,
-                            decorators: [] as string[],
-                            throws: [] as string[],
-                        })),
-                ],
-                imports: tempGraph.imports.map((i) => ({
-                    module: i.module,
-                    line: i.line,
-                    names: i.names,
-                    lang: i.lang,
-                })),
-                reExports: tempGraph.reExports.map((r) => ({
-                    module: r.module,
-                    line: r.line,
-                })),
-                interfaces: tempGraph.interfaces.map((i) => ({
-                    name: i.name,
-                    line_start: i.line_start,
-                    line_end: i.line_end,
-                    methods: i.methods,
-                    ast_kind: i.ast_kind,
-                    content_hash: i.content_hash,
-                    is_exported: i.is_exported ?? false,
-                })),
-                enums: tempGraph.enums.map((e) => ({
-                    name: e.name,
-                    line_start: e.line_start,
-                    line_end: e.line_end,
-                    ast_kind: e.ast_kind,
-                    content_hash: e.content_hash,
-                    is_exported: e.is_exported ?? false,
-                })),
-                diEntries: [...(tempGraph.diMaps.get(fp)?.entries() ?? [])].map(([k, v]) => ({
-                    fieldName: k,
-                    typeName: v,
-                })),
-            };
+            return extractTS(rootNode, fp, isTS);
         },
         extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
-            const fakeRoot = { root: () => rootNode } as SgRoot;
-            extractCallsFromTypeScript(fakeRoot, fp, calls);
+            extractCallsTS(rootNode, fp, calls);
         },
     };
 }
 
-const tsAdapter = createTsAdapter(Lang.TypeScript);
-const tsxAdapter = createTsAdapter(Lang.TypeScript); // TSX uses the same TS extraction
-const jsAdapter = createTsAdapter(Lang.JavaScript);
+const tsExtractors = createTsExtractors(true);
+const jsExtractors = createTsExtractors(false);
 
 // Register with the exact strings that getLanguageName / Lang enum produce.
 // Lang.TypeScript === "TypeScript", Lang.Tsx === "Tsx", Lang.JavaScript === "JavaScript"
-registerExtractor('TypeScript', tsAdapter);
-registerExtractor('Tsx', tsxAdapter);
-registerExtractor('JavaScript', jsAdapter);
+registerExtractor('TypeScript', tsExtractors);
+registerExtractor('Tsx', tsExtractors);
+registerExtractor('JavaScript', jsExtractors);
