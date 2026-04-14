@@ -8,9 +8,14 @@ Code graph builder for Kodus code review. Parses source code into structural gra
 
 ## Features
 
-- **Multi-language** — TypeScript, Python, Go, Java, Ruby, Rust, C#, PHP
+- **14 languages** — TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir
 - **Structural graph** — Functions, classes, interfaces, enums as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS as edges
 - **Call resolution** — 5-tier confidence cascade with DI pattern detection
+- **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits)
+- **Function-level blast radius** — Impact analysis per function, not per file
+- **Smart import resolution** — tsconfig extends/rootDirs/project references, monorepo workspace exports, package.json `#imports`, Webpack/Vite aliases, Go workspaces/vendor, Maven/Gradle multi-module, Cargo workspace path deps
+- **External package detection** — Distinguishes internal code from npm, pip, Maven, Cargo, etc.
+- **Composable extractors** — Dedicated per-language extractor files for easy extension
 - **Incremental parsing** — Content hashing skips unchanged files
 - **Streaming JSON** — Memory-efficient output for large codebases
 
@@ -61,6 +66,9 @@ kodus-graph parse --files src/auth.ts src/db.ts --repo-dir . --out graph.json
 kodus-graph parse --all --repo-dir . --out graph.json \
   --include "src/**/*.ts" \
   --exclude "**/*.test.ts" "**/*.spec.ts"
+
+# Limit memory usage (useful in CI/sandbox environments)
+kodus-graph parse --all --repo-dir . --out graph.json --max-memory 512
 ```
 
 **Output:** JSON with `metadata`, `nodes`, and `edges`. See [example output](examples/parse-output.json).
@@ -101,7 +109,9 @@ kodus-graph context \
   --out context.txt \
   --format prompt \
   --min-confidence 0.5 \
-  --max-depth 3
+  --max-depth 3 \
+  --max-functions 50 \
+  --max-prompt-chars 80000
 ```
 
 **Output:** Enriched functions with callers, callees, affected flows, risk level. See [example output](examples/context-output.json).
@@ -184,6 +194,10 @@ kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 | `line_start` / `line_end` | `number` | Source location |
 | `language` | `string` | Source language |
 | `is_test` | `boolean` | Whether it's a test function |
+| `is_exported` | `boolean` | Whether the function/class is publicly accessible |
+| `is_async` | `boolean` | Whether the function is async |
+| `decorators` | `string[]` | Annotations/decorators (e.g., `@Injectable`, `@Test`) |
+| `throws` | `string[]` | Exception types thrown by the function |
 
 ### Edges
 
@@ -222,10 +236,10 @@ Source Code → Parser → Resolver → Graph → Analysis
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| **Parser** | `src/parser/` | AST extraction via ast-grep (functions, classes, imports, tests) |
-| **Resolver** | `src/resolver/` | Import resolution, call resolution, symbol table |
-| **Graph** | `src/graph/` | Node/edge building, incremental merging, JSON output |
-| **Analysis** | `src/analysis/` | Blast radius, risk score, test gaps, flows, context |
+| **Parser** | `src/parser/` | AST extraction via ast-grep; composable per-language extractors (one file per language) |
+| **Resolver** | `src/resolver/` | Import resolution (tsconfig, workspaces, aliases), call resolution, symbol table, external package detection |
+| **Graph** | `src/graph/` | Node/edge building, incremental merging, contract diffs, filesystem existence cache |
+| **Analysis** | `src/analysis/` | Function-level blast radius, risk score, test gaps, flows, context |
 
 ## Development
 
