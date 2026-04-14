@@ -1214,3 +1214,201 @@ describe('new fields – Ruby', () => {
         expect(fn!.is_async).toBeFalsy();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Swift
+// ---------------------------------------------------------------------------
+
+describe('extractGeneric – Swift', () => {
+    test('extracts UserService class with extends and implements from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.ast_kind).toBe('class_declaration');
+        expect(userService!.extends).toBe('BaseService');
+        expect(userService!.implements).toContain('Repository');
+    });
+
+    test('extracts struct UserDTO as class from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const userDto = graph.classes.find((c) => c.name === 'UserDTO');
+        expect(userDto).toBeDefined();
+        expect(userDto!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts Repository protocol as interface from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const repo = graph.interfaces.find((i) => i.name === 'Repository');
+        expect(repo).toBeDefined();
+        expect(repo!.ast_kind).toBe('protocol_declaration');
+        expect(repo!.methods).toContain('find');
+        expect(repo!.methods).toContain('save');
+    });
+
+    test('extracts UserStatus enum from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const statusEnum = graph.enums.find((e) => e.name === 'UserStatus');
+        expect(statusEnum).toBeDefined();
+        expect(statusEnum!.ast_kind).toBe('class_declaration');
+    });
+
+    test('extracts functions from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        expect(graph.functions.some((f) => f.name === 'getUser')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'validate')).toBe(true);
+        expect(graph.functions.some((f) => f.name === 'createService')).toBe(true);
+    });
+
+    test('extracts init as Constructor from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const initFunc = graph.functions.find((f) => f.name === 'init');
+        expect(initFunc).toBeDefined();
+        expect(initFunc!.kind).toBe('Constructor');
+        expect(initFunc!.className).toBe('UserService');
+        expect(initFunc!.ast_kind).toBe('init_declaration');
+    });
+
+    test('methods inside class have className set', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.className).toBe('UserService');
+        expect(getUser!.kind).toBe('Method');
+    });
+
+    test('standalone function has no className', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const createService = graph.functions.find((f) => f.name === 'createService');
+        expect(createService).toBeDefined();
+        expect(createService!.className).toBe('');
+        expect(createService!.kind).toBe('Function');
+    });
+
+    test('extracts imports from Sample.swift', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        expect(graph.imports.length).toBeGreaterThanOrEqual(2);
+        expect(graph.imports.some((i) => i.module === 'Foundation')).toBe(true);
+        expect(graph.imports.some((i) => i.module === 'UIKit')).toBe(true);
+    });
+
+    test('detects async function', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.is_async).toBe(true);
+
+        const validate = graph.functions.find((f) => f.name === 'validate');
+        expect(validate).toBeDefined();
+        expect(validate!.is_async).toBeFalsy();
+    });
+
+    test('detects throws in function', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.throws).toContain('throws');
+    });
+
+    test('detects is_exported for public/open declarations', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        // UserService is open → exported
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.is_exported).toBe(true);
+
+        // getUser is public → exported
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.is_exported).toBe(true);
+
+        // validate is internal → not exported
+        const validate = graph.functions.find((f) => f.name === 'validate');
+        expect(validate).toBeDefined();
+        expect(validate!.is_exported).toBeFalsy();
+
+        // createService has no modifier → internal by default → not exported
+        const createService = graph.functions.find((f) => f.name === 'createService');
+        expect(createService).toBeDefined();
+        expect(createService!.is_exported).toBeFalsy();
+    });
+
+    test('extracts decorators/attributes', async () => {
+        const fp = join(FIXTURES, 'swift/Sample.swift');
+        const code = readFileSync(fp, 'utf-8');
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'swift', new Set(), graph);
+
+        // UserService has @objc
+        const userService = graph.classes.find((c) => c.name === 'UserService');
+        expect(userService).toBeDefined();
+        expect(userService!.decorators).toBeDefined();
+        expect(userService!.decorators!.some((d) => d.includes('@objc'))).toBe(true);
+
+        // getUser has @discardableResult
+        const getUser = graph.functions.find((f) => f.name === 'getUser');
+        expect(getUser).toBeDefined();
+        expect(getUser!.decorators).toBeDefined();
+        expect(getUser!.decorators!.some((d) => d.includes('@discardableResult'))).toBe(true);
+    });
+});

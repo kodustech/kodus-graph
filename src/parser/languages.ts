@@ -6,12 +6,13 @@ import php from '@ast-grep/lang-php';
 import python from '@ast-grep/lang-python';
 import ruby from '@ast-grep/lang-ruby';
 import rust from '@ast-grep/lang-rust';
+import swift from '@ast-grep/lang-swift';
 import type { SgNode } from '@ast-grep/napi';
 import { Lang, registerDynamicLanguage } from '@ast-grep/napi';
 
 // Register dynamic languages at import time (side effect).
 // This must happen before parseAsync can parse these languages.
-registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp, kotlin });
+registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp, kotlin, swift });
 
 // ---------------------------------------------------------------------------
 // LangConfig types
@@ -68,6 +69,7 @@ const EXT_TO_LANG: Record<string, Lang | string> = {
     '.php': 'php',
     '.kt': 'kotlin',
     '.kts': 'kotlin',
+    '.swift': 'swift',
 };
 
 export function getLanguage(ext: string): Lang | string | null {
@@ -319,6 +321,61 @@ const phpConfig: LangConfig = {
     },
 };
 
+const swiftConfig: LangConfig = {
+    // Swift uses class_declaration for classes, structs, and enums.
+    // Disambiguation is handled in the extractor using child node checks
+    // (similar to how Kotlin disambiguates class vs interface vs enum).
+    class: ['class_declaration'],
+    interface: ['protocol_declaration'],
+    function: ['function_declaration'],
+    constructorKinds: ['init_declaration'],
+    enum: ['class_declaration'],
+    import: ['import_declaration'],
+    heritage: {
+        extends: (node: SgNode) => {
+            // Only classes can have superclasses in Swift
+            const children = node.children();
+            if (children.some((c) => c.kind() === 'struct') || children.some((c) => c.kind() === 'enum')) {
+                return undefined;
+            }
+            const specifiers = children.filter((c) => c.kind() === 'inheritance_specifier');
+            if (specifiers.length === 0) {
+                return undefined;
+            }
+            const first = specifiers[0];
+            const userType = first.children().find((c: SgNode) => c.kind() === 'user_type');
+            const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+            return typeId?.text();
+        },
+        implements: (node: SgNode) => {
+            const children = node.children();
+            const isClass = !children.some((c) => c.kind() === 'struct') && !children.some((c) => c.kind() === 'enum');
+            const specifiers = children.filter((c) => c.kind() === 'inheritance_specifier');
+            if (specifiers.length === 0) {
+                return [];
+            }
+            // For classes, skip the first (superclass). For structs, all are protocols.
+            const startIdx = isClass && specifiers.length > 1 ? 1 : 0;
+            if (isClass && specifiers.length === 1) {
+                return [];
+            }
+            const protocols: string[] = [];
+            for (let i = startIdx; i < specifiers.length; i++) {
+                const userType = specifiers[i].children().find((c: SgNode) => c.kind() === 'user_type');
+                const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+                if (typeId) {
+                    protocols.push(typeId.text());
+                }
+            }
+            return protocols;
+        },
+    },
+    tests: {
+        filePatterns: [/Tests?\.swift$/, /test/i],
+        funcPatterns: [/^test/i],
+    },
+};
+
 // ---------------------------------------------------------------------------
 // LANG_CONFIGS export
 // ---------------------------------------------------------------------------
@@ -333,6 +390,7 @@ export const LANG_CONFIGS: Record<string, LangConfig> = {
     csharp: csharpConfig,
     php: phpConfig,
     kotlin: kotlinConfig,
+    swift: swiftConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -422,6 +480,12 @@ export const LANG_KINDS: Record<string, Record<string, string>> = {
         annotation: 'annotation',
         object: 'object_declaration',
         companionObject: 'companion_object',
+    },
+    swift: {
+        ...derivedKinds(swiftConfig),
+        protocol: 'protocol_declaration',
+        attribute: 'attribute',
+        initDecl: 'init_declaration',
     },
 };
 

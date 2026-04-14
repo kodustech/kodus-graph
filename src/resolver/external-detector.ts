@@ -301,6 +301,27 @@ const KOTLIN_STDLIB_PREFIXES = ['kotlin.', 'kotlinx.', ...JAVA_STDLIB_PREFIXES];
 
 const RUST_STDLIB_CRATES = new Set(['std', 'core', 'alloc']);
 
+const SWIFT_FRAMEWORKS = new Set([
+    'Foundation', 'Swift', 'SwiftUI', 'Combine', 'Observation',
+    'UIKit', 'AppKit', 'WatchKit', 'WidgetKit',
+    'CoreData', 'SwiftData', 'CloudKit',
+    'Network', 'WebKit',
+    'AVFoundation', 'AVKit', 'CoreGraphics', 'CoreImage', 'CoreAnimation',
+    'QuartzCore', 'Metal', 'MetalKit', 'SpriteKit', 'SceneKit',
+    'RealityKit', 'ARKit', 'Vision', 'CoreML', 'CreateML', 'NaturalLanguage',
+    'CoreLocation', 'MapKit',
+    'CoreBluetooth', 'CoreMotion', 'CoreTelephony', 'CoreNFC',
+    'LocalAuthentication', 'Security', 'CryptoKit',
+    'UserNotifications', 'BackgroundTasks',
+    'Accessibility',
+    'StoreKit', 'GameKit', 'HealthKit', 'HomeKit', 'EventKit',
+    'Contacts', 'ContactsUI', 'MessageUI', 'Messages',
+    'MultipeerConnectivity', 'Photos', 'PhotosUI',
+    'XCTest', 'Testing',
+    'os', 'Darwin', 'Dispatch', 'ObjectiveC', 'PlaygroundSupport',
+    'PackageDescription',
+]);
+
 // ---------------------------------------------------------------------------
 // Manifest parsers
 // ---------------------------------------------------------------------------
@@ -540,6 +561,31 @@ function loadRubyDeps(repoRoot: string): LangDeps {
     return { packages: pkgs };
 }
 
+function loadSwiftDeps(repoRoot: string): LangDeps {
+    const pkgs = new Set<string>();
+    const packageSwift = safeRead(join(repoRoot, 'Package.swift'));
+    if (packageSwift) {
+        // Extract SPM dependencies from Package.swift
+        // Matches: .package(url: "https://github.com/org/Name.git", ...) or .package(name: "Name", ...)
+        const urlRegex = /\.package\(\s*(?:name:\s*"([^"]+)",\s*)?url:\s*"([^"]+)"/g;
+        let m: RegExpExecArray | null = urlRegex.exec(packageSwift);
+        while (m !== null) {
+            if (m[1]) {
+                pkgs.add(m[1]);
+            } else if (m[2]) {
+                // Extract package name from URL: https://github.com/org/Name.git -> Name
+                const urlParts = m[2].replace(/\.git$/, '').split('/');
+                const name = urlParts[urlParts.length - 1];
+                if (name) {
+                    pkgs.add(name);
+                }
+            }
+            m = urlRegex.exec(packageSwift);
+        }
+    }
+    return { packages: pkgs };
+}
+
 function loadCsharpDeps(repoRoot: string): LangDeps {
     const pkgs = new Set<string>();
     // Find .csproj files at root or one level deep
@@ -625,6 +671,11 @@ function loadDeps(repoRoot: string): Map<string, LangDeps> {
     // Ruby
     if (cachedExists(join(repoRoot, 'Gemfile'))) {
         result.set('ruby', loadRubyDeps(repoRoot));
+    }
+
+    // Swift
+    if (cachedExists(join(repoRoot, 'Package.swift'))) {
+        result.set('swift', loadSwiftDeps(repoRoot));
     }
 
     // C#
@@ -937,6 +988,26 @@ export function detectExternal(modulePath: string, lang: string, repoRoot: strin
             if (modulePath.startsWith(dep)) {
                 return dep;
             }
+        }
+
+        return null;
+    }
+
+    // ----- Swift -----
+    if (langKey === 'swift') {
+        // Framework/system imports
+        if (SWIFT_FRAMEWORKS.has(modulePath)) {
+            return modulePath;
+        }
+
+        const deps = loadDeps(repoRoot);
+        const langDeps = deps.get('swift');
+        if (!langDeps) {
+            return null;
+        }
+
+        if (langDeps.packages.has(modulePath)) {
+            return modulePath;
         }
 
         return null;

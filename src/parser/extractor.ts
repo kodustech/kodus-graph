@@ -14,6 +14,7 @@ import './extractors/php';
 import './extractors/typescript';
 import './extractors/python';
 import './extractors/ruby';
+import './extractors/swift';
 
 export function extractFromFile(
     root: SgRoot,

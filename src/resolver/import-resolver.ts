@@ -18,6 +18,7 @@ import { resolve as resolvePhpImport } from './languages/php';
 import { resolve as resolvePyImport } from './languages/python';
 import { resolve as resolveRbImport } from './languages/ruby';
 import { resolve as resolveRustImport } from './languages/rust';
+import { resolve as resolveSwiftImport } from './languages/swift';
 import {
     loadBundlerAliases,
     loadTsconfigAliases,
@@ -50,6 +51,7 @@ const RESOLVERS: Record<string, (from: string, mod: string, root: string) => str
     rust: resolveRustImport,
     csharp: resolveCsImport,
     php: resolvePhpImport,
+    swift: resolveSwiftImport,
 };
 
 /**
