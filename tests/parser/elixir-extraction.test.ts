@@ -255,3 +255,94 @@ end
         expect(helper).toBeDefined();
     });
 });
+
+describe('new fields – Elixir', () => {
+    test('def has is_exported=true', async () => {
+        const code = [
+            'defmodule Svc do',
+            '  def public_fn(x), do: x',
+            'end',
+        ].join('\n');
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'public_fn');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('defp has is_exported=false', async () => {
+        const code = [
+            'defmodule Svc do',
+            '  defp private_fn(x), do: x',
+            'end',
+        ].join('\n');
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'private_fn');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('defmodule class is exported', async () => {
+        const code = 'defmodule MyApp.Svc do\nend';
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'MyApp.Svc');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('Elixir function has is_async=false (uses processes, not async)', async () => {
+        const code = [
+            'defmodule Svc do',
+            '  def run(x), do: x',
+            'end',
+        ].join('\n');
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('Elixir function has no decorators (module attributes are not decorators)', async () => {
+        const code = [
+            'defmodule Svc do',
+            '  @doc "Runs something"',
+            '  def run(x), do: x',
+            'end',
+        ].join('\n');
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators ?? []).toEqual([]);
+    });
+
+    test('Elixir function has empty throws (no throws concept)', async () => {
+        const code = [
+            'defmodule Svc do',
+            '  def fail do',
+            '    raise ArgumentError, "x"',
+            '  end',
+            'end',
+        ].join('\n');
+        const root = await parseAsync('elixir', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fail');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});

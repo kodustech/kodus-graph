@@ -1725,3 +1725,295 @@ describe('extractGeneric – Scala', () => {
         }
     });
 });
+
+describe('new fields – Swift', () => {
+    test('public func has is_exported=true', async () => {
+        const code = 'public func getUser() {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('open class has is_exported=true', async () => {
+        const code = 'open class UserService {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('private func has is_exported=false', async () => {
+        const code = 'private func helper() {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('async func has is_async=true', async () => {
+        const code = 'public func fetchData() async -> String { return "" }';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetchData');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBe(true);
+    });
+
+    test('non-async func has is_async=false', async () => {
+        const code = 'public func syncFunc() {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'syncFunc');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('@objc attribute is captured in decorators', async () => {
+        const code = '@objc\nopen class UserService {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.decorators).toBeDefined();
+        expect(cls!.decorators!.some((d) => d.includes('@objc'))).toBe(true);
+    });
+
+    test('@discardableResult attribute is captured in decorators', async () => {
+        const code = '@discardableResult\npublic func getUser() -> Int { return 0 }';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators!.some((d) => d.includes('@discardableResult'))).toBe(true);
+    });
+
+    test('throws keyword is captured in throws', async () => {
+        const code = 'public func getUser() throws -> String { return "" }';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.throws).toBeDefined();
+        expect(fn!.throws).toContain('throws');
+    });
+
+    test('non-throwing func has empty throws', async () => {
+        const code = 'public func noThrow() {}';
+        const root = await parseAsync('swift', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.swift', 'swift', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'noThrow');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});
+
+describe('new fields – Dart', () => {
+    test('name without underscore prefix has is_exported=true', async () => {
+        const code = 'void getUser() {}';
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('name with underscore prefix has is_exported=false', async () => {
+        const code = 'void _helper() {}';
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === '_helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('public class has is_exported=true', async () => {
+        const code = 'class UserService {}';
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'UserService');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('async function has is_async=true', async () => {
+        const code = 'Future<void> fetchData() async { return; }';
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetchData');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBe(true);
+    });
+
+    test('@override decorator is captured', async () => {
+        const code = [
+            'class Svc {',
+            '  @override',
+            '  void run() {}',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators).toContain('@override');
+    });
+
+    test('@protected decorator is captured', async () => {
+        const code = [
+            'class Svc {',
+            '  @protected',
+            '  void _validate() {}',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === '_validate');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators).toContain('@protected');
+    });
+
+    test('Dart has no throws concept — throws is always empty', async () => {
+        const code = [
+            'void fail() {',
+            '  throw ArgumentError("x");',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('dart', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fail');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});
+
+describe('new fields – Scala', () => {
+    test('public method (default, no modifier) has is_exported=true', async () => {
+        const code = 'class Svc { def getUser(): String = "x" }';
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'getUser');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('private method has is_exported=false', async () => {
+        const code = 'class Svc { private def helper(): Unit = () }';
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('protected method has is_exported=false', async () => {
+        const code = 'class Svc { protected def guarded(): Unit = () }';
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'guarded');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('is_async is always false for Scala (uses Futures, no async keyword)', async () => {
+        const code = 'class Svc { def fetchData(): Future[String] = Future("x") }';
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fetchData');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('@deprecated annotation is captured in decorators', async () => {
+        const code = [
+            'class Svc {',
+            '  @deprecated("use newApi", "2.0")',
+            '  def oldApi(): Unit = ()',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'oldApi');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators!.some((d) => d.includes('@deprecated'))).toBe(true);
+    });
+
+    test('@throws annotation is captured in both decorators and throws', async () => {
+        const code = [
+            'class Svc {',
+            '  @throws[IOException]',
+            '  def readFile(): String = ""',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'readFile');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators).toBeDefined();
+        expect(fn!.decorators!.some((d) => d.includes('@throws'))).toBe(true);
+        expect(fn!.throws).toBeDefined();
+        expect(fn!.throws).toContain('IOException');
+    });
+
+    test('method without @throws has empty throws', async () => {
+        const code = 'class Svc { def noThrow(): Unit = () }';
+        const root = await parseAsync('scala', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'noThrow');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});

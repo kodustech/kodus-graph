@@ -341,3 +341,173 @@ describe('C++ extractor – sample.hpp (header file)', () => {
         expect(config!.ast_kind).toBe('struct_specifier');
     });
 });
+
+// ---------------------------------------------------------------------------
+// new fields – C
+// ---------------------------------------------------------------------------
+
+describe('new fields – C', () => {
+    test('static function in .c file has is_exported=false', async () => {
+        const code = 'static int helper(int x) { return x; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.c', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('non-static function in .c file is not exported by default', async () => {
+        const code = 'int add(int a, int b) { return a + b; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.c', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'add');
+        expect(fn).toBeDefined();
+        // Only header declarations are treated as exported
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('function defined in header (.h) is exported', async () => {
+        const code = 'int add(int a, int b) { return a + b; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.h', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'add');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('C function has is_async=false (no native async)', async () => {
+        const code = 'int add(int a, int b) { return a + b; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.c', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'add');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('C function has no decorators', async () => {
+        const code = 'int add(int a, int b) { return a + b; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.c', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'add');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators ?? []).toEqual([]);
+    });
+
+    test('C function has empty throws (no throws concept)', async () => {
+        const code = 'int add(int a, int b) { return a + b; }';
+        const root = await parseAsync('c', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.c', 'c', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'add');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// new fields – C++
+// ---------------------------------------------------------------------------
+
+describe('new fields – C++', () => {
+    test('public class method has is_exported=true', async () => {
+        const code = [
+            'class Svc {',
+            'public:',
+            '    void run() {}',
+            '};',
+        ].join('\n');
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBe(true);
+    });
+
+    test('private class method has is_exported=false', async () => {
+        const code = [
+            'class Svc {',
+            'private:',
+            '    void helper() {}',
+            '};',
+        ].join('\n');
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('static free function has is_exported=false', async () => {
+        const code = 'static void internal_helper() {}';
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'internal_helper');
+        expect(fn).toBeDefined();
+        expect(fn!.is_exported).toBeFalsy();
+    });
+
+    test('class in header file (.hpp) has is_exported=true', async () => {
+        const code = 'class Shape {};';
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.hpp', 'cpp', new Set(), graph);
+
+        const cls = graph.classes.find((c) => c.name === 'Shape');
+        expect(cls).toBeDefined();
+        expect(cls!.is_exported).toBe(true);
+    });
+
+    test('C++ function has is_async=false (no native async)', async () => {
+        const code = 'void run() {}';
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.is_async).toBeFalsy();
+    });
+
+    test('C++ function has no decorators', async () => {
+        const code = 'void run() {}';
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'run');
+        expect(fn).toBeDefined();
+        expect(fn!.decorators ?? []).toEqual([]);
+    });
+
+    test('C++ function has empty throws (exception specs deprecated)', async () => {
+        const code = [
+            'void fail() {',
+            '    throw std::invalid_argument("x");',
+            '}',
+        ].join('\n');
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
+
+        const fn = graph.functions.find((f) => f.name === 'fail');
+        expect(fn).toBeDefined();
+        expect(fn!.throws ?? []).toEqual([]);
+    });
+});
