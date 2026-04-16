@@ -1,27 +1,22 @@
 {
   "blast_radius": {
-    "total_functions": 9,
-    "total_files": 3,
-    "by_depth": {
-      "1": [
-        "src/controller.ts::AuthController.login",
-        "tests/auth.test.ts::test:verifyToken returns true for non-empty"
-      ]
-    }
+    "total_functions": 7,
+    "total_files": 1,
+    "by_depth": {}
   },
   "risk_score": {
-    "level": "LOW",
-    "score": 0.17,
+    "level": "MEDIUM",
+    "score": 0.44,
     "factors": {
       "blast_radius": {
         "weight": 0.35,
-        "value": 0.45,
-        "detail": "9 functions, 3 files"
+        "value": 0.35,
+        "detail": "7 functions, 1 files"
       },
       "test_gaps": {
         "weight": 0.3,
-        "value": 0,
-        "detail": "0/4 untested"
+        "value": 1,
+        "detail": "4/4 untested"
       },
       "complexity": {
         "weight": 0.2,
@@ -35,5 +30,26 @@
       }
     }
   },
-  "test_gaps": []
+  "test_gaps": [
+    {
+      "function": "src/auth.ts::AuthService.authenticate",
+      "file_path": "src/auth.ts",
+      "line_start": 10
+    },
+    {
+      "function": "src/auth.ts::AuthService.verifyToken",
+      "file_path": "src/auth.ts",
+      "line_start": 16
+    },
+    {
+      "function": "src/auth.ts::hashPassword",
+      "file_path": "src/auth.ts",
+      "line_start": 21
+    },
+    {
+      "function": "src/auth.ts::validateEmail",
+      "file_path": "src/auth.ts",
+      "line_start": 25
+    }
+  ]
 }

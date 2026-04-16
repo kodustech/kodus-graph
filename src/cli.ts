@@ -81,7 +81,7 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
     .option('--max-depth <n>', 'Blast radius BFS depth', '3')
-    .option('--format <type>', 'Output format: json or prompt', 'json')
+    .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .option('--max-functions <n>', 'Max changed functions in prompt output (default: 30)', (v) => parseInt(v, 10))
     .option(
@@ -95,8 +95,8 @@ program
             log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
-        if (opts.format !== 'json' && opts.format !== 'prompt') {
-            log.error('--format must be "json" or "prompt"', { got: opts.format });
+        if (opts.format !== 'json' && opts.format !== 'prompt' && opts.format !== 'xml') {
+            log.error('--format must be "json", "prompt", or "xml"', { got: opts.format });
             process.exit(1);
         }
         await executeContext({

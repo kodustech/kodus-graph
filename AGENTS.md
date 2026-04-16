@@ -4,7 +4,9 @@ Guidelines for AI agents and contributors working on this codebase.
 
 ## Project Overview
 
-`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports 8 languages via ast-grep and produces JSON output consumed by Kodus AI review agents.
+`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports **14 languages** via ast-grep and produces JSON output consumed by Kodus AI review agents.
+
+**Supported languages:** TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir.
 
 ## Tech Stack
 
@@ -14,12 +16,13 @@ Guidelines for AI agents and contributors working on this codebase.
 - **Linter/Formatter:** Biome
 - **CLI framework:** Commander.js
 - **AST engine:** ast-grep/napi
+- **Schema validation:** Zod
 
 ## Commands
 
 ```bash
 bun run dev          # Run CLI in dev mode (TS directly)
-bun test             # Run tests
+bun test             # Run tests (796+ tests)
 bun run check        # Full check: typecheck + lint + tests
 bun run lint:fix     # Fix lint issues
 bun run format       # Format all files
@@ -31,38 +34,90 @@ bun run build        # Compile standalone binary
 
 ```
 src/
-├── cli.ts              # CLI entry point (Commander.js)
-├── commands/           # Command handlers (parse, analyze, context, diff, etc.)
+├── cli.ts              # CLI entry point (Commander.js) — 8 commands
+├── commands/           # Command handlers (parse, analyze, context, diff, update, communities, flows, search)
 ├── parser/             # AST extraction per language
-│   ├── batch.ts        # Async batch processing (50 files at a time)
-│   ├── extractor.ts    # Language-agnostic extraction coordinator
-│   ├── extractors/     # Language-specific extractors (typescript, python, ruby, etc.)
+│   ├── batch.ts        # Async batch processing with dynamic memory monitoring
+│   ├── extractor.ts    # Dispatch coordinator → engine.ts
+│   ├── extractors/     # Per-language extractors (14 languages, one file each)
+│   │   ├── spec.ts     # LanguageExtractors interface (contract)
+│   │   ├── engine.ts   # Dispatch + Extracted* → Raw* conversion
+│   │   ├── shared.ts   # Reusable helpers (isExported, isAsync, extractDecorators, etc.)
+│   │   ├── typescript.ts, python.ts, ruby.ts, go.ts, java.ts, kotlin.ts
+│   │   ├── rust.ts, csharp.ts, php.ts, swift.ts, dart.ts, scala.ts
+│   │   ├── c.ts (C + C++), elixir.ts
+│   │   └── (generic.ts was deleted — each language has its own file)
 │   ├── discovery.ts    # File discovery with glob filtering
-│   └── languages.ts    # Language registration and AST node kind mappings
+│   └── languages.ts    # Language registration and extension mapping
 ├── resolver/           # Relationship resolution
 │   ├── call-resolver.ts    # 5-tier confidence call resolution
-│   ├── import-resolver.ts  # Module path resolution
-│   ├── symbol-table.ts     # Qualified name tracking
-│   └── languages/          # Language-specific resolution rules
+│   ├── import-resolver.ts  # Module path resolution (tsconfig, workspaces, aliases, etc.)
+│   ├── symbol-table.ts     # Qualified name tracking (dual-index: by-file + global)
+│   ├── import-map.ts       # Per-file symbol → source file mapping
+│   ├── re-export-resolver.ts  # Barrel/re-export following
+│   ├── external-detector.ts   # External package detection (npm, pip, Maven, etc.)
+│   ├── fs-cache.ts         # Filesystem existence cache (shared across resolvers)
+│   └── languages/          # Language-specific resolution rules (14 files)
 ├── graph/              # Graph construction and I/O
-│   ├── builder.ts      # RawGraph → GraphNode/GraphEdge
-│   ├── edges.ts        # Edge derivation (INHERITS, CONTAINS, etc.)
-│   ├── merger.ts       # Incremental graph merging
+│   ├── builder.ts      # RawGraph → GraphNode/GraphEdge (filters external edges)
+│   ├── edges.ts        # Edge derivation (INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS)
+│   ├── merger.ts       # Incremental graph merging via content hashing
 │   ├── loader.ts       # Graph loading with O(1) index
 │   ├── json-writer.ts  # Streaming JSON output
-│   └── types.ts        # All type definitions
+│   └── types.ts        # All type definitions (Raw*, GraphNode, GraphEdge, etc.)
 ├── analysis/           # Analysis and metrics
-│   ├── blast-radius.ts # BFS call chain impact
+│   ├── blast-radius.ts # Function-level BFS with confidence filter + is_exported check
 │   ├── risk-score.ts   # 4-factor risk computation
 │   ├── test-gaps.ts    # Untested function detection
-│   ├── context-builder.ts  # Enriched review context (V2)
+│   ├── diff.ts         # Structural diff with contract diffs (params, return_type, is_async, decorators)
+│   ├── enrich.ts       # Enriched functions with caller impact messages
+│   ├── context-builder.ts  # Enriched review context (function-level, not file-level)
+│   ├── prompt-formatter.ts # LLM-friendly text output with contract diffs
 │   ├── flows.ts        # Execution flow tracing
 │   └── ...
 └── shared/             # Utilities (logger, filters, hashing, schemas)
 
-tests/                  # Mirrors src/ structure
-tests/fixtures/         # Sample repos for testing
+tests/                  # Mirrors src/ structure (796+ tests)
+tests/fixtures/         # Sample files per language (follow language naming conventions)
 ```
+
+## Graph Schema
+
+### Nodes (GraphNode)
+
+| Field | Type | Description |
+|---|---|---|
+| `kind` | `NodeKind` | Function, Method, Constructor, Class, Interface, Enum, Test |
+| `name` | `string` | Symbol name |
+| `qualified_name` | `string` | Unique ID: `file::Class.method` |
+| `file_path` | `string` | Relative file path |
+| `line_start` / `line_end` | `number` | Source location |
+| `language` | `string` | Source language |
+| `is_test` | `boolean` | Whether it's a test function |
+| `is_exported` | `boolean?` | Whether publicly accessible (public, export, pub, uppercase in Go) |
+| `is_async` | `boolean?` | Whether the function is async |
+| `decorators` | `string[]?` | Annotations/decorators (@Injectable, @Test, #[derive]) |
+| `throws` | `string[]?` | Exception types thrown |
+| `params` | `string?` | Function parameter text |
+| `return_type` | `string?` | Return type text |
+| `modifiers` | `string?` | Access modifiers (public, private, static, etc.) |
+| `content_hash` | `string?` | SHA-256 hash for change detection |
+
+### Edges (GraphEdge)
+
+| Field | Type | Description |
+|---|---|---|
+| `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS |
+| `source_qualified` | `string` | Caller/parent node |
+| `target_qualified` | `string` | Callee/child node |
+| `confidence` | `number?` | 0.0–1.0 (for CALLS edges only) |
+
+### Edge Quality Rules
+
+- **IMPORTS**: Only emitted for resolved imports (external packages are filtered out)
+- **CALLS**: Only emitted when target file exists in repo (no phantom edges)
+- **INHERITS/IMPLEMENTS**: Only emitted when target is a local node (external classes skipped)
+- **TESTED_BY**: File-to-file relationship (source file → test file)
 
 ## Coding Standards
 
@@ -72,7 +127,6 @@ tests/fixtures/         # Sample repos for testing
 - **`isolatedModules: true`** — every file must be independently transpilable
 - Use `import type` for type-only imports
 - Prefer `interface` over `type` for object shapes
-- No Bun-specific APIs in `src/` (except `Bun.Glob` in discovery.ts which is being migrated)
 
 ### Formatting (Biome)
 
@@ -82,57 +136,53 @@ tests/fixtures/         # Sample repos for testing
 - **Trailing commas:** all
 - **Block statements:** always use `{}` — never `if (x) return;`
 
-```typescript
-// Wrong
-if (condition) return;
-for (const item of list) doSomething(item);
-
-// Correct
-if (condition) {
-    return;
-}
-for (const item of list) {
-    doSomething(item);
-}
-```
-
-### Linting Rules
-
-- `noUnusedImports: error` — remove unused imports
-- `noUnusedVariables: warn` — prefix unused vars with `_`
-- `noExplicitAny: off` — any is allowed when needed
-- `noForEach: off` — forEach is allowed
-
 ### Naming
 
 - **Files:** kebab-case (`call-resolver.ts`, `blast-radius.ts`)
 - **Types/Interfaces:** PascalCase (`GraphNode`, `RawCallEdge`)
 - **Functions/variables:** camelCase (`buildGraphData`, `resolveAllCalls`)
 - **Qualified names:** `file_path::ClassName.methodName` format
+- **Fixture files:** follow language conventions (snake_case for Go/Rust/Python/Dart/Elixir/C, PascalCase for Java/Kotlin/Swift/Scala/C#/PHP)
 
 ### Testing
 
-- Use `bun:test` (`describe`, `it`, `expect`)
+- Use `bun:test` (`describe`, `it`/`test`, `expect`)
 - Test files mirror src structure: `src/graph/builder.ts` → `tests/graph/builder.test.ts`
-- Fixtures go in `tests/fixtures/`
-- Use `!` non-null assertion in tests for known state (e.g., `result[0]!.name`)
+- Fixtures go in `tests/fixtures/<language>/`
+- Schema validation via zod in `tests/graph/schema-validation.test.ts`
+- CLI tests spawn processes in `tests/commands/cli.test.ts`
+
+### Adding a New Language
+
+1. Install lang pack: `bun add @ast-grep/lang-{name}`
+2. Register in `src/parser/languages.ts` (import, registerDynamicLanguage, extension mapping)
+3. Create extractor in `src/parser/extractors/{name}.ts` implementing `LanguageExtractors`
+   - Must return all fields: `is_exported`, `is_async`, `decorators`, `throws`
+   - Use shared helpers from `shared.ts`
+   - Register with `registerExtractor('{name}', extractors)` at bottom of file
+4. Add `import './extractors/{name}'` to `src/parser/extractor.ts`
+5. Create or reuse resolver in `src/resolver/languages/{name}.ts`
+6. Register resolver in `src/resolver/import-resolver.ts` RESOLVERS map
+7. Add external detection in `src/resolver/external-detector.ts`
+8. Create fixture in `tests/fixtures/{name}/` (follow language naming convention)
+9. Add extraction tests + new fields tests in `tests/parser/`
+10. Add resolver tests in `tests/resolver/{name}.test.ts`
 
 ### Architecture Patterns
 
 - **Pipeline:** Parser → Resolver → Graph → Analysis (data flows one direction)
+- **Composable extractors:** Each language is a separate file implementing `LanguageExtractors`
+- **Engine dispatch:** `engine.ts` routes to the right extractor and converts `Extracted*` → `Raw*`
+- **Shared helpers:** `shared.ts` provides common functions (don't reimplement per language)
 - **RawGraph** is the internal intermediate representation; **GraphData** is the final output
 - **Qualified names** are the universal key for cross-referencing nodes/edges
 - **Confidence scores** on CALLS edges (0.0–1.0) — never hardcode, use the resolver
+- **External detection:** Resolver returns null for external packages; builder skips unresolved edges
+- **Contract diffs:** Diff detects changes in params, return_type, modifiers, is_async, decorators
+- **Function-level blast radius:** Seeds are changed qualified names, not file paths
 - **Streaming JSON** for output — use `json-writer.ts`, don't `JSON.stringify` large graphs
 - **Content hashing** for incremental parsing — always set `content_hash` on nodes
-
-### Adding a New Language
-
-1. Create extractor in `src/parser/extractors/{lang}.ts`
-2. Add AST node kind mappings in `src/parser/languages.ts`
-3. Add resolution rules in `src/resolver/languages/{lang}.ts`
-4. Register the language in `src/parser/languages.ts`
-5. Add test fixtures in `tests/fixtures/`
+- **Memory resilience:** `--max-memory` flag, dynamic batch sizing, rawGraph incremental release
 
 ### Common Pitfalls
 
@@ -141,11 +191,15 @@ for (const item of list) {
 - **Don't assume file extensions** — use the language registry for detection
 - **Always use qualified names** for node identity, never just the symbol name
 - **Call resolver confidence tiers matter** — DI (0.90+) > same-file (0.85) > import (0.70) > unique (0.50) > ambiguous (0.30)
+- **Don't emit edges to external packages** — builder filters them, don't bypass
+- **Language routing uses exact lang strings** — TS uses `'TypeScript'`/`'Tsx'`/`'JavaScript'` (capital), others use lowercase
 
 ## Pull Request Checklist
 
 - [ ] `bun run check` passes (typecheck + lint + tests)
 - [ ] New code follows block statement rule (always `{}`)
-- [ ] New features have tests
+- [ ] New features have tests (including new fields tests for new languages)
 - [ ] No source maps or sensitive data in published files
 - [ ] Qualified name format is consistent (`file::Class.method`)
+- [ ] Fixture filenames follow language conventions
+- [ ] AGENTS.md and README.md updated if adding language or feature

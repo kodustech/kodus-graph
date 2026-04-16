@@ -4,6 +4,7 @@ import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
 import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
 import { formatPrompt, type PromptFormatterOptions } from '../analysis/prompt-formatter';
+import { formatXml, type XmlFormatterOptions } from '../analysis/xml-formatter';
 import { mergeGraphs } from '../graph/merger';
 import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
@@ -19,7 +20,7 @@ interface ContextOptions {
     out: string;
     minConfidence: number;
     maxDepth: number;
-    format: 'json' | 'prompt';
+    format: 'json' | 'prompt' | 'xml';
     skipTests?: boolean;
     maxFunctions?: number;
     maxPromptChars?: number;
@@ -166,6 +167,12 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
                 fmtOpts.maxPromptChars = opts.maxPromptChars;
             }
             writeFileSync(opts.out, formatPrompt(output, fmtOpts));
+        } else if (opts.format === 'xml') {
+            const fmtOpts: XmlFormatterOptions = {};
+            if (opts.maxFunctions != null) {
+                fmtOpts.maxFunctions = opts.maxFunctions;
+            }
+            writeFileSync(opts.out, formatXml(output, fmtOpts));
         } else {
             writeFileSync(opts.out, JSON.stringify(output, null, 2));
         }
