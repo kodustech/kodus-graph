@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/java';
+import { resolve } from '../../src/languages/java/resolver';
 
 /**
  * Kotlin import resolution delegates to the Java resolver since both languages

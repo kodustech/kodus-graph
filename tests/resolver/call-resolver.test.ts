@@ -253,9 +253,7 @@ describe('resolveAllCalls (pure, no I/O)', () => {
         const im = createImportMap();
         const diMaps = new Map<string, Map<string, string>>();
 
-        const rawCalls: RawCallSite[] = [
-            { source: 'src/other/caller.ts', callName: 'validate', line: 1 },
-        ];
+        const rawCalls: RawCallSite[] = [{ source: 'src/other/caller.ts', callName: 'validate', line: 1 }];
 
         const { callEdges, stats } = resolveAllCalls(rawCalls, diMaps, st, im);
         expect(callEdges).toHaveLength(0);

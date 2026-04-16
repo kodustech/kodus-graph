@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/python';
+import { resolve } from '../../src/languages/python/resolver';
 
 /* ------------------------------------------------------------------ */
 /*  1. Python basic resolution                                        */

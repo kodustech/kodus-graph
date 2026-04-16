@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { loadMixDeps, resolve } from '../../src/resolver/languages/elixir';
+import { loadMixDeps, resolve } from '../../src/languages/elixir/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/elixir-basic-tmp');
 

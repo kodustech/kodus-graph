@@ -7,36 +7,36 @@
 
 import { readdirSync, readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
-import { log } from '../shared/logger';
-import { ensureWithinRoot } from '../shared/safe-path';
-import { detectExternal } from './external-detector';
-import { cachedExists } from './fs-cache';
-import { resolve as resolveCImport } from './languages/c';
-import { resolve as resolveCsImport } from './languages/csharp';
-import { resolve as resolveDartImport } from './languages/dart';
-import { resolve as resolveElixirImport } from './languages/elixir';
-import { resolve as resolveGoImport } from './languages/go';
-import { resolve as resolveJavaImport } from './languages/java';
-import { resolve as resolvePhpImport } from './languages/php';
-import { resolve as resolvePyImport } from './languages/python';
-import { resolve as resolveRbImport } from './languages/ruby';
-import { resolve as resolveRustImport } from './languages/rust';
-import { resolve as resolveSwiftImport } from './languages/swift';
+import { resolve as resolveCImport } from '../languages/c/resolver';
+import { resolve as resolveCsImport } from '../languages/csharp/resolver';
+import { resolve as resolveDartImport } from '../languages/dart/resolver';
+import { resolve as resolveElixirImport } from '../languages/elixir/resolver';
+import { resolve as resolveGoImport } from '../languages/go/resolver';
+import { resolve as resolveJavaImport } from '../languages/java/resolver';
+import { resolve as resolvePhpImport } from '../languages/php/resolver';
+import { resolve as resolvePyImport } from '../languages/python/resolver';
+import { resolve as resolveRbImport } from '../languages/ruby/resolver';
+import { resolve as resolveRustImport } from '../languages/rust/resolver';
+import { resolve as resolveSwiftImport } from '../languages/swift/resolver';
 import {
     loadBundlerAliases,
     loadTsconfigAliases,
     resolve as resolveTsImport,
     resolveWithAliases,
-} from './languages/typescript';
+} from '../languages/typescript/resolver';
+import { log } from '../shared/logger';
+import { ensureWithinRoot } from '../shared/safe-path';
+import { detectExternal } from './external-detector';
+import { cachedExists } from './fs-cache';
 
 /**
  * Registered import resolvers by language key.
  *
  * IMPORTANT: When adding a new language, you MUST:
- * 1. Create a resolver in src/resolver/languages/<lang>.ts
+ * 1. Create a resolver in src/languages/<lang>/resolver.ts
  * 2. Add it to this map
  * 3. Add tests in tests/resolver/<lang>.test.ts
- * 4. Add external detection in src/resolver/external-detector.ts
+ * 4. Add external detection in src/languages/<lang>/external.ts
  *
  * If a language key from the parser is not in this map, resolveImport()
  * will log a warning and return null. This is intentional — silent

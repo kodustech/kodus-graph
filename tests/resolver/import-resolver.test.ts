@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
+import { resolve as resolveTsImport } from '../../src/languages/typescript/resolver';
 import { clearFsCache } from '../../src/resolver/fs-cache';
 import { loadTsconfigAliases, resolveImport } from '../../src/resolver/import-resolver';
-import { resolve as resolveTsImport } from '../../src/resolver/languages/typescript';
 
 const fixtureDir = resolve('tests/fixtures/sample-repo');
 

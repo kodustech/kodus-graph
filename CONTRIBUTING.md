@@ -71,13 +71,18 @@ Prefixes: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`.
 
 To add support for a new language:
 
-1. Create an extractor in `src/parser/extractors/{lang}.ts`
+1. Create the directory `src/languages/{lang}/` with:
+   - `extractor.ts` (implements `LanguageExtractors`, registers via `registerExtractor`)
+   - `resolver.ts` (module path resolver, or a re-export from another language)
+   - `external.ts` (exports `detect(modulePath, repoRoot)`)
+   - `index.ts` (barrel that imports `./extractor` and re-exports `resolve` + `detect`)
 2. Register AST node kind mappings in `src/parser/languages.ts`
-3. Add resolution rules in `src/resolver/languages/{lang}.ts`
-4. Add test fixtures in `tests/fixtures/`
-5. Add tests in `tests/parser/`
+3. Register the resolver in `src/resolver/import-resolver.ts`
+4. Register the detector in `src/resolver/external-detector.ts`
+5. Add test fixtures in `tests/fixtures/`
+6. Add tests in `tests/parser/` and `tests/resolver/`
 
-Look at an existing language (e.g., `typescript.ts` or `python.ts`) as a reference.
+Look at an existing language (e.g. `src/languages/typescript/` or `src/languages/python/`) as a reference.
 
 ## Reporting Issues
 

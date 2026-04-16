@@ -1,0 +1,140 @@
+/**
+ * C / C++ external-header detection.
+ *
+ * The extractor stores include paths without angle brackets or quotes, so
+ * we can't distinguish `<stdio.h>` from `"stdio.h"` here. Instead we match
+ * against known system / stdlib header sets; any path without a dot is also
+ * assumed to be a C++ standard header.
+ */
+
+const C_SYSTEM_HEADERS = new Set([
+    'stdio.h',
+    'stdlib.h',
+    'string.h',
+    'math.h',
+    'time.h',
+    'errno.h',
+    'assert.h',
+    'ctype.h',
+    'float.h',
+    'limits.h',
+    'locale.h',
+    'setjmp.h',
+    'signal.h',
+    'stdarg.h',
+    'stddef.h',
+    'stdint.h',
+    'stdbool.h',
+    'wchar.h',
+    'wctype.h',
+    'complex.h',
+    'fenv.h',
+    'inttypes.h',
+    'iso646.h',
+    'tgmath.h',
+    'uchar.h',
+    'threads.h',
+    'stdatomic.h',
+    'stdalign.h',
+    'stdnoreturn.h',
+    'unistd.h',
+    'fcntl.h',
+    'sys/types.h',
+    'sys/stat.h',
+    'sys/socket.h',
+    'netinet/in.h',
+    'arpa/inet.h',
+    'pthread.h',
+    'dirent.h',
+    'dlfcn.h',
+    'semaphore.h',
+]);
+
+const CPP_SYSTEM_HEADERS = new Set([
+    'string',
+    'vector',
+    'map',
+    'set',
+    'unordered_map',
+    'unordered_set',
+    'list',
+    'deque',
+    'queue',
+    'stack',
+    'array',
+    'bitset',
+    'forward_list',
+    'iostream',
+    'fstream',
+    'sstream',
+    'iomanip',
+    'ostream',
+    'istream',
+    'algorithm',
+    'numeric',
+    'functional',
+    'iterator',
+    'ranges',
+    'memory',
+    'utility',
+    'tuple',
+    'optional',
+    'variant',
+    'any',
+    'type_traits',
+    'typeinfo',
+    'typeindex',
+    'chrono',
+    'thread',
+    'mutex',
+    'condition_variable',
+    'future',
+    'atomic',
+    'exception',
+    'stdexcept',
+    'system_error',
+    'cerrno',
+    'cstdio',
+    'cstdlib',
+    'cstring',
+    'cmath',
+    'ctime',
+    'cassert',
+    'cctype',
+    'climits',
+    'cfloat',
+    'cstdint',
+    'cstddef',
+    'regex',
+    'random',
+    'ratio',
+    'complex',
+    'valarray',
+    'filesystem',
+    'span',
+    'format',
+    'source_location',
+    'concepts',
+    'coroutine',
+    'expected',
+    'print',
+    'new',
+    'limits',
+    'locale',
+    'codecvt',
+    'initializer_list',
+    'compare',
+]);
+
+export function detect(modulePath: string, _repoRoot: string): string | null {
+    if (C_SYSTEM_HEADERS.has(modulePath) || CPP_SYSTEM_HEADERS.has(modulePath)) {
+        return modulePath;
+    }
+
+    // Anything that doesn't end in a file extension is likely a C++ standard header
+    if (!modulePath.includes('.')) {
+        return modulePath;
+    }
+
+    return null;
+}

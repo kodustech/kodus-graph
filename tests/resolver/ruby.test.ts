@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve, resolveZeitwerk } from '../../src/resolver/languages/ruby';
+import { resolve, resolveZeitwerk } from '../../src/languages/ruby/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/rb-basic-tmp');
 

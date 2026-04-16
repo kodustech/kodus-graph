@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Lang, parseAsync } from '@ast-grep/napi';
 import type { RawCallSite } from '../../src/graph/types';
-import { extractCallsFromTypeScript } from '../../src/parser/extractors/typescript';
+import { extractCallsFromTypeScript } from '../../src/languages/typescript/extractor';
 
 // Import to trigger language registration
 import '../../src/parser/languages';
@@ -76,9 +76,9 @@ describe('extractCallsFromTypeScript', () => {
     });
 });
 
+import { extractCallsFromPython } from '../../src/languages/python/extractor';
+import { extractCallsFromRuby } from '../../src/languages/ruby/extractor';
 import { extractCallsFromFile } from '../../src/parser/extractor';
-import { extractCallsFromPython } from '../../src/parser/extractors/python';
-import { extractCallsFromRuby } from '../../src/parser/extractors/ruby';
 
 describe('extractCallsFromPython', () => {
     async function extractCalls(source: string, fp: string = 'src/test.py'): Promise<RawCallSite[]> {

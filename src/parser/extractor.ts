@@ -1,23 +1,23 @@
 import type { Lang, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
-import { extractAll as engineExtractAll, extractCallsFromEngine } from './extractors/engine';
+import { extractAll as engineExtractAll, extractCallsFromEngine } from '../languages/engine';
 import { getLanguageName } from './languages';
 
-// Import language files to trigger registration
-import './extractors/go';
-import './extractors/java';
-import './extractors/kotlin';
-import './extractors/rust';
-import './extractors/csharp';
-import './extractors/php';
-import './extractors/typescript';
-import './extractors/python';
-import './extractors/ruby';
-import './extractors/swift';
-import './extractors/dart';
-import './extractors/scala';
-import './extractors/elixir';
-import './extractors/c';
+// Import language barrel files to trigger extractor registration.
+import '../languages/go';
+import '../languages/java';
+import '../languages/kotlin';
+import '../languages/rust';
+import '../languages/csharp';
+import '../languages/php';
+import '../languages/typescript';
+import '../languages/python';
+import '../languages/ruby';
+import '../languages/swift';
+import '../languages/dart';
+import '../languages/scala';
+import '../languages/elixir';
+import '../languages/c';
 
 export function extractFromFile(
     root: SgRoot,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/swift';
+import { resolve } from '../../src/languages/swift/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/swift-resolver-tmp');
 

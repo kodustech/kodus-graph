@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { clearCache, resolve } from '../../src/resolver/languages/go';
+import { clearCache, resolve } from '../../src/languages/go/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/go-resolver-tmp');
 

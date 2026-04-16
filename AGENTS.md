@@ -36,28 +36,29 @@ bun run build        # Compile standalone binary
 src/
 ├── cli.ts              # CLI entry point (Commander.js) — 8 commands
 ├── commands/           # Command handlers (parse, analyze, context, diff, update, communities, flows, search)
-├── parser/             # AST extraction per language
+├── parser/             # AST extraction coordination
 │   ├── batch.ts        # Async batch processing with dynamic memory monitoring
-│   ├── extractor.ts    # Dispatch coordinator → engine.ts
-│   ├── extractors/     # Per-language extractors (14 languages, one file each)
-│   │   ├── spec.ts     # LanguageExtractors interface (contract)
-│   │   ├── engine.ts   # Dispatch + Extracted* → Raw* conversion
-│   │   ├── shared.ts   # Reusable helpers (isExported, isAsync, extractDecorators, etc.)
-│   │   ├── typescript.ts, python.ts, ruby.ts, go.ts, java.ts, kotlin.ts
-│   │   ├── rust.ts, csharp.ts, php.ts, swift.ts, dart.ts, scala.ts
-│   │   ├── c.ts (C + C++), elixir.ts
-│   │   └── (generic.ts was deleted — each language has its own file)
+│   ├── extractor.ts    # Dispatch coordinator → languages/engine.ts
 │   ├── discovery.ts    # File discovery with glob filtering
 │   └── languages.ts    # Language registration and extension mapping
-├── resolver/           # Relationship resolution
-│   ├── call-resolver.ts    # 5-tier confidence call resolution
-│   ├── import-resolver.ts  # Module path resolution (tsconfig, workspaces, aliases, etc.)
-│   ├── symbol-table.ts     # Qualified name tracking (dual-index: by-file + global)
-│   ├── import-map.ts       # Per-file symbol → source file mapping
-│   ├── re-export-resolver.ts  # Barrel/re-export following
-│   ├── external-detector.ts   # External package detection (npm, pip, Maven, etc.)
-│   ├── fs-cache.ts         # Filesystem existence cache (shared across resolvers)
-│   └── languages/          # Language-specific resolution rules (14 files)
+├── languages/          # Co-located per-language modules (14 languages)
+│   ├── spec.ts         # LanguageExtractors interface (contract)
+│   ├── engine.ts       # Dispatch + Extracted* → Raw* conversion
+│   ├── shared.ts       # Reusable helpers (isExported, isAsync, extractDecorators, etc.)
+│   ├── external-shared.ts # Shared deps cache + manifest helpers
+│   └── <lang>/         # One folder per language:
+│       ├── extractor.ts   # AST → Extracted* DTOs (registers via registerExtractor)
+│       ├── resolver.ts    # Module path resolution (kotlin/scala re-export java)
+│       ├── external.ts    # External-package detection (stdlib + manifest matching)
+│       └── index.ts       # Barrel: triggers extractor registration, re-exports resolver + detect
+├── resolver/           # Relationship resolution (language-agnostic)
+│   ├── call-resolver.ts      # 5-tier confidence call resolution
+│   ├── import-resolver.ts    # Module path dispatcher (tsconfig, workspaces, aliases, etc.)
+│   ├── symbol-table.ts       # Qualified name tracking (dual-index: by-file + global)
+│   ├── import-map.ts         # Per-file symbol → source file mapping
+│   ├── re-export-resolver.ts # Barrel/re-export following
+│   ├── external-detector.ts  # Thin dispatcher → languages/<lang>/external.ts
+│   └── fs-cache.ts           # Filesystem existence cache (shared across resolvers)
 ├── graph/              # Graph construction and I/O
 │   ├── builder.ts      # RawGraph → GraphNode/GraphEdge (filters external edges)
 │   ├── edges.ts        # Edge derivation (INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS)
@@ -156,17 +157,17 @@ tests/fixtures/         # Sample files per language (follow language naming conv
 
 1. Install lang pack: `bun add @ast-grep/lang-{name}`
 2. Register in `src/parser/languages.ts` (import, registerDynamicLanguage, extension mapping)
-3. Create extractor in `src/parser/extractors/{name}.ts` implementing `LanguageExtractors`
-   - Must return all fields: `is_exported`, `is_async`, `decorators`, `throws`
-   - Use shared helpers from `shared.ts`
-   - Register with `registerExtractor('{name}', extractors)` at bottom of file
-4. Add `import './extractors/{name}'` to `src/parser/extractor.ts`
-5. Create or reuse resolver in `src/resolver/languages/{name}.ts`
-6. Register resolver in `src/resolver/import-resolver.ts` RESOLVERS map
-7. Add external detection in `src/resolver/external-detector.ts`
-8. Create fixture in `tests/fixtures/{name}/` (follow language naming convention)
-9. Add extraction tests + new fields tests in `tests/parser/`
-10. Add resolver tests in `tests/resolver/{name}.test.ts`
+3. Create `src/languages/{name}/` directory with these files:
+   - `extractor.ts` — implements `LanguageExtractors`; must return `is_exported`, `is_async`, `decorators`, `throws`; register with `registerExtractor('{name}', extractors)` at the bottom
+   - `resolver.ts` — module path resolution (or re-export another language's resolver, e.g. kotlin/scala re-export java)
+   - `external.ts` — exports `detect(modulePath, repoRoot): string | null` for external-package detection
+   - `index.ts` — barrel that does `import './extractor'` (to register) and re-exports `resolve` + `detect`
+4. Add `import '../languages/{name}'` to `src/parser/extractor.ts`
+5. Register the resolver in `src/resolver/import-resolver.ts` RESOLVERS map
+6. Register the detect() in `src/resolver/external-detector.ts` DETECTORS map
+7. Create fixture in `tests/fixtures/{name}/` (follow language naming convention)
+8. Add extraction tests + new fields tests in `tests/parser/`
+9. Add resolver tests in `tests/resolver/{name}.test.ts`
 
 ### Architecture Patterns
 

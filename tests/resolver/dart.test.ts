@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/dart';
+import { resolve } from '../../src/languages/dart/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/dart-resolver-tmp');
 

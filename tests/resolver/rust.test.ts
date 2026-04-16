@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { resolve } from '../../src/resolver/languages/rust';
+import { resolve } from '../../src/languages/rust/resolver';
 
 const TMP = join(import.meta.dir, '../fixtures/rust-resolver-tmp');
 
