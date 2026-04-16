@@ -11,7 +11,7 @@ export interface NodeChange {
 }
 
 export interface ContractDiff {
-    field: 'params' | 'return_type' | 'modifiers' | 'is_async' | 'decorators';
+    field: 'params' | 'return_type' | 'modifiers' | 'is_async' | 'decorators' | 'throws';
     old_value: string;
     new_value: string;
 }
@@ -166,6 +166,16 @@ export function computeStructuralDiff(
                     field: 'decorators',
                     old_value: oldDecs || '(none)',
                     new_value: newDecs || '(none)',
+                });
+            }
+            const oldThrows = (n.throws ?? []).join(', ');
+            const newThrows = (newN.throws ?? []).join(', ');
+            if (oldThrows !== newThrows) {
+                changes.push('throws');
+                contractDiffs.push({
+                    field: 'throws',
+                    old_value: oldThrows || '(none)',
+                    new_value: newThrows || '(none)',
                 });
             }
             if (changes.length > 0) {

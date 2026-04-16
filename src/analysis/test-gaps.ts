@@ -3,7 +3,12 @@ import type { GraphData, TestGap } from '../graph/types';
 export function findTestGaps(graph: GraphData, changedFiles: string[]): TestGap[] {
     const changedSet = new Set(changedFiles);
 
-    const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified));
+    // source_qualified on TESTED_BY edges is the tested function/file, e.g.
+    // 'src/auth.ts::authenticate' or just 'src/auth.ts'. Extract the file path
+    // prefix (before '::') to match against node.file_path.
+    const testedFiles = new Set(
+        graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified.split('::')[0]),
+    );
 
     return graph.nodes
         .filter(

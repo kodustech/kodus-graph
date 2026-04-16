@@ -17,8 +17,12 @@ export function enrichChangedFunctions(
     const addedSet = new Set(diff.nodes.added.map((n) => n.qualified_name));
     const modifiedMap = new Map(diff.nodes.modified.map((m) => [m.qualified_name, m]));
 
-    // Pre-index TESTED_BY
-    const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.file_path));
+    // Pre-index TESTED_BY — function-level when available, file-level as fallback.
+    // TESTED_BY edges: source_qualified = tested function/file, target_qualified = test.
+    // We collect both the qualified names (precise) and file path prefixes (fallback).
+    const testedByEdges = graph.edges.filter((e) => e.kind === 'TESTED_BY');
+    const testedFunctions = new Set(testedByEdges.map((e) => e.source_qualified));
+    const testedFiles = new Set(testedByEdges.map((e) => e.source_qualified.split('::')[0]));
 
     // Pre-index flows by function
     const flowsByFunction = new Map<string, string[]>();
@@ -165,6 +169,10 @@ export function enrichChangedFunctions(
                         impacts.push(`${callers.length} callers may remove await (async->sync)`);
                     }
                 }
+                const throwsDiff = contractDiffs.find((d) => d.field === 'throws');
+                if (throwsDiff) {
+                    impacts.push(`${callers.length} callers may not handle new exception: ${throwsDiff.new_value}`);
+                }
                 callerImpact = impacts.length > 0 ? impacts.join('; ') : undefined;
             }
 
@@ -178,7 +186,7 @@ export function enrichChangedFunctions(
                 line_end: node.line_end,
                 callers,
                 callees,
-                has_test_coverage: testedFiles.has(node.file_path),
+                has_test_coverage: testedFunctions.has(node.qualified_name) || testedFiles.has(node.file_path),
                 diff_changes: diffChanges,
                 contract_diffs: contractDiffs,
                 caller_impact: callerImpact,
