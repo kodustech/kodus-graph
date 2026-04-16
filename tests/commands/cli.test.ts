@@ -122,4 +122,50 @@ describe('CLI', () => {
             expect(code).not.toBe(0);
         });
     });
+
+    describe('--out - (stdout mode)', () => {
+        it('parse command writes to stdout with --out -', () => {
+            const { code, stdout, stderr } = runCLI([
+                'parse',
+                '--files',
+                'src/auth.ts',
+                '--repo-dir',
+                'tests/fixtures/sample-repo',
+                '--out',
+                '-',
+            ]);
+            expect(code).toBe(0);
+
+            // stdout should be valid JSON with metadata/nodes/edges
+            const parsed = JSON.parse(stdout);
+            expect(parsed).toHaveProperty('metadata');
+            expect(parsed).toHaveProperty('nodes');
+            expect(parsed).toHaveProperty('edges');
+            expect(Array.isArray(parsed.nodes)).toBe(true);
+            expect(Array.isArray(parsed.edges)).toBe(true);
+            expect(parsed.nodes.length).toBeGreaterThan(0);
+
+            // Info logs should go to stderr (not stdout) so output stays pipe-safe
+            expect(stderr).toContain('kodus-graph v');
+        });
+
+        it('context command writes prompt to stdout with --out -', () => {
+            const { code, stdout } = runCLI([
+                'context',
+                '--files',
+                'src/auth.ts',
+                '--repo-dir',
+                'tests/fixtures/sample-repo',
+                '--format',
+                'prompt',
+                '--out',
+                '-',
+            ]);
+            expect(code).toBe(0);
+
+            // Prompt format is plain text — verify it looks like a prompt, not JSON
+            expect(stdout.length).toBeGreaterThan(0);
+            expect(stdout.trimStart().startsWith('{')).toBe(false);
+        });
+    });
 });

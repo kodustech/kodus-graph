@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { relative, resolve } from 'path';
 import { computeBlastRadius } from '../analysis/blast-radius';
 import { computeRiskScore } from '../analysis/risk-score';
@@ -16,6 +16,7 @@ import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 import { GraphInputSchema } from '../shared/schemas';
+import { writeOutput } from '../shared/write-output';
 
 interface AnalyzeOptions {
     repoDir: string;
@@ -141,5 +142,5 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
         test_gaps: testGaps,
     };
 
-    writeFileSync(opts.out, JSON.stringify(output, null, 2));
+    writeOutput(opts.out, JSON.stringify(output, null, 2));
 }

@@ -1,7 +1,7 @@
-import { writeFileSync } from 'fs';
 import { findCallees, findCallers, searchNodes } from '../analysis/search';
 import { loadGraph } from '../graph/loader';
 import type { GraphNode } from '../graph/types';
+import { writeOutput } from '../shared/write-output';
 
 interface SearchCommandOptions {
     graph: string;
@@ -33,8 +33,8 @@ export function executeSearch(opts: SearchCommandOptions): void {
 
     const output = JSON.stringify({ results, total: results.length, query: queryInfo }, null, 2);
 
-    if (opts.out) {
-        writeFileSync(opts.out, output);
+    if (opts.out && opts.out !== '-') {
+        writeOutput(opts.out, output);
     } else {
         process.stdout.write(`${output}\n`);
     }

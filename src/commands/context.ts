@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { readFileSync, rmSync, writeFileSync } from 'fs';
+import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
 import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
@@ -10,6 +10,7 @@ import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
 import { GraphInputSchema } from '../shared/schemas';
 import { createSecureTempFile } from '../shared/temp';
+import { writeOutput } from '../shared/write-output';
 import { executeParse } from './parse';
 
 interface ContextOptions {
@@ -166,15 +167,15 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             if (opts.maxPromptChars != null) {
                 fmtOpts.maxPromptChars = opts.maxPromptChars;
             }
-            writeFileSync(opts.out, formatPrompt(output, fmtOpts));
+            writeOutput(opts.out, formatPrompt(output, fmtOpts));
         } else if (opts.format === 'xml') {
             const fmtOpts: XmlFormatterOptions = {};
             if (opts.maxFunctions != null) {
                 fmtOpts.maxFunctions = opts.maxFunctions;
             }
-            writeFileSync(opts.out, formatXml(output, fmtOpts));
+            writeOutput(opts.out, formatXml(output, fmtOpts));
         } else {
-            writeFileSync(opts.out, JSON.stringify(output, null, 2));
+            writeOutput(opts.out, JSON.stringify(output, null, 2));
         }
     } finally {
         try {

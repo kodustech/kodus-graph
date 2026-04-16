@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { dirname, relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
@@ -12,6 +12,7 @@ import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver'
 import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
+import { writeOutput } from '../shared/write-output';
 
 const DEFAULT_GRAPH_PATH = '.kodus-graph/graph.json';
 
@@ -25,7 +26,8 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const t0 = performance.now();
     const repoDir = resolve(opts.repoDir);
     const graphPath = resolve(repoDir, opts.graph || DEFAULT_GRAPH_PATH);
-    const outPath = resolve(repoDir, opts.out || opts.graph || DEFAULT_GRAPH_PATH);
+    const rawOut = opts.out ?? opts.graph ?? DEFAULT_GRAPH_PATH;
+    const outPath = rawOut === '-' ? '-' : resolve(repoDir, rawOut);
 
     if (!existsSync(graphPath)) {
         log.error('graph file not found — run "kodus-graph parse" first', { path: graphPath });
@@ -93,7 +95,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             edges: oldGraph.edges,
         };
         ensureDir(outPath);
-        writeFileSync(outPath, JSON.stringify(output, null, 2));
+        writeOutput(outPath, JSON.stringify(output, null, 2));
         return;
     }
 
@@ -173,10 +175,13 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     };
 
     ensureDir(outPath);
-    writeFileSync(outPath, JSON.stringify(output, null, 2));
+    writeOutput(outPath, JSON.stringify(output, null, 2));
 }
 
 function ensureDir(filePath: string): void {
+    if (filePath === '-') {
+        return;
+    }
     const dir = dirname(filePath);
     if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });

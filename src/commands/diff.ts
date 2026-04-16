@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { computeStructuralDiff } from '../analysis/diff';
@@ -14,6 +14,7 @@ import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver'
 import { createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
+import { writeOutput } from '../shared/write-output';
 
 interface DiffCommandOptions {
     repoDir: string;
@@ -106,5 +107,5 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
         `[4/4] Diff: +${result.summary.added} -${result.summary.removed} ~${result.summary.modified} nodes (${Math.round(performance.now() - t0)}ms)\n`,
     );
 
-    writeFileSync(opts.out, JSON.stringify(result, null, 2));
+    writeOutput(opts.out, JSON.stringify(result, null, 2));
 }
