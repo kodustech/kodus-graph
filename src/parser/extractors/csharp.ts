@@ -126,7 +126,7 @@ const ANNOTATION_NAMES = ['TestMethod', 'Fact', 'Test', 'Theory'];
 // ---------------------------------------------------------------------------
 
 export const csharpExtractors: LanguageExtractors = {
-    extract(root: SgNode, fp: string): ExtractionResult {
+    extract(root: SgNode, _fp: string): ExtractionResult {
         const result = emptyResult();
 
         // ── Classes ──────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 import type { Lang, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
-import { log } from '../shared/logger';
 import { extractAll as engineExtractAll, extractCallsFromEngine } from './extractors/engine';
 import { getLanguageName } from './languages';
 

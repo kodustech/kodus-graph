@@ -399,7 +399,7 @@ export const dartExtractors: LanguageExtractors = {
             // Get the full text including the function_body (next sibling)
             const nextSib = node.next();
             const fullText =
-                nextSib && nextSib.kind() === 'function_body' ? node.text() + ' ' + nextSib.text() : node.text();
+                nextSib && nextSib.kind() === 'function_body' ? `${node.text()} ${nextSib.text()}` : node.text();
 
             result.functions.push({
                 name,
@@ -490,7 +490,7 @@ export const dartExtractors: LanguageExtractors = {
             // Get the function_body (next sibling)
             const nextSib = node.next();
             const hasBody = nextSib && nextSib.kind() === 'function_body';
-            const fullText = hasBody ? node.text() + ' ' + nextSib.text() : node.text();
+            const fullText = hasBody ? `${node.text()} ${nextSib.text()}` : node.text();
 
             result.functions.push({
                 name,

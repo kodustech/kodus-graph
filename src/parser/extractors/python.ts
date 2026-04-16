@@ -4,13 +4,7 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { LANG_KINDS } from '../languages';
 import { registerExtractor } from './engine';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from './shared';
-import type {
-    ExtractedClass,
-    ExtractedFunction,
-    ExtractedImport,
-    ExtractionResult,
-    LanguageExtractors,
-} from './spec';
+import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
 // Shared constants

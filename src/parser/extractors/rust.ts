@@ -83,7 +83,7 @@ const ANNOTATION_NAMES = ['test'];
 // ---------------------------------------------------------------------------
 
 export const rustExtractors: LanguageExtractors = {
-    extract(root: SgNode, fp: string): ExtractionResult {
+    extract(root: SgNode, _fp: string): ExtractionResult {
         const result = emptyResult();
 
         // ── Classes / Structs (struct_item only, NOT impl_item) ──────────

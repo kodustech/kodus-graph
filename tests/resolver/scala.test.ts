@@ -24,7 +24,7 @@ describe('Scala import resolver (reuses Java resolver)', () => {
     });
 
     test('resolves wildcard import to directory', () => {
-        const result = resolve('', 'com.example.services._', TMP);
+        const _result = resolve('', 'com.example.services._', TMP);
         // Wildcard imports resolve to the first file in the directory
         // The resolver treats .* as wildcard and looks for files in the package dir
         // Since we strip the ._ (which becomes ._) let's test the non-wildcard form

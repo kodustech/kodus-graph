@@ -33,7 +33,7 @@ const DART_FRAMEWORK_PACKAGES = new Set([
 // Source directory candidates for Dart/Flutter projects
 // ---------------------------------------------------------------------------
 
-const SOURCE_DIRS = ['lib', 'src', 'lib/src'];
+const _SOURCE_DIRS = ['lib', 'src', 'lib/src'];
 
 // ---------------------------------------------------------------------------
 // pubspec.yaml parser (minimal)
@@ -126,7 +126,7 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
         }
 
         // External package — check if it's a known dependency
-        if (pubspec && pubspec.dependencies.has(packageName)) {
+        if (pubspec?.dependencies.has(packageName)) {
             return null; // external dependency
         }
 
@@ -148,7 +148,7 @@ export function resolve(fromAbsFile: string, modulePath: string, repoRoot: strin
 
     // Try appending .dart if not already present
     if (!modulePath.endsWith('.dart')) {
-        const withExt = resolved + '.dart';
+        const withExt = `${resolved}.dart`;
         if (cachedExists(withExt)) {
             return withExt;
         }

@@ -5,9 +5,7 @@ import { registerExtractor } from './engine';
 import {
     computeContentHash,
     emptyResult,
-    extractDecorators,
     extractModifiers,
-    hasTestAnnotation,
     isAsync,
     isExported,
     isTestByNaming,

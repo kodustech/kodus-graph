@@ -7,7 +7,6 @@ import {
     emptyResult,
     extractDecorators,
     extractModifiers,
-    extractThrows,
     hasTestAnnotation,
     isExported,
     nodeRange,
@@ -109,7 +108,7 @@ const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 // ---------------------------------------------------------------------------
 
 export const javaExtractors: LanguageExtractors = {
-    extract(root: SgNode, fp: string): ExtractionResult {
+    extract(root: SgNode, _fp: string): ExtractionResult {
         const result = emptyResult();
 
         // ── Classes ──────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ export function extractModifiers(node: SgNode): string {
  */
 export function findAncestorByKinds(node: SgNode, kinds: string[]): SgNode | null {
     const kindSet = new Set(kinds);
-    return node.ancestors().find((a: SgNode) => kindSet.has(a.kind())) ?? null;
+    return node.ancestors().find((a: SgNode) => kindSet.has(String(a.kind()))) ?? null;
 }
 
 /**
@@ -120,9 +120,9 @@ export function emptyResult(): ExtractionResult {
 
 export interface ExportRules {
     /** Keywords that mark a declaration as exported (e.g., 'export', 'pub', 'public') */
-    exportKeywords?: string[];
+    exportKeywords?: readonly string[];
     /** Check modifiers node for these keywords */
-    modifierKeywords?: string[];
+    modifierKeywords?: readonly string[];
     /** Custom check based on name/node (Go uppercase, Python no underscore) */
     customCheck?: (name: string, node: SgNode) => boolean;
 }
@@ -131,16 +131,22 @@ export interface ExportRules {
  * Check if a node is exported based on language-specific rules.
  */
 export function isExported(name: string, node: SgNode, rules: ExportRules): boolean {
-    if (rules.customCheck?.(name, node)) return true;
+    if (rules.customCheck?.(name, node)) {
+        return true;
+    }
 
     // Check for export keyword as sibling or parent
     if (rules.exportKeywords?.length) {
         // Check parent node (export_statement wrapping the declaration)
         const parent = node.parent();
-        if (parent && rules.exportKeywords.some((kw) => String(parent.kind()).includes(kw))) return true;
+        if (parent && rules.exportKeywords.some((kw) => String(parent.kind()).includes(kw))) {
+            return true;
+        }
         // Check previous siblings
         for (const sib of node.prevAll()) {
-            if (rules.exportKeywords.some((kw) => String(sib.kind()) === kw || sib.text() === kw)) return true;
+            if (rules.exportKeywords.some((kw) => String(sib.kind()) === kw || sib.text() === kw)) {
+                return true;
+            }
         }
     }
 
@@ -162,7 +168,9 @@ export function isExported(name: string, node: SgNode, rules: ExportRules): bool
 export function isAsync(node: SgNode): boolean {
     // Check direct children for 'async' keyword
     for (const child of node.children()) {
-        if (String(child.kind()) === 'async' || child.text() === 'async') return true;
+        if (String(child.kind()) === 'async' || child.text() === 'async') {
+            return true;
+        }
     }
     return false;
 }
@@ -172,7 +180,9 @@ export function isAsync(node: SgNode): boolean {
  */
 export function extractDecorators(node: SgNode, decoratorKinds: string[]): string[] {
     const decorators: string[] = [];
-    if (!decoratorKinds.length) return decorators;
+    if (!decoratorKinds.length) {
+        return decorators;
+    }
 
     // Check previous siblings (TS/Python decorators come before the declaration)
     for (const sib of node.prevAll()) {
@@ -215,7 +225,9 @@ export function extractDecorators(node: SgNode, decoratorKinds: string[]): strin
  */
 export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
     const throws: string[] = [];
-    if (!throwKinds.length) return throws;
+    if (!throwKinds.length) {
+        return throws;
+    }
 
     const body =
         node.field('body') ||
@@ -223,7 +235,9 @@ export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
             const k = String(c.kind());
             return k === 'statement_block' || k === 'block' || k === 'function_body' || k === 'compound_statement';
         });
-    if (!body) return throws;
+    if (!body) {
+        return throws;
+    }
 
     for (const kind of throwKinds) {
         const throwNodes = body.findAll({ rule: { kind } });
@@ -242,9 +256,15 @@ export function extractThrows(node: SgNode, throwKinds: string[]): string[] {
             text = text.replace(/\(.*$/, '').trim();
 
             // Skip empty, generic re-throws, and short/minified names
-            if (!text) continue;
-            if (text.toLowerCase() === 'error') continue;
-            if (text.length <= 2) continue;
+            if (!text) {
+                continue;
+            }
+            if (text.toLowerCase() === 'error') {
+                continue;
+            }
+            if (text.length <= 2) {
+                continue;
+            }
 
             if (!throws.includes(text)) {
                 throws.push(text);

@@ -1876,12 +1876,7 @@ describe('new fields – Dart', () => {
     });
 
     test('@override decorator is captured', async () => {
-        const code = [
-            'class Svc {',
-            '  @override',
-            '  void run() {}',
-            '}',
-        ].join('\n');
+        const code = ['class Svc {', '  @override', '  void run() {}', '}'].join('\n');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
@@ -1893,12 +1888,7 @@ describe('new fields – Dart', () => {
     });
 
     test('@protected decorator is captured', async () => {
-        const code = [
-            'class Svc {',
-            '  @protected',
-            '  void _validate() {}',
-            '}',
-        ].join('\n');
+        const code = ['class Svc {', '  @protected', '  void _validate() {}', '}'].join('\n');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
@@ -1910,11 +1900,7 @@ describe('new fields – Dart', () => {
     });
 
     test('Dart has no throws concept — throws is always empty', async () => {
-        const code = [
-            'void fail() {',
-            '  throw ArgumentError("x");',
-            '}',
-        ].join('\n');
+        const code = ['void fail() {', '  throw ArgumentError("x");', '}'].join('\n');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.dart', 'dart', new Set(), graph);
@@ -1971,12 +1957,7 @@ describe('new fields – Scala', () => {
     });
 
     test('@deprecated annotation is captured in decorators', async () => {
-        const code = [
-            'class Svc {',
-            '  @deprecated("use newApi", "2.0")',
-            '  def oldApi(): Unit = ()',
-            '}',
-        ].join('\n');
+        const code = ['class Svc {', '  @deprecated("use newApi", "2.0")', '  def oldApi(): Unit = ()', '}'].join('\n');
         const root = await parseAsync('scala', code);
         const graph = emptyGraph();
         extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);
@@ -1988,12 +1969,7 @@ describe('new fields – Scala', () => {
     });
 
     test('@throws annotation is captured in both decorators and throws', async () => {
-        const code = [
-            'class Svc {',
-            '  @throws[IOException]',
-            '  def readFile(): String = ""',
-            '}',
-        ].join('\n');
+        const code = ['class Svc {', '  @throws[IOException]', '  def readFile(): String = ""', '}'].join('\n');
         const root = await parseAsync('scala', code);
         const graph = emptyGraph();
         extractFromFile(root, 'Test.scala', 'scala', new Set(), graph);

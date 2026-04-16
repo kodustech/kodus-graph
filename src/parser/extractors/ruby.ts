@@ -6,13 +6,7 @@ import { log } from '../../shared/logger';
 import { LANG_KINDS } from '../languages';
 import { registerExtractor } from './engine';
 import { computeContentHash } from './shared';
-import type {
-    ExtractedClass,
-    ExtractedFunction,
-    ExtractedImport,
-    ExtractionResult,
-    LanguageExtractors,
-} from './spec';
+import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
 // Core extraction (returns ExtractionResult directly)

@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerExtractor } from './engine';
-import { computeContentHash, emptyResult, hasTestAnnotation, isExported, isTestByNaming, nodeRange } from './shared';
+import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from './shared';
 import type { ExtractionResult, LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -129,7 +129,9 @@ export const goExtractors: LanguageExtractors = {
                 const fieldDeclList = structType.children().find((c) => c.kind() === 'field_declaration_list');
                 if (fieldDeclList) {
                     for (const field of fieldDeclList.children()) {
-                        if (field.kind() !== 'field_declaration') continue;
+                        if (field.kind() !== 'field_declaration') {
+                            continue;
+                        }
                         const fieldName = field.field('name');
                         const fieldType = field.field('type');
                         if (!fieldName && fieldType) {
@@ -213,7 +215,9 @@ export const goExtractors: LanguageExtractors = {
                                         }
                                     }
                                 }
-                                if (className) break;
+                                if (className) {
+                                    break;
+                                }
                             }
                         }
                     }

@@ -258,11 +258,7 @@ end
 
 describe('new fields – Elixir', () => {
     test('def has is_exported=true', async () => {
-        const code = [
-            'defmodule Svc do',
-            '  def public_fn(x), do: x',
-            'end',
-        ].join('\n');
+        const code = ['defmodule Svc do', '  def public_fn(x), do: x', 'end'].join('\n');
         const root = await parseAsync('elixir', code);
         const graph = emptyGraph();
         extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
@@ -273,11 +269,7 @@ describe('new fields – Elixir', () => {
     });
 
     test('defp has is_exported=false', async () => {
-        const code = [
-            'defmodule Svc do',
-            '  defp private_fn(x), do: x',
-            'end',
-        ].join('\n');
+        const code = ['defmodule Svc do', '  defp private_fn(x), do: x', 'end'].join('\n');
         const root = await parseAsync('elixir', code);
         const graph = emptyGraph();
         extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
@@ -299,11 +291,7 @@ describe('new fields – Elixir', () => {
     });
 
     test('Elixir function has is_async=false (uses processes, not async)', async () => {
-        const code = [
-            'defmodule Svc do',
-            '  def run(x), do: x',
-            'end',
-        ].join('\n');
+        const code = ['defmodule Svc do', '  def run(x), do: x', 'end'].join('\n');
         const root = await parseAsync('elixir', code);
         const graph = emptyGraph();
         extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
@@ -314,12 +302,7 @@ describe('new fields – Elixir', () => {
     });
 
     test('Elixir function has no decorators (module attributes are not decorators)', async () => {
-        const code = [
-            'defmodule Svc do',
-            '  @doc "Runs something"',
-            '  def run(x), do: x',
-            'end',
-        ].join('\n');
+        const code = ['defmodule Svc do', '  @doc "Runs something"', '  def run(x), do: x', 'end'].join('\n');
         const root = await parseAsync('elixir', code);
         const graph = emptyGraph();
         extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);
@@ -330,13 +313,7 @@ describe('new fields – Elixir', () => {
     });
 
     test('Elixir function has empty throws (no throws concept)', async () => {
-        const code = [
-            'defmodule Svc do',
-            '  def fail do',
-            '    raise ArgumentError, "x"',
-            '  end',
-            'end',
-        ].join('\n');
+        const code = ['defmodule Svc do', '  def fail do', '    raise ArgumentError, "x"', '  end', 'end'].join('\n');
         const root = await parseAsync('elixir', code);
         const graph = emptyGraph();
         extractFromFile(root, 'svc.ex', 'elixir', new Set(), graph);

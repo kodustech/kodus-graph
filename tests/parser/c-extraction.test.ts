@@ -421,12 +421,7 @@ describe('new fields – C', () => {
 
 describe('new fields – C++', () => {
     test('public class method has is_exported=true', async () => {
-        const code = [
-            'class Svc {',
-            'public:',
-            '    void run() {}',
-            '};',
-        ].join('\n');
+        const code = ['class Svc {', 'public:', '    void run() {}', '};'].join('\n');
         const root = await parseAsync('cpp', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
@@ -437,12 +432,7 @@ describe('new fields – C++', () => {
     });
 
     test('private class method has is_exported=false', async () => {
-        const code = [
-            'class Svc {',
-            'private:',
-            '    void helper() {}',
-            '};',
-        ].join('\n');
+        const code = ['class Svc {', 'private:', '    void helper() {}', '};'].join('\n');
         const root = await parseAsync('cpp', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);
@@ -497,11 +487,7 @@ describe('new fields – C++', () => {
     });
 
     test('C++ function has empty throws (exception specs deprecated)', async () => {
-        const code = [
-            'void fail() {',
-            '    throw std::invalid_argument("x");',
-            '}',
-        ].join('\n');
+        const code = ['void fail() {', '    throw std::invalid_argument("x");', '}'].join('\n');
         const root = await parseAsync('cpp', code);
         const graph = emptyGraph();
         extractFromFile(root, 'file.cpp', 'cpp', new Set(), graph);

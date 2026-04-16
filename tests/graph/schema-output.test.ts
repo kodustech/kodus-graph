@@ -11,10 +11,7 @@ describe('Graph output validates against schema (e2e)', () => {
         rmSync(TMP, { recursive: true, force: true });
         mkdirSync(join(TMP, 'src'), { recursive: true });
         writeFileSync(join(TMP, 'package.json'), JSON.stringify({ name: 'test' }));
-        writeFileSync(
-            join(TMP, 'tsconfig.json'),
-            JSON.stringify({ compilerOptions: { target: 'ES2022' } }),
-        );
+        writeFileSync(join(TMP, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022' } }));
 
         writeFileSync(
             join(TMP, 'src/user.ts'),

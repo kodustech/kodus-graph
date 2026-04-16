@@ -1,6 +1,6 @@
+import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'bun';
 import { writeFileSync } from 'fs';
-import { describe, expect, it } from 'bun:test';
 
 const CLI = ['bun', 'src/cli.ts'];
 const CWD = '/Users/wellingtonsantana/Documents/kodus-git/kodus-graph';
@@ -110,15 +110,7 @@ describe('CLI', () => {
         it('exits with error when multiple search modes given', () => {
             const tmpFile = '/tmp/test-graph-cli-multi-mode.json';
             writeFileSync(tmpFile, '{"nodes":[],"edges":[]}');
-            const { code, stderr } = runCLI([
-                'search',
-                '--graph',
-                tmpFile,
-                '--query',
-                'foo',
-                '--callers-of',
-                'bar',
-            ]);
+            const { code, stderr } = runCLI(['search', '--graph', tmpFile, '--query', 'foo', '--callers-of', 'bar']);
             expect(code).toBe(1);
             expect(stderr).toContain('mutually exclusive');
         });

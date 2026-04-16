@@ -22,13 +22,15 @@ function escapeXml(str: string): string {
         .replace(/'/g, '&apos;');
 }
 
-function shortName(qualifiedName: string): string {
+function _shortName(qualifiedName: string): string {
     return qualifiedName.split('::').pop() || qualifiedName;
 }
 
 function classQualifiedName(qualifiedName: string, name: string): string {
     const parts = qualifiedName.split('::');
-    if (parts.length < 3) return name;
+    if (parts.length < 3) {
+        return name;
+    }
     const className = parts[parts.length - 2];
     return `${className}.${name}`;
 }
@@ -101,11 +103,13 @@ interface CriticalPath {
     severity: 'high' | 'medium';
 }
 
-function buildCriticalPaths(functions: EnrichedFunction[], addedQN: Set<string>, maxPaths: number): CriticalPath[] {
+function buildCriticalPaths(functions: EnrichedFunction[], _addedQN: Set<string>, maxPaths: number): CriticalPath[] {
     const paths: CriticalPath[] = [];
 
     for (const fn of functions) {
-        if (fn.contract_diffs.length === 0 && !fn.is_new) continue;
+        if (fn.contract_diffs.length === 0 && !fn.is_new) {
+            continue;
+        }
 
         const throwsDiff = fn.contract_diffs.find((d) => d.field === 'throws');
         const returnDiff = fn.contract_diffs.find((d) => d.field === 'return_type');
@@ -143,10 +147,14 @@ function buildCriticalPaths(functions: EnrichedFunction[], addedQN: Set<string>,
                 });
             }
 
-            if (paths.length >= maxPaths) break;
+            if (paths.length >= maxPaths) {
+                break;
+            }
         }
 
-        if (paths.length >= maxPaths) break;
+        if (paths.length >= maxPaths) {
+            break;
+        }
     }
 
     // Sort by severity (high first), then truncate
@@ -156,7 +164,9 @@ function buildCriticalPaths(functions: EnrichedFunction[], addedQN: Set<string>,
 // ── WhatChanged ──
 
 function buildWhatChanged(fn: EnrichedFunction): string {
-    if (fn.is_new) return 'New function added';
+    if (fn.is_new) {
+        return 'New function added';
+    }
 
     const parts: string[] = [];
 
