@@ -281,6 +281,166 @@ kodus-graph communities --graph graph.json --out modules.json
 kodus-graph flows --graph graph.json --out flows.json --type http
 ```
 
+## Agent Integration
+
+kodus-graph generates structured context that AI agents use for code review. Here are integration patterns for different agent frameworks.
+
+### Claude Code (via shell)
+
+```bash
+# In a Claude Code session — generate context for files you're reviewing
+! kodus-graph parse --all --repo-dir . --out /tmp/graph.json
+! kodus-graph context --files src/auth.ts --graph /tmp/graph.json --format prompt --out /tmp/context.txt
+
+# Then ask Claude to review with the context
+cat /tmp/context.txt
+# "Review this code change considering the context above"
+```
+
+### Claude Code Skill
+
+Create a skill that auto-generates review context:
+
+```bash
+# .claude/skills/kodus-review.md
+# When user asks to review code, run:
+# 1. kodus-graph parse --all --repo-dir . --out /tmp/kg.json --max-memory 512
+# 2. kodus-graph context --files <changed-files> --graph /tmp/kg.json --format prompt --out /tmp/ctx.txt
+# 3. Read /tmp/ctx.txt and use it as review context
+```
+
+### Anthropic Claude API (TypeScript)
+
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+
+// 1. Generate graph context
+execSync('kodus-graph parse --all --repo-dir . --out /tmp/graph.json');
+execSync('kodus-graph context --files src/auth.ts --graph /tmp/graph.json --format prompt --out /tmp/context.txt');
+
+const reviewContext = readFileSync('/tmp/context.txt', 'utf-8');
+const diff = execSync('git diff main -- src/auth.ts').toString();
+
+// 2. Send to Claude with structural context
+const client = new Anthropic();
+const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: `You are a code reviewer. Use the structural context below to understand the full impact of changes.
+
+${reviewContext}`,
+    messages: [{
+        role: 'user',
+        content: `Review this diff:\n\n${diff}`
+    }]
+});
+```
+
+### OpenAI Agents SDK
+
+```typescript
+import { Agent, Runner } from 'openai-agents';
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+
+const reviewAgent = new Agent({
+    name: 'CodeReviewer',
+    instructions: (ctx) => {
+        // Generate fresh context for each review
+        execSync(`kodus-graph context --files ${ctx.files.join(' ')} --graph graph.json --format prompt --out /tmp/ctx.txt`);
+        const graphContext = readFileSync('/tmp/ctx.txt', 'utf-8');
+        return `You are a code reviewer with deep structural understanding.\n\n${graphContext}`;
+    },
+    model: 'gpt-4o',
+});
+```
+
+### Python (subprocess)
+
+```python
+import subprocess
+import json
+
+# Parse repository
+subprocess.run(["kodus-graph", "parse", "--all", "--repo-dir", ".", "--out", "graph.json"], check=True)
+
+# Get context for changed files
+result = subprocess.run(
+    ["kodus-graph", "context", "--files", "src/auth.py", "--graph", "graph.json", "--format", "json", "--out", "/dev/stdout"],
+    capture_output=True, text=True
+)
+context = json.loads(result.stdout)
+
+# Use in your agent
+blast_radius = context["analysis"]["blast_radius"]
+risk_level = context["analysis"]["risk_score"]["level"]
+print(f"Risk: {risk_level}, Blast radius: {blast_radius['total_functions']} functions")
+```
+
+### Using the JSON Output Programmatically
+
+```typescript
+import { readFileSync } from 'fs';
+
+// Load graph
+const graph = JSON.parse(readFileSync('graph.json', 'utf-8'));
+
+// Find all async exported functions that throw
+const riskyFunctions = graph.nodes.filter(n =>
+    n.is_exported && n.is_async && n.throws?.length > 0
+);
+
+// Find functions with most callers (highest blast radius potential)
+const callerCount = new Map<string, number>();
+for (const edge of graph.edges) {
+    if (edge.kind === 'CALLS') {
+        callerCount.set(edge.target_qualified, (callerCount.get(edge.target_qualified) || 0) + 1);
+    }
+}
+const hotspots = [...callerCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+console.log('Top 10 most-called functions:', hotspots);
+```
+
+### What the Agent Receives (prompt format)
+
+When you use `--format prompt`, the output looks like:
+
+```
+=== Code Review Context ===
+
+Risk Level: MEDIUM (score: 0.45)
+Blast Radius: 12 functions across 5 files
+
+--- Changed Functions ---
+
+1. src/auth.ts::authenticate
+   Status: modified
+     Changes: params, return_type, is_async
+     - params: (username: string) -> (username: string, options?: AuthOptions)
+     - return_type: Promise<User> -> Promise<User | null>
+     - is_async: false -> true
+     Impact: 5 callers must add await (sync->async)
+   Callers: [login, middleware.verify, api.handleAuth, ...]
+   Callees: [db.findUser, crypto.hash, ...]
+   Test coverage: YES (auth.test.ts)
+
+--- Blast Radius ---
+Depth 1: login, middleware.verify, api.handleAuth
+Depth 2: router.post, app.listen
+...
+```
+
+This gives the AI agent full understanding of:
+- **What changed** (not just the diff, but structural changes)
+- **Who's affected** (callers, callees, execution flows)
+- **How risky** (risk score, test coverage, blast radius)
+- **What broke** (contract diffs: params changed, async changed)
+
 ## Best Practices
 
 ### Parse Configuration
