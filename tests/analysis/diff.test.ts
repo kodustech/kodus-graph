@@ -230,8 +230,9 @@ describe('computeStructuralDiff', () => {
         });
     });
 
-    it('should detect decorators added from none', () => {
-        const oldNode = node('foo', 'src/a.ts', 1, 5);
+    it('should detect decorators added when baseline explicitly had none (empty array)', () => {
+        // `[]` means "parser confirmed no decorators" — legitimate delta.
+        const oldNode = { ...node('foo', 'src/a.ts', 1, 5), decorators: [] };
         const newNode = { ...node('foo', 'src/a.ts', 1, 5), decorators: ['@Injectable', '@Singleton'] };
         const oldGraph = makeGraph([oldNode], []);
         const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
@@ -245,13 +246,32 @@ describe('computeStructuralDiff', () => {
         });
     });
 
-    it('should NOT detect is_async change when both are undefined (default false)', () => {
+    it('should NOT flag decorators/throws/is_async change when baseline field is undefined', () => {
+        // `undefined` means the baseline source didn't persist the field (e.g. DB export
+        // missing the column). Treating this as "(none) → added" produces false positives
+        // on every function that has the field in head — regardless of real changes.
+        const oldNode = node('foo', 'src/a.ts', 1, 5); // no decorators/throws/is_async
+        const newNode = {
+            ...node('foo', 'src/a.ts', 1, 5),
+            decorators: ['@Injectable'],
+            throws: ['ValueError'],
+            is_async: true,
+        };
+        const oldGraph = makeGraph([oldNode], []);
+        const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
+
+        const diffs = result.nodes.modified.flatMap((m) => m.contract_diffs);
+        expect(diffs.filter((d) => d.field === 'decorators')).toHaveLength(0);
+        expect(diffs.filter((d) => d.field === 'throws')).toHaveLength(0);
+        expect(diffs.filter((d) => d.field === 'is_async')).toHaveLength(0);
+    });
+
+    it('should NOT detect is_async change when both are undefined', () => {
         const oldNode = node('foo', 'src/a.ts', 1, 5);
         const newNode = node('foo', 'src/a.ts', 1, 5);
         const oldGraph = makeGraph([oldNode], []);
         const result = computeStructuralDiff(oldGraph, [newNode], [], ['src/a.ts']);
 
-        // No changes at all (both default to false)
         const asyncDiffs = result.nodes.modified.flatMap((m) => m.contract_diffs.filter((d) => d.field === 'is_async'));
         expect(asyncDiffs).toHaveLength(0);
     });

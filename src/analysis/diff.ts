@@ -148,35 +148,45 @@ export function computeStructuralDiff(
                     new_value: newN.modifiers || '',
                 });
             }
-            const oldAsync = n.is_async ?? false;
-            const newAsync = newN.is_async ?? false;
-            if (oldAsync !== newAsync) {
-                changes.push('is_async');
-                contractDiffs.push({
-                    field: 'is_async',
-                    old_value: String(oldAsync),
-                    new_value: String(newAsync),
-                });
+            // Skip is_async/decorators/throws comparison when the baseline node
+            // lacks the field entirely. This happens when the baseline was
+            // produced by a source that doesn't persist that field (e.g. a DB
+            // export missing columns). Treating `undefined` as "empty" would
+            // fire a false positive on every node that has the field in head
+            // but not in baseline.
+            if (n.is_async !== undefined && newN.is_async !== undefined) {
+                if (n.is_async !== newN.is_async) {
+                    changes.push('is_async');
+                    contractDiffs.push({
+                        field: 'is_async',
+                        old_value: String(n.is_async),
+                        new_value: String(newN.is_async),
+                    });
+                }
             }
-            const oldDecs = (n.decorators ?? []).join(', ');
-            const newDecs = (newN.decorators ?? []).join(', ');
-            if (oldDecs !== newDecs) {
-                changes.push('decorators');
-                contractDiffs.push({
-                    field: 'decorators',
-                    old_value: oldDecs || '(none)',
-                    new_value: newDecs || '(none)',
-                });
+            if (n.decorators !== undefined && newN.decorators !== undefined) {
+                const oldDecs = n.decorators.join(', ');
+                const newDecs = newN.decorators.join(', ');
+                if (oldDecs !== newDecs) {
+                    changes.push('decorators');
+                    contractDiffs.push({
+                        field: 'decorators',
+                        old_value: oldDecs || '(none)',
+                        new_value: newDecs || '(none)',
+                    });
+                }
             }
-            const oldThrows = (n.throws ?? []).join(', ');
-            const newThrows = (newN.throws ?? []).join(', ');
-            if (oldThrows !== newThrows) {
-                changes.push('throws');
-                contractDiffs.push({
-                    field: 'throws',
-                    old_value: oldThrows || '(none)',
-                    new_value: newThrows || '(none)',
-                });
+            if (n.throws !== undefined && newN.throws !== undefined) {
+                const oldThrows = n.throws.join(', ');
+                const newThrows = newN.throws.join(', ');
+                if (oldThrows !== newThrows) {
+                    changes.push('throws');
+                    contractDiffs.push({
+                        field: 'throws',
+                        old_value: oldThrows || '(none)',
+                        new_value: newThrows || '(none)',
+                    });
+                }
             }
             if (changes.length > 0) {
                 modified.push({ qualified_name: qn, changes, contract_diffs: contractDiffs });

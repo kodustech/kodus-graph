@@ -26,7 +26,13 @@ function _shortName(qualifiedName: string): string {
     return qualifiedName.split('::').pop() || qualifiedName;
 }
 
-function classQualifiedName(qualifiedName: string, name: string): string {
+function classQualifiedName(qualifiedName: string, name: string, parentName?: string): string {
+    // Prefer parent_name when parser populated it — authoritative across languages
+    // (Python emits `file::Class.method`, TS/Java emits `file::Class::method`, etc.).
+    if (parentName && parentName !== name) {
+        return `${parentName}.${name}`;
+    }
+    // Fallback: parse from qualified_name for languages that encode class via `::`.
     const parts = qualifiedName.split('::');
     if (parts.length < 3) {
         return name;
@@ -50,7 +56,7 @@ function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet:
             if (!seen.has(key)) {
                 seen.add(key);
                 items.push(
-                    `Verify ${untestedCallers > 0 ? `${untestedCallers} untested ` : ''}callers of ${classQualifiedName(fn.qualified_name, fn.name)} handle new exception: ${throwsDiff.new_value}`,
+                    `Verify ${untestedCallers > 0 ? `${untestedCallers} untested ` : ''}callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} handle new exception: ${throwsDiff.new_value}`,
                 );
             }
         }
@@ -62,7 +68,7 @@ function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet:
             if (!seen.has(key)) {
                 seen.add(key);
                 items.push(
-                    `Check ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name)} handle return type change: ${returnDiff.old_value} → ${returnDiff.new_value}`,
+                    `Check ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} handle return type change: ${returnDiff.old_value} → ${returnDiff.new_value}`,
                 );
             }
         }
@@ -74,7 +80,7 @@ function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet:
             if (!seen.has(key)) {
                 seen.add(key);
                 items.push(
-                    `Verify ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name)} pass correct params after signature change`,
+                    `Verify ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} pass correct params after signature change`,
                 );
             }
         }
@@ -86,7 +92,7 @@ function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet:
                 seen.add(key);
                 const detail = fn.contract_diffs.length > 0 ? 'has contract changes, ' : 'has body changes, ';
                 items.push(
-                    `${classQualifiedName(fn.qualified_name, fn.name)} ${detail}${fn.callers.length} callers, and no test coverage`,
+                    `${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} ${detail}${fn.callers.length} callers, and no test coverage`,
                 );
             }
         }
@@ -121,7 +127,7 @@ function buildCriticalPaths(functions: EnrichedFunction[], _addedQN: Set<string>
                 paths.push({
                     steps: [
                         { name: caller.name },
-                        { name: classQualifiedName(fn.qualified_name, fn.name) },
+                        { name: classQualifiedName(fn.qualified_name, fn.name, fn.parent_name) },
                         { name: throwsDiff.new_value, isNew: true, annotation: 'throws' },
                     ],
                     risk: `Caller ${caller.name} may not catch ${throwsDiff.new_value}`,
@@ -131,7 +137,10 @@ function buildCriticalPaths(functions: EnrichedFunction[], _addedQN: Set<string>
                 paths.push({
                     steps: [
                         { name: caller.name },
-                        { name: classQualifiedName(fn.qualified_name, fn.name), annotation: 'return type changed' },
+                        {
+                            name: classQualifiedName(fn.qualified_name, fn.name, fn.parent_name),
+                            annotation: 'return type changed',
+                        },
                     ],
                     risk: `Caller ${caller.name} may assume old return type: ${returnDiff.old_value}`,
                     severity: 'high',
@@ -140,7 +149,10 @@ function buildCriticalPaths(functions: EnrichedFunction[], _addedQN: Set<string>
                 paths.push({
                     steps: [
                         { name: caller.name },
-                        { name: classQualifiedName(fn.qualified_name, fn.name), annotation: 'params changed' },
+                        {
+                            name: classQualifiedName(fn.qualified_name, fn.name, fn.parent_name),
+                            annotation: 'params changed',
+                        },
                     ],
                     risk: `Caller ${caller.name} may pass wrong arguments`,
                     severity: 'medium',
@@ -326,7 +338,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
 
     // ChangedFunctions
     for (const fn of truncated) {
-        const displayName = escapeXml(classQualifiedName(fn.qualified_name, fn.name));
+        const displayName = escapeXml(classQualifiedName(fn.qualified_name, fn.name, fn.parent_name));
         const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
         const tested = fn.has_test_coverage ? 'true' : 'false';
 

@@ -179,6 +179,7 @@ export function enrichChangedFunctions(
             return {
                 qualified_name: node.qualified_name,
                 name: node.name,
+                parent_name: node.parent_name,
                 kind: node.kind,
                 signature,
                 file_path: node.file_path,

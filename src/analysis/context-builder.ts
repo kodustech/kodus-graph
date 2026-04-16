@@ -76,10 +76,16 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         ...structuralDiff.nodes.removed.map((n) => n.qualified_name),
     ]);
 
-    // When baseline is absent or empty, ALL functions are "added" by structural diff.
-    // If we have actual diff hunks, filter to only functions whose lines overlap with real changes.
-    const isEmptyBaseline = !oldGraph || (oldGraph.nodes.length === 0 && oldGraph.edges.length === 0);
-    if (isEmptyBaseline && opts.diffHunks && opts.diffHunks.size > 0) {
+    // The unified diff is ground truth for what changed. Apply hunk overlap filter
+    // unconditionally when hunks are available, regardless of baseline presence.
+    //
+    // Why unconditional: the baseline graph may be stale or field-incomplete (e.g. a
+    // DB export missing `throws`/`decorators`/`content_hash`). In that case the
+    // structural diff fires on metadata divergence that doesn't reflect real code
+    // changes, producing false-positive "modified" entries for untouched functions.
+    // The hunk filter eliminates those by requiring the function to actually
+    // intersect a changed line range.
+    if (opts.diffHunks && opts.diffHunks.size > 0) {
         const before = trulyChangedQN.size;
         for (const qn of [...trulyChangedQN]) {
             const node = indexed.byQualified.get(qn);
@@ -93,7 +99,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
             trulyChangedQN.has(n.qualified_name),
         );
 
-        log.info('context: diff-hunk filter applied (fallback mode)', {
+        log.info('context: diff-hunk filter applied', {
             before,
             after: trulyChangedQN.size,
             filtered: before - trulyChangedQN.size,

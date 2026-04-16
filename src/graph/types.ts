@@ -162,6 +162,8 @@ export interface CalleeRef {
 export interface EnrichedFunction {
     qualified_name: string;
     name: string;
+    /** Enclosing class/module name when applicable — used for display disambiguation. */
+    parent_name?: string;
     kind: NodeKind;
     signature: string;
     file_path: string;

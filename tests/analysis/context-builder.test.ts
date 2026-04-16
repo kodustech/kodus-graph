@@ -501,25 +501,15 @@ describe('buildContextV2', () => {
         expect(names).not.toContain('validate');
     });
 
-    it('should NOT filter by diff hunks when oldGraph has real data', () => {
-        // When there's a real baseline, structural diff is the source of truth
+    it('should apply diff-hunk filter even when oldGraph has real data', () => {
+        // Unified diff is ground truth: if a function's lines don't overlap any
+        // hunk, it did not change — regardless of what metadata comparison says.
+        // This protects against stale/field-incomplete baselines (e.g. DB export
+        // missing `throws`/`decorators`) that would otherwise fire false positives.
         const diffHunks = new Map([
-            ['src/auth.ts', [{ newStart: 999, newCount: 1 }]], // hunk far away — would filter everything
+            ['src/auth.ts', [{ newStart: 999, newCount: 1 }]], // hunk far from any function
         ]);
 
-        const result = buildContextV2({
-            mergedGraph: graphData,
-            oldGraph: null, // null triggers filter, but let's test non-empty oldGraph
-            changedFiles: ['src/auth.ts'],
-            minConfidence: 0.5,
-            maxDepth: 3,
-            diffHunks,
-        });
-
-        // With oldGraph=null, the diff filter kicks in and removes functions not in hunk 999
-        expect(result.analysis.changed_functions).toHaveLength(0);
-
-        // Now with a real oldGraph — diff filter should NOT apply
         const oldGraph: GraphData = {
             nodes: [
                 {
@@ -530,7 +520,7 @@ describe('buildContextV2', () => {
                     line_start: 10,
                     line_end: 20,
                     language: 'typescript',
-                    params: '(ctx: Ctx)', // different → modified
+                    params: '(ctx: Ctx)', // baseline differs → structural diff would flag as modified
                     return_type: 'Result',
                     is_test: false,
                     file_hash: 'old',
@@ -548,8 +538,117 @@ describe('buildContextV2', () => {
             diffHunks,
         });
 
-        // With real oldGraph, diff hunks are ignored — structural diff is used
-        expect(resultWithBaseline.analysis.changed_functions.length).toBeGreaterThan(0);
+        // Hunk at line 999 doesn't overlap any function → nothing truly changed
+        expect(resultWithBaseline.analysis.changed_functions).toHaveLength(0);
+    });
+
+    it('should suppress false positives from stale baseline missing throws/decorators', () => {
+        // Scenario: DB-exported baseline lacks `throws` and `decorators` columns,
+        // but the fresh parse extracts them. Without the hunk filter, every
+        // function with throws/decorators in the head code would be marked
+        // "modified" with a bogus contract diff. With the filter, only functions
+        // actually touched by the diff appear.
+        const headGraph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Method',
+                    name: 'get_result',
+                    qualified_name: 'src/p.py::A::get_result',
+                    file_path: 'src/p.py',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'python',
+                    params: '(self)',
+                    return_type: 'list',
+                    is_test: false,
+                    file_hash: 'head',
+                    content_hash: 'hash-new', // body changed in PR
+                    throws: ['BadPaginationError'], // fresh parse extracts this
+                    decorators: [],
+                },
+                {
+                    kind: 'Method',
+                    name: 'get_result',
+                    qualified_name: 'src/p.py::B::get_result',
+                    file_path: 'src/p.py',
+                    line_start: 100,
+                    line_end: 110,
+                    language: 'python',
+                    params: '(self)',
+                    return_type: 'list',
+                    is_test: false,
+                    file_hash: 'head',
+                    content_hash: 'hash-unchanged',
+                    throws: ['BadPaginationError'],
+                    decorators: [],
+                },
+            ],
+            edges: [],
+        };
+
+        // Stale baseline: DB export missing `throws`/`decorators`/`content_hash` columns.
+        // Without the undefined-skip fix, the structural diff would flag both functions
+        // as "throws added" (undefined → [BadPaginationError]). With the fix, only the
+        // real body change on A::get_result surfaces via hash comparison — and the hunk
+        // filter further restricts output to functions actually overlapping a diff hunk.
+        const staleBaseline: GraphData = {
+            nodes: [
+                {
+                    kind: 'Method',
+                    name: 'get_result',
+                    qualified_name: 'src/p.py::A::get_result',
+                    file_path: 'src/p.py',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'python',
+                    params: '(self)',
+                    return_type: 'list',
+                    is_test: false,
+                    file_hash: 'head',
+                    content_hash: 'hash-old', // differs from head → real body change
+                    // throws/decorators undefined — DB doesn't persist them
+                },
+                {
+                    kind: 'Method',
+                    name: 'get_result',
+                    qualified_name: 'src/p.py::B::get_result',
+                    file_path: 'src/p.py',
+                    line_start: 100,
+                    line_end: 110,
+                    language: 'python',
+                    params: '(self)',
+                    return_type: 'list',
+                    is_test: false,
+                    file_hash: 'head',
+                    content_hash: 'hash-unchanged', // same as head → no body change
+                },
+            ],
+            edges: [],
+        };
+
+        const diffHunks = new Map([['src/p.py', [{ newStart: 12, newCount: 3 }]]]);
+
+        const result = buildContextV2({
+            mergedGraph: headGraph,
+            oldGraph: staleBaseline,
+            changedFiles: ['src/p.py'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // A: real body change + hunk overlap → included, but no bogus throws/decorators diff
+        // B: no body change + no hunk overlap → excluded
+        const names = result.analysis.changed_functions.map((f) => f.qualified_name);
+        expect(names).toContain('src/p.py::A::get_result');
+        expect(names).not.toContain('src/p.py::B::get_result');
+        expect(result.analysis.changed_functions).toHaveLength(1);
+
+        const aFn = result.analysis.changed_functions.find((f) => f.qualified_name === 'src/p.py::A::get_result')!;
+        const bogusDiffs = aFn.contract_diffs.filter(
+            (d) => d.field === 'throws' || d.field === 'decorators' || d.field === 'is_async',
+        );
+        expect(bogusDiffs).toHaveLength(0);
     });
 
     it('should mark blast radius entries as contract_breaking when seed has contract diffs', () => {
