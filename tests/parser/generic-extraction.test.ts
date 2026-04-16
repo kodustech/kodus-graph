@@ -1405,7 +1405,7 @@ describe('extractGeneric – Swift', () => {
 
 describe('extractGeneric – Dart', () => {
     test('extracts class UserService from Sample.dart', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1419,7 +1419,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts abstract class Repository as interface', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1433,7 +1433,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts enum UserStatus', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1445,7 +1445,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts mixin Loggable as class', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1458,7 +1458,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts methods from UserService', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1480,7 +1480,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts constructor from UserService', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1492,7 +1492,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts top-level function createService', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1506,7 +1506,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('extracts imports from Sample.dart', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1521,7 +1521,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('export detection: underscore prefix = private', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
@@ -1545,7 +1545,7 @@ describe('extractGeneric – Dart', () => {
     });
 
     test('throws is always empty/undefined for Dart', async () => {
-        const fp = join(FIXTURES, 'dart/Sample.dart');
+        const fp = join(FIXTURES, 'dart/sample.dart');
         const code = readFileSync(fp, 'utf-8');
         const root = await parseAsync('dart', code);
         const graph = emptyGraph();
