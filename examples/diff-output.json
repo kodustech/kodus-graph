@@ -1,0 +1,45 @@
+{
+  "changed_files": [
+    "src/auth.ts"
+  ],
+  "summary": {
+    "added": 0,
+    "removed": 0,
+    "modified": 1
+  },
+  "nodes": {
+    "added": [],
+    "removed": [],
+    "modified": [
+      {
+        "qualified_name": "src/auth.ts::AuthService.authenticate",
+        "changes": [
+          "is_async"
+        ],
+        "contract_diffs": [
+          {
+            "field": "is_async",
+            "old_value": "false",
+            "new_value": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "edges": {
+    "added": [],
+    "removed": [
+      {
+        "kind": "CALLS",
+        "source_qualified": "src/auth.ts::AuthService.authenticate",
+        "target_qualified": "src/db.ts::findUser"
+      }
+    ]
+  },
+  "risk_by_file": {
+    "src/auth.ts": {
+      "dependents": 1,
+      "risk": "LOW"
+    }
+  }
+}

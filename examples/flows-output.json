@@ -1,0 +1,59 @@
+{
+  "flows": [
+    {
+      "entry_point": "tests/auth.test.ts::verifyToken returns true for non-empty",
+      "type": "test",
+      "depth": 1,
+      "node_count": 2,
+      "file_count": 2,
+      "criticality": 4,
+      "path": [
+        "tests/auth.test.ts::verifyToken returns true for non-empty",
+        "src/auth.ts::AuthService.verifyToken"
+      ]
+    },
+    {
+      "entry_point": "src/controller.ts::AuthController.login",
+      "type": "http",
+      "depth": 1,
+      "node_count": 2,
+      "file_count": 1,
+      "criticality": 2,
+      "path": [
+        "src/controller.ts::AuthController.login",
+        "tests/auth.test.ts::AuthService.authenticate"
+      ]
+    },
+    {
+      "entry_point": "tests/auth.test.ts::AuthService",
+      "type": "test",
+      "depth": 0,
+      "node_count": 1,
+      "file_count": 1,
+      "criticality": 1,
+      "path": [
+        "tests/auth.test.ts::AuthService"
+      ]
+    },
+    {
+      "entry_point": "tests/auth.test.ts::should authenticate valid user",
+      "type": "test",
+      "depth": 0,
+      "node_count": 1,
+      "file_count": 1,
+      "criticality": 1,
+      "path": [
+        "tests/auth.test.ts::should authenticate valid user"
+      ]
+    }
+  ],
+  "summary": {
+    "total_flows": 4,
+    "by_type": {
+      "test": 3,
+      "http": 1
+    },
+    "avg_depth": 0.5,
+    "max_criticality": 4
+  }
+}

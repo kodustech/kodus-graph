@@ -1,0 +1,16 @@
+4 changed (4 untested) | 7 impacted | 1 files | risk MEDIUM 0.44
+
+CHANGED:
+  authenticate(ctx: Context) -> Promise<Result> [src/auth.ts:10-14] new | 0 callers | untested
+
+  verifyToken(token: string) -> boolean [src/auth.ts:16-18] new | 0 callers | untested
+
+  hashPassword(password: string) -> string [src/auth.ts:21-23] new | 0 callers | untested
+
+  validateEmail(email: string) -> boolean [src/auth.ts:25-27] new | 0 callers | untested
+
+IMPORTS:
+  src/auth.ts → src/db.ts (NEW, ⚠ UNRESOLVED)
+
+HIERARCHY:
+  AuthService

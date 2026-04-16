@@ -1,0 +1,68 @@
+{
+  "communities": [
+    {
+      "name": "src/auth.ts",
+      "files": [
+        "src/auth.ts"
+      ],
+      "node_count": 7,
+      "cohesion": 0,
+      "language": "typescript"
+    },
+    {
+      "name": "tests/auth.test.ts",
+      "files": [
+        "tests/auth.test.ts"
+      ],
+      "node_count": 6,
+      "cohesion": 0,
+      "language": "typescript"
+    },
+    {
+      "name": "src/controller.ts",
+      "files": [
+        "src/controller.ts"
+      ],
+      "node_count": 3,
+      "cohesion": 0,
+      "language": "typescript"
+    },
+    {
+      "name": "src/user.service.ts",
+      "files": [
+        "src/user.service.ts"
+      ],
+      "node_count": 2,
+      "cohesion": 0,
+      "language": "typescript"
+    },
+    {
+      "name": "src/db.ts",
+      "files": [
+        "src/db.ts"
+      ],
+      "node_count": 2,
+      "cohesion": 0,
+      "language": "typescript"
+    }
+  ],
+  "coupling": [
+    {
+      "source": "src/auth.ts",
+      "target": "tests/auth.test.ts",
+      "edges": 1,
+      "strength": "HIGH"
+    },
+    {
+      "source": "src/auth.ts",
+      "target": "src/db.ts",
+      "edges": 1,
+      "strength": "HIGH"
+    }
+  ],
+  "summary": {
+    "total_communities": 5,
+    "avg_cohesion": 0,
+    "high_coupling_pairs": 2
+  }
+}

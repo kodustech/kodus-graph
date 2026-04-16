@@ -218,15 +218,127 @@ kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 | Unique match | 0.50 | Only one candidate across codebase |
 | Ambiguous | 0.30 | Multiple candidates found |
 
+## Workflows
+
+### Full Repository Analysis (first time)
+
+```bash
+# 1. Parse entire codebase
+kodus-graph parse --all --repo-dir . --out graph.json
+
+# 2. Analyze specific changed files
+kodus-graph analyze --files src/auth.ts src/user.ts --graph graph.json --out analysis.json
+
+# 3. Generate review context for AI agent
+kodus-graph context --files src/auth.ts src/user.ts --graph graph.json --out context.txt --format prompt
+```
+
+### Incremental Updates (subsequent runs)
+
+```bash
+# Only re-parse changed files (fast)
+kodus-graph update --repo-dir . --graph graph.json
+
+# Then analyze/context as needed
+kodus-graph context --files src/auth.ts --graph graph.json --out context.txt --format prompt
+```
+
+### CI/CD Integration
+
+```bash
+# In your CI pipeline (GitHub Actions, GitLab CI, etc.)
+# 1. Parse the PR branch
+kodus-graph parse --all --repo-dir . --out head-graph.json --max-memory 512
+
+# 2. Generate context for changed files
+kodus-graph context \
+  --files $(git diff --name-only main...HEAD) \
+  --graph head-graph.json \
+  --out review-context.txt \
+  --format prompt \
+  --min-confidence 0.5
+
+# 3. Feed to AI reviewer
+cat review-context.txt | your-ai-review-tool
+```
+
+### Exploring a Codebase
+
+```bash
+# Find all methods in a service
+kodus-graph search --graph graph.json --query "*Service*" --kind Method
+
+# Who calls this function?
+kodus-graph search --graph graph.json --callers-of "src/db.ts::query"
+
+# What does this function call?
+kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
+
+# Detect module boundaries and coupling
+kodus-graph communities --graph graph.json --out modules.json
+
+# Trace execution flows
+kodus-graph flows --graph graph.json --out flows.json --type http
+```
+
+## Best Practices
+
+### Parse Configuration
+
+| Flag | Recommended | Why |
+|------|-------------|-----|
+| `--max-memory 512` | CI/sandbox | Prevents OOM in constrained environments (default 768MB) |
+| `--skip-tests` | Large repos | Reduces noise — test nodes and TESTED_BY edges are skipped |
+| `--exclude "**/*.test.ts" "**/node_modules/**"` | Always | Don't parse test files or dependencies |
+
+### Context Configuration
+
+| Flag | Recommended | Why |
+|------|-------------|-----|
+| `--min-confidence 0.5` | Default | Filters out ambiguous calls (0.30 confidence) from blast radius |
+| `--max-depth 3` | Default | 3 levels of callers is usually enough; deeper adds noise |
+| `--max-functions 30` | Prompt format | Limits LLM context size |
+| `--max-prompt-chars 20000` | Prompt format | Prevents token overflow |
+| `--format prompt` | For LLMs | Generates human-readable text instead of JSON |
+
+### When to Re-parse
+
+| Scenario | Command |
+|----------|---------|
+| First time | `parse --all` |
+| After merging a PR | `update` (incremental) |
+| After major refactor | `parse --all` (full rebuild) |
+| Graph feels stale/wrong | `parse --all` (full rebuild) |
+| Only changed files matter | `parse --files <changed>` |
+
+### Interpreting Risk Scores
+
+| Level | Score Range | What it means |
+|-------|:-----------:|---------------|
+| LOW | 0.0-0.3 | Small change, well-tested, limited blast radius |
+| MEDIUM | 0.3-0.6 | Moderate impact, some test gaps or moderate blast radius |
+| HIGH | 0.6-1.0 | Wide blast radius, missing tests, or inheritance chain affected |
+
+The score is computed from 4 factors:
+- **blast_radius** (40%) — how many functions are affected
+- **test_gaps** (30%) — how many changed functions lack tests
+- **complexity** (15%) — lines of code in changed functions
+- **inheritance** (15%) — whether class hierarchy is affected
+
 ## Examples
 
 The `examples/` directory contains real output from running kodus-graph on a sample TypeScript project:
 
 | File | Command | Description |
 |---|---|---|
-| [`parse-output.json`](examples/parse-output.json) | `parse --all` | Full graph with 17 nodes, 21 edges |
+| [`parse-output.json`](examples/parse-output.json) | `parse --all` | Full graph with nodes, edges, and new fields |
 | [`analyze-output.json`](examples/analyze-output.json) | `analyze --files src/auth.ts` | Blast radius, risk score, test gaps |
-| [`context-output.json`](examples/context-output.json) | `context --files src/auth.ts` | Enriched review context for AI agents |
+| [`context-output.json`](examples/context-output.json) | `context --format json` | Enriched review context (JSON) |
+| [`context-prompt-output.txt`](examples/context-prompt-output.txt) | `context --format prompt` | Review context formatted for LLM agents |
+| [`diff-output.json`](examples/diff-output.json) | `diff --files src/auth.ts` | Structural diff with contract diffs |
+| [`search-output.json`](examples/search-output.json) | `search --query "auth*"` | Graph search results |
+| [`flows-output.json`](examples/flows-output.json) | `flows` | Execution flow traces |
+| [`communities-output.json`](examples/communities-output.json) | `communities` | Module clustering |
 
 ## Architecture
 
