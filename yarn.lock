@@ -2,10 +2,38 @@
 # yarn lockfile v1
 
 
+"@ast-grep/lang-c@^0.0.6":
+  version "0.0.6"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-c/-/lang-c-0.0.6.tgz#54b23d12ba3f3b788b1b49ea4f6641f2d29169bc"
+  integrity sha512-z4ldQyXENqqiNr+F3qhhtKYxgRwLGpOrpc0RIsINwbzeixyFnlNWw5MB1p5yIXN1DkHWrnz5Sd6Wl5s0Mbf6OQ==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-cpp@^0.0.6":
+  version "0.0.6"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-cpp/-/lang-cpp-0.0.6.tgz#d1512909063d76b9d258b01ec102bfabac5315e3"
+  integrity sha512-VsNr3fzgV969wuWnno7Rb2LexpeO9TwVBiwnCeH9NsDD6/v7Vr529FJF07E2bAsQjB2HPdljY2/a11GbT3xG9A==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
 "@ast-grep/lang-csharp@^0.0.6":
   version "0.0.6"
   resolved "https://registry.npmjs.org/@ast-grep/lang-csharp/-/lang-csharp-0.0.6.tgz#042c23747ff8cb0f290450d8b0eae19e82b6bc7d"
   integrity sha512-9Aq0WvJ5wRdJ+iply7H2Aq89o2BOdxFXh3H9tLvf8DryyHgWAQA/CRKUw1HjV8Q4ABUZFl1vLq9Uv3t0gQtZdQ==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-dart@^0.0.7":
+  version "0.0.7"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-dart/-/lang-dart-0.0.7.tgz#b36d467254929279629a16b80e9900fa1a2bc711"
+  integrity sha512-9tTkOnw10g+/cgt8jw1XqZ0AKLDXoKYP1HoY3reZPQLhk4IWs8mNAu4Yd6E80CdQ2sJ10+L7wv1C16jTt4Yirw==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-elixir@^0.0.7":
+  version "0.0.7"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-elixir/-/lang-elixir-0.0.7.tgz#3629f6df687fe505e4ec5d21b01c9e535cce9948"
+  integrity sha512-oKaLIX62nMb1H/utcbRe67eHooY7tobUniuUtNb8T5B/vfaFYAec2qCJbdFEh0sng69LwmOU9ojikAMRWkVFXw==
   dependencies:
     "@ast-grep/setup-lang" "0.0.6"
 
@@ -20,6 +48,13 @@
   version "0.0.7"
   resolved "https://registry.npmjs.org/@ast-grep/lang-java/-/lang-java-0.0.7.tgz#1b130e8064d226342103aeaad396bb1d5aceb112"
   integrity sha512-7muXd2MqUxJ8SrLrXU+JbvU6qSASZ5BZqH/eCDkIIjXge5wMl7kIYxKEgP375W8lnTXQYjM+VgeOkYSU9EexJg==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-kotlin@^0.0.7":
+  version "0.0.7"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-kotlin/-/lang-kotlin-0.0.7.tgz#aa32c8f7c7b79d9255f007334066b2f5d03b3c3b"
+  integrity sha512-+rXVbmESlE5c3QQGl/si0BRj/aC/v6P8Tw//8UxojoqlfZDISG95bHeVRZxb4NuEkt0kFFRn7Lbi9DsHXn8MbA==
   dependencies:
     "@ast-grep/setup-lang" "0.0.6"
 
@@ -48,6 +83,20 @@
   version "0.0.7"
   resolved "https://registry.npmjs.org/@ast-grep/lang-rust/-/lang-rust-0.0.7.tgz#a7056372911760b51ce734250910b6efe38987ee"
   integrity sha512-CF6jv8XmlVQgr/pFKADM87EkoGiHIrHKsG1wcX2iqgdBX5kW8wH+Zd4GP6SMme2eZogD49f19vRoRTF44iZqzg==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-scala@^0.0.7":
+  version "0.0.7"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-scala/-/lang-scala-0.0.7.tgz#8e5c25815fdf9c3b66f9c181b8bc46dc58491f2f"
+  integrity sha512-ZORuIKsydtYB0oLaD73tjnZe7LECaam1JCqa4Mc/gzhhYA7AwCmqbPRj0S9PdSOP65orWDbwYu5wroBnGXxG1Q==
+  dependencies:
+    "@ast-grep/setup-lang" "0.0.6"
+
+"@ast-grep/lang-swift@^0.0.8":
+  version "0.0.8"
+  resolved "https://registry.yarnpkg.com/@ast-grep/lang-swift/-/lang-swift-0.0.8.tgz#05511ed2aae15cbd366c975d941d18cbc6c9cf00"
+  integrity sha512-v+pLafFzXQJ/yTgmOclSzBDX+actORUqrAL0+fJkHlvnbYARxXXKoo4bonuWlzLjp+gOLP/Liuvhb4FlWgPFXA==
   dependencies:
     "@ast-grep/setup-lang" "0.0.6"
 
@@ -171,11 +220,11 @@
   integrity sha512-aW/JU5GuyH4uxMrNYpoC2kjaHlyJGLgIa3XkhPEZI0uKhZhJZU8BuEyJmvgzSPQNGozBwWjC972RaNdcJ9KyJg==
 
 "@types/bun@^1.3.11":
-  version "1.3.11"
-  resolved "https://registry.npmjs.org/@types/bun/-/bun-1.3.11.tgz#621d278054d66c524e1137eff95831081183d466"
-  integrity sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg==
+  version "1.3.12"
+  resolved "https://registry.yarnpkg.com/@types/bun/-/bun-1.3.12.tgz#2828351500d21fd656ccd1fc41579a35303df6f6"
+  integrity sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A==
   dependencies:
-    bun-types "1.3.11"
+    bun-types "1.3.12"
 
 "@types/node@*":
   version "25.5.2"
@@ -184,10 +233,10 @@
   dependencies:
     undici-types "~7.18.0"
 
-bun-types@1.3.11:
-  version "1.3.11"
-  resolved "https://registry.npmjs.org/bun-types/-/bun-types-1.3.11.tgz#5f71045a160ef6e04b51d20ec94c8096279b7d17"
-  integrity sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg==
+bun-types@1.3.12:
+  version "1.3.12"
+  resolved "https://registry.yarnpkg.com/bun-types/-/bun-types-1.3.12.tgz#236445836414b1a328453da8b571e2ed4d257c9f"
+  integrity sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA==
   dependencies:
     "@types/node" "*"
 
