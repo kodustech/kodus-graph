@@ -3,11 +3,14 @@
   "version": "0.2.18",
   "description": "Code graph builder for Kodus code review — parses source code into structural graphs with nodes, edges, and analysis",
   "type": "module",
-  "main": "./dist/cli.js",
-  "types": "./dist/cli.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/cli.d.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": {
       "import": "./dist/cli.js"
     }
   },

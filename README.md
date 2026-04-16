@@ -47,6 +47,65 @@ kodus-graph analyze --files src/auth.ts src/db.ts --graph graph.json --out analy
 kodus-graph context --files src/auth.ts --graph graph.json --out context.json --format json
 ```
 
+### Piping with `--out -`
+
+Every command accepts `--out -` to write its output to stdout instead of a file.
+Info/progress logs go to stderr, so stdout stays clean for Unix pipes:
+
+```bash
+# Pipe the prompt context straight into an AI review tool
+kodus-graph context \
+  --files src/auth.ts \
+  --graph graph.json \
+  --format prompt \
+  --out - | ai-review-tool
+
+# Filter graph output with jq without touching the disk
+kodus-graph parse --all --repo-dir . --out - | jq '.nodes | length'
+```
+
+### Library Usage
+
+`@kodus/kodus-graph` is also importable as a library for programmatic use:
+
+```typescript
+import { executeParse, executeContext, type GraphData } from '@kodus/kodus-graph';
+
+// Parse a repo programmatically
+await executeParse({
+    repoDir: '.',
+    all: true,
+    out: 'graph.json',
+});
+
+// Generate review context
+await executeContext({
+    repoDir: '.',
+    files: ['src/auth.ts'],
+    graph: 'graph.json',
+    out: 'context.txt',
+    format: 'prompt',
+    minConfidence: 0.5,
+    maxDepth: 3,
+});
+
+// Or use stdout mode for piping / in-memory capture
+await executeContext({
+    repoDir: '.',
+    files: ['src/auth.ts'],
+    graph: 'graph.json',
+    out: '-', // writes to process.stdout
+    format: 'prompt',
+    minConfidence: 0.5,
+    maxDepth: 3,
+});
+```
+
+The library exports all `execute*` command handlers, core types
+(`GraphData`, `GraphNode`, `GraphEdge`, `ParseOutput`, `AnalysisOutput`, etc.),
+utilities (`loadGraph`, `mergeGraphs`), and Zod schemas
+(`graphDataSchema`, `graphNodeSchema`, `graphEdgeSchema`).
+
 ## Commands
 
 ### `parse`
