@@ -93,7 +93,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     // Phase 4: Resolve calls
     let { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
     process.stderr.write(
-        `[4/5] Resolved ${callEdges.length} calls (DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise})\n`,
+        `[4/5] Resolved ${callEdges.length} calls (DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
     );
 
     // Phase 5: Build output

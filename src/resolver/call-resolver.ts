@@ -9,7 +9,7 @@
  */
 
 import type { RawCallEdge, RawCallSite } from '../graph/types';
-import { NOISE } from '../shared/filters';
+import { AMBIGUOUS_NOISE, NOISE } from '../shared/filters';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
 
@@ -28,6 +28,7 @@ interface CallResolverStats {
     unique: number;
     ambiguous: number;
     noise: number;
+    ambiguousNoise: number;
 }
 
 interface ResolveAllResult {
@@ -50,7 +51,15 @@ export function resolveAllCalls(
     importMap: ImportMap,
 ): ResolveAllResult {
     const callEdges: RawCallEdge[] = [];
-    const stats: CallResolverStats = { di: 0, same: 0, import: 0, unique: 0, ambiguous: 0, noise: 0 };
+    const stats: CallResolverStats = {
+        di: 0,
+        same: 0,
+        import: 0,
+        unique: 0,
+        ambiguous: 0,
+        noise: 0,
+        ambiguousNoise: 0,
+    };
 
     for (const call of rawCalls) {
         if (NOISE.has(call.callName)) {
@@ -95,6 +104,10 @@ export function resolveAllCalls(
 
         // Name-based cascade fallback
         const resolved = resolveByName(call.callName, fp, symbolTable, importMap);
+        if (resolved === AMBIGUOUS_NOISE_DROP) {
+            stats.ambiguousNoise++;
+            continue;
+        }
         if (resolved) {
             callEdges.push({
                 source: fp,
@@ -171,12 +184,20 @@ function resolveDICall(
 
 // ── Name-based resolution (4-tier cascade) ──
 
+/**
+ * Internal marker indicating a call was deliberately dropped because it is
+ * a generic/noisy name that only resolves ambiguously. Distinct from `null`
+ * (unresolved) so stats can count these separately.
+ */
+const AMBIGUOUS_NOISE_DROP = Symbol('ambiguous_noise_drop');
+type ResolveByNameResult = ResolveResult | null | typeof AMBIGUOUS_NOISE_DROP;
+
 function resolveByName(
     callName: string,
     currentFile: string,
     symbolTable: SymbolTable,
     importMap: ImportMap,
-): ResolveResult | null {
+): ResolveByNameResult {
     // Strategy 1: Same file (0.85)
     const sameFile = symbolTable.lookupExact(currentFile, callName);
     if (sameFile) {
@@ -193,15 +214,24 @@ function resolveByName(
         return { target: `${importedFrom}::${callName}`, confidence: 0.7, strategy: 'import' };
     }
 
-    // Strategy 3: Unique global name (0.50)
+    // Strategy 3: Unique global name (0.50, bumped to 0.60 if same package/dir)
     if (symbolTable.isUnique(callName)) {
         const candidates = symbolTable.lookupGlobal(callName);
-        return { target: candidates[0], confidence: 0.5, strategy: 'unique' };
+        const target = candidates[0];
+        const candidateFile = target.includes('::') ? target.split('::')[0] : target;
+        const callerDir = getDir(currentFile);
+        const inSameDir = callerDir.length > 0 && candidateFile.startsWith(`${callerDir}/`);
+        return { target, confidence: inSameDir ? 0.6 : 0.5, strategy: 'unique' };
     }
 
     // Strategy 4: Ambiguous (0.30) — pick closest candidate by directory proximity
     const candidates = symbolTable.lookupGlobal(callName);
     if (candidates.length > 1) {
+        // Drop generic/noisy names at the ambiguous tier to avoid polluting
+        // the graph with low-signal 0.30 edges across unrelated modules.
+        if (NOISE.has(callName) || AMBIGUOUS_NOISE.has(callName)) {
+            return AMBIGUOUS_NOISE_DROP;
+        }
         const best = pickClosestCandidate(candidates, currentFile);
         return { target: best, confidence: 0.3, strategy: 'ambiguous' };
     }
@@ -209,13 +239,41 @@ function resolveByName(
     return null;
 }
 
+function getDir(file: string): string {
+    const i = file.lastIndexOf('/');
+    return i < 0 ? '' : file.substring(0, i);
+}
+
 // ── Proximity-based candidate selection ──
 
 /**
  * Pick the candidate whose file path is closest to the caller's file.
- * Counts shared leading path segments — more shared = closer.
+ *
+ * Preference order:
+ *   1. Exact same directory (sibling file)
+ *   2. Most shared leading path segments (existing prefix heuristic)
+ *
+ * Example: caller `src/services/auth.ts` calling `foo()` with candidates
+ *   - `src/services/user.ts::foo`
+ *   - `src/utils/helpers.ts::foo`
+ * Both share the `src/` prefix (depth 1), but `services/user.ts` is a
+ * direct sibling of the caller and is preferred.
  */
 function pickClosestCandidate(candidates: string[], callerFile: string): string {
+    const callerDir = getDir(callerFile);
+
+    // Tier A: prefer a sibling in the exact same directory
+    if (callerDir.length > 0) {
+        const sameDirPrefix = `${callerDir}/`;
+        for (const candidate of candidates) {
+            const candidateFile = candidate.includes('::') ? candidate.split('::')[0] : candidate;
+            if (getDir(candidateFile) === callerDir && candidateFile.startsWith(sameDirPrefix)) {
+                return candidate;
+            }
+        }
+    }
+
+    // Tier B: fall back to shared-prefix proximity
     const callerParts = callerFile.split('/');
     let best = candidates[0];
     let bestScore = -1;
@@ -253,7 +311,7 @@ export function resolveCall(
     }
 
     const result = resolveByName(callName, currentFile, symbolTable, importMap);
-    if (!result) {
+    if (!result || result === AMBIGUOUS_NOISE_DROP) {
         return null;
     }
 

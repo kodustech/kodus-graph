@@ -26,14 +26,27 @@ describe('resolveCall', () => {
         expect(result!.confidence).toBe(0.9);
     });
 
-    it('should resolve unique global name with 0.50 confidence', () => {
+    it('should resolve unique global name with 0.50 confidence when in different dir', () => {
         const st = createSymbolTable();
-        st.add('src/utils.ts', 'calculateTaxRate', 'src/utils.ts::calculateTaxRate');
+        st.add('src/billing/utils.ts', 'calculateTaxRate', 'src/billing/utils.ts::calculateTaxRate');
         const im = createImportMap();
 
-        const result = resolveCall('calculateTaxRate', 'src/other.ts', st, im);
+        // Caller lives in src/auth, candidate lives in src/billing → different dirs
+        const result = resolveCall('calculateTaxRate', 'src/auth/other.ts', st, im);
         expect(result).not.toBeNull();
         expect(result!.confidence).toBe(0.5);
+    });
+
+    it('should bump unique global name to 0.60 when in same dir as caller', () => {
+        const st = createSymbolTable();
+        st.add('src/billing/utils.ts', 'calculateTaxRate', 'src/billing/utils.ts::calculateTaxRate');
+        const im = createImportMap();
+
+        // Caller and candidate both live in src/billing/
+        const result = resolveCall('calculateTaxRate', 'src/billing/invoice.ts', st, im);
+        expect(result).not.toBeNull();
+        expect(result!.confidence).toBe(0.6);
+        expect(result!.target).toBe('src/billing/utils.ts::calculateTaxRate');
     });
 
     it('should resolve ambiguous call with 0.30 confidence', () => {
@@ -87,6 +100,69 @@ describe('resolveCall', () => {
 
         const result = resolveCall('unknownFunction', 'src/auth.ts', st, im);
         expect(result).toBeNull();
+    });
+
+    it('should prefer same-directory sibling over nearer shared-prefix candidate', () => {
+        const st = createSymbolTable();
+        // Candidate A: sibling of the caller (same dir)
+        st.add('src/services/user.ts', 'foo', 'src/services/user.ts::foo');
+        // Candidate B: different subtree but shares `src/` prefix
+        st.add('src/utils/helpers.ts', 'foo', 'src/utils/helpers.ts::foo');
+        const im = createImportMap();
+
+        const result = resolveCall('foo', 'src/services/auth.ts', st, im);
+        expect(result).not.toBeNull();
+        expect(result!.confidence).toBe(0.3);
+        expect(result!.target).toBe('src/services/user.ts::foo');
+    });
+
+    it('should fall back to shared-prefix when no same-dir sibling exists', () => {
+        const st = createSymbolTable();
+        st.add('src/auth/login.ts', 'foo', 'src/auth/login.ts::foo');
+        st.add('lib/totally/unrelated.ts', 'foo', 'lib/totally/unrelated.ts::foo');
+        const im = createImportMap();
+
+        const result = resolveCall('foo', 'src/billing/invoice.ts', st, im);
+        expect(result).not.toBeNull();
+        expect(result!.confidence).toBe(0.3);
+        // src/auth/login.ts shares `src/` with caller, lib/... does not
+        expect(result!.target).toBe('src/auth/login.ts::foo');
+    });
+
+    it('should return null for ambiguous generic names in AMBIGUOUS_NOISE', () => {
+        const st = createSymbolTable();
+        // Two candidates for `validate` in unrelated dirs → would be ambiguous
+        st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
+        st.add('src/billing/payment.ts', 'validate', 'src/billing/payment.ts::PaymentService.validate');
+        const im = createImportMap();
+
+        const result = resolveCall('validate', 'src/other/caller.ts', st, im);
+        // Dropped: generic name + ambiguous tier = no 0.30 edge
+        expect(result).toBeNull();
+    });
+
+    it('should still resolve AMBIGUOUS_NOISE names at higher tiers', () => {
+        const st = createSymbolTable();
+        // Single definition of `validate` → unique tier, not ambiguous
+        st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
+        const im = createImportMap();
+
+        const result = resolveCall('validate', 'src/other/caller.ts', st, im);
+        expect(result).not.toBeNull();
+        expect(result!.confidence).toBe(0.5);
+    });
+
+    it('should resolve AMBIGUOUS_NOISE name at same-file tier', () => {
+        const st = createSymbolTable();
+        st.add('src/auth.ts', 'validate', 'src/auth.ts::validate');
+        st.add('src/billing.ts', 'validate', 'src/billing.ts::validate');
+        const im = createImportMap();
+
+        // Same-file wins over ambiguous-noise filtering
+        const result = resolveCall('validate', 'src/auth.ts', st, im);
+        expect(result).not.toBeNull();
+        expect(result!.confidence).toBe(0.85);
+        expect(result!.target).toBe('src/auth.ts::validate');
     });
 });
 
@@ -168,6 +244,23 @@ describe('resolveAllCalls (pure, no I/O)', () => {
         const { callEdges, stats } = resolveAllCalls(rawCalls, diMaps, st, im);
         expect(callEdges).toHaveLength(0);
         expect(stats.noise).toBe(2);
+    });
+
+    it('should count ambiguous-noise drops in stats, not emit edges', () => {
+        const st = createSymbolTable();
+        st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
+        st.add('src/billing/payment.ts', 'validate', 'src/billing/payment.ts::PaymentService.validate');
+        const im = createImportMap();
+        const diMaps = new Map<string, Map<string, string>>();
+
+        const rawCalls: RawCallSite[] = [
+            { source: 'src/other/caller.ts', callName: 'validate', line: 1 },
+        ];
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, diMaps, st, im);
+        expect(callEdges).toHaveLength(0);
+        expect(stats.ambiguousNoise).toBe(1);
+        expect(stats.ambiguous).toBe(0);
     });
 
     it('should be synchronous (no async)', () => {
