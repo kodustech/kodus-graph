@@ -55,6 +55,7 @@ program
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
     .option('--skip-tests', 'Skip test detection (no TESTED_BY edges or test gaps)')
+    .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -68,6 +69,7 @@ program
             graph: opts.graph,
             out: opts.out,
             skipTests: opts.skipTests ?? false,
+            riskConfig: opts.riskConfig,
         });
     });
 
@@ -89,6 +91,7 @@ program
         'Max total prompt chars — truncates less important sections first (default: 20000)',
         (v) => parseInt(v, 10),
     )
+    .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
@@ -111,6 +114,7 @@ program
             skipTests: opts.skipTests ?? false,
             maxFunctions: opts.maxFunctions,
             maxPromptChars: opts.maxPromptChars,
+            riskConfig: opts.riskConfig,
         });
     });
 

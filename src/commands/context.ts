@@ -4,6 +4,7 @@ import { resolve } from 'path';
 import { buildContextV2 } from '../analysis/context-builder';
 import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
 import { formatPrompt, type PromptFormatterOptions } from '../analysis/prompt-formatter';
+import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { formatXml, type XmlFormatterOptions } from '../analysis/xml-formatter';
 import { mergeGraphs } from '../graph/merger';
 import type { GraphData, MainGraphInput } from '../graph/types';
@@ -25,10 +26,14 @@ interface ContextOptions {
     skipTests?: boolean;
     maxFunctions?: number;
     maxPromptChars?: number;
+    /** Custom risk score weights/caps. Pass a file path (CLI) or an in-memory object (library). */
+    riskConfig?: RiskConfig | string;
 }
 
 export async function executeContext(opts: ContextOptions): Promise<void> {
     const repoDir = resolve(opts.repoDir);
+    const riskConfigResolved: RiskConfig | undefined =
+        typeof opts.riskConfig === 'string' ? loadRiskConfig(opts.riskConfig) : opts.riskConfig;
 
     log.info('context: starting', {
         files: opts.files,
@@ -147,6 +152,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             maxDepth: opts.maxDepth,
             skipTests: opts.skipTests,
             diffHunks,
+            riskConfig: riskConfigResolved,
         });
 
         log.info('context: analysis done', {

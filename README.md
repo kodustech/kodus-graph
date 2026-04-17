@@ -538,10 +538,10 @@ This gives the AI agent full understanding of:
 | MEDIUM | 0.3-0.6 | Moderate impact, some test gaps or moderate blast radius |
 | HIGH | 0.6-1.0 | Wide blast radius, missing tests, or inheritance chain affected |
 
-The score is computed from 4 factors:
-- **blast_radius** (40%) — how many functions are affected
+The score is computed from 4 factors (defaults — override via `--risk-config`):
+- **blast_radius** (35%) — how many functions are affected
 - **test_gaps** (30%) — how many changed functions lack tests
-- **complexity** (15%) — lines of code in changed functions
+- **complexity** (20%) — average lines-of-code in changed functions (switches to cyclomatic complexity in a later release)
 - **inheritance** (15%) — whether class hierarchy is affected
 
 ## Examples

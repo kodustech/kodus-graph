@@ -17,6 +17,7 @@ import { type DiffHunk, overlapsWithDiff } from './diff-lines';
 import { enrichChangedFunctions } from './enrich';
 import { detectFlows, type FlowsResult } from './flows';
 import { extractInheritance } from './inheritance';
+import type { RiskConfig } from './risk-config';
 import { computeRiskScore } from './risk-score';
 import { findTestGaps } from './test-gaps';
 
@@ -52,6 +53,8 @@ interface BuildContextV2Options {
     skipTests?: boolean;
     /** Parsed diff hunks per file — used to filter changed functions in fallback mode (no oldGraph) */
     diffHunks?: Map<string, DiffHunk[]>;
+    /** Custom risk score weights/caps (resolved — object form only at this layer). */
+    riskConfig?: RiskConfig;
 }
 
 export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
@@ -119,7 +122,10 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     enrichBlastRadiusWithFlows(blastRadius, allFlows);
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
-    const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, { skipTests: opts.skipTests });
+    const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, {
+        skipTests: opts.skipTests,
+        riskConfig: opts.riskConfig,
+    });
     const inheritance = extractInheritance(indexed, changedFiles);
 
     // Phase 2b: Filter affected flows — only truly changed (added+modified+removed), non-test functions

@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { relative, resolve } from 'path';
 import { computeBlastRadius } from '../analysis/blast-radius';
+import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { computeRiskScore } from '../analysis/risk-score';
 import { findTestGaps } from '../analysis/test-gaps';
 import { buildGraphData } from '../graph/builder';
@@ -24,10 +25,14 @@ interface AnalyzeOptions {
     graph?: string;
     out: string;
     skipTests?: boolean;
+    /** Custom risk score weights/caps. Pass a file path (CLI) or an in-memory object (library). */
+    riskConfig?: RiskConfig | string;
 }
 
 export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     const repoDir = resolve(opts.repoDir);
+    const riskConfigResolved: RiskConfig | undefined =
+        typeof opts.riskConfig === 'string' ? loadRiskConfig(opts.riskConfig) : opts.riskConfig;
 
     // Load main graph if provided
     let mainGraph: MainGraphInput | null = null;
@@ -133,7 +138,10 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
     const changedQN = mergedGraph.nodes.filter((n) => opts.files.includes(n.file_path)).map((n) => n.qualified_name);
     const blastRadius = computeBlastRadius(mergedGraph, changedQN);
-    const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, { skipTests: opts.skipTests });
+    const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, {
+        skipTests: opts.skipTests,
+        riskConfig: riskConfigResolved,
+    });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files);
 
     const output: AnalysisOutput = {
