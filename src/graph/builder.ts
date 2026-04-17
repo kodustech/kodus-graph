@@ -35,6 +35,7 @@ export function buildGraphData(
             is_async: f.is_async || undefined,
             decorators: f.decorators?.length ? f.decorators : undefined,
             throws: f.throws?.length ? f.throws : undefined,
+            complexity: f.complexity,
         });
     }
 

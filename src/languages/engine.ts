@@ -110,6 +110,7 @@ export function extractAll(root: SgRoot, fp: string, lang: string, seen: Set<str
             is_async: f.is_async || undefined,
             decorators: f.decorators?.length ? f.decorators : undefined,
             throws: f.throws?.length ? f.throws : undefined,
+            complexity: f.complexity,
         });
     }
 

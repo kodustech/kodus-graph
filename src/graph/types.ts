@@ -27,6 +27,7 @@ export interface GraphNode {
     is_async?: boolean;
     decorators?: string[];
     throws?: string[];
+    complexity?: number;
 }
 
 // ── Graph edge (matches ast_edges table) ──
@@ -225,6 +226,7 @@ export interface RawFunction {
     is_async?: boolean;
     decorators?: string[];
     throws?: string[];
+    complexity?: number;
 }
 
 export interface RawClass {

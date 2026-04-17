@@ -22,6 +22,7 @@ export const graphNodeSchema = z.object({
     is_async: z.boolean().optional(),
     decorators: z.array(z.string()).optional(),
     throws: z.array(z.string()).optional(),
+    complexity: z.number().optional(),
 });
 
 // ── Edge schema (aligned with GraphEdge in src/graph/types.ts) ──
