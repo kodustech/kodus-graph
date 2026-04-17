@@ -36,6 +36,7 @@ export const graphEdgeSchema = z.object({
 
 // ── Parse output metadata ──
 export const parseMetadataSchema = z.object({
+    schema_version: z.string().optional(),
     repo_dir: z.string(),
     files_parsed: z.number(),
     total_nodes: z.number(),

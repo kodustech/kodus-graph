@@ -47,6 +47,8 @@ export interface GraphData {
 
 // ── Parse command output ──
 export interface ParseMetadata {
+    /** Kodus-graph schema version. See src/shared/constants.ts. */
+    schema_version?: string;
     repo_dir: string;
     files_parsed: number;
     total_nodes: number;

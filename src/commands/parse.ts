@@ -10,6 +10,7 @@ import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
+import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 
@@ -126,6 +127,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         duration_ms: Math.round(performance.now() - t0),
         parse_errors: parseErrors,
         extract_errors: extractErrors,
+        schema_version: SCHEMA_VERSION,
     };
 
     writeGraphJSON(opts.out, metadata, graphData.nodes, graphData.edges);

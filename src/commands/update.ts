@@ -10,6 +10,7 @@ import { resolveAllCalls } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
+import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 import { writeOutput } from '../shared/write-output';
@@ -90,6 +91,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
                 duration_ms: Math.round(performance.now() - t0),
                 files_unchanged: unchanged.length,
                 incremental: true,
+                schema_version: SCHEMA_VERSION,
             },
             nodes: oldGraph.nodes,
             edges: oldGraph.edges,
@@ -169,6 +171,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             parse_errors: rawGraph.parseErrors,
             extract_errors: rawGraph.extractErrors,
             incremental: true,
+            schema_version: SCHEMA_VERSION,
         },
         nodes: mergedNodes,
         edges: mergedEdges,
