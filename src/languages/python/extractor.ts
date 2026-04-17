@@ -2,6 +2,7 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
@@ -13,6 +14,20 @@ import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResu
 const EXPORT_RULES = { customCheck: (n: string) => !n.startsWith('_') } as const;
 const DECORATOR_KINDS = ['decorator'] as const;
 const THROW_KINDS = ['raise_statement'] as const;
+
+// Branch kinds for Python cyclomatic complexity.
+// Python emits `elif_clause` as a named child of the outer `if_statement`
+// (NOT as a nested if_statement), so both are needed to count elif branches.
+// `conditional_expression` handles ternaries (x if cond else y).
+const PY_BRANCH_KINDS = [
+    'if_statement',
+    'elif_clause',
+    'for_statement',
+    'while_statement',
+    'except_clause',
+    'conditional_expression',
+    'case_clause',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Core extraction (returns ExtractionResult directly)
@@ -100,6 +115,7 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
             is_async: pyIsAsync,
             decorators: extractDecorators(node, [...DECORATOR_KINDS]),
             throws: extractThrows(node, [...THROW_KINDS]),
+            complexity: computeCyclomatic(node, PY_BRANCH_KINDS),
         });
     }
 

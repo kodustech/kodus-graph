@@ -22,6 +22,12 @@ class UserService extends BaseService with Repository with Serializable {
   def getUser(id: Int): Future[User] = Future {
     find(id).getOrElse(throw new NotFoundException())
   }
+
+  def classify(x: Int): String = {
+    if (x > 0) "positive"
+    else if (x < 0) "negative"
+    else "zero"
+  }
 }
 
 sealed trait Status

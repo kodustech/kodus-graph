@@ -1,9 +1,27 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for PHP cyclomatic complexity.
+// PHP grammar emits `else_if_clause` as a named child of `if_statement`
+// (NOT as a nested if_statement), so both kinds are needed to count
+// `elseif` branches. `case_statement` is the per-case kind (skip outer
+// `switch_statement`).
+const PHP_BRANCH_KINDS = [
+    'if_statement',
+    'else_if_clause',
+    'for_statement',
+    'foreach_statement',
+    'while_statement',
+    'do_statement',
+    'case_statement',
+    'catch_clause',
+    'conditional_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Heritage helpers
@@ -206,6 +224,7 @@ export const phpExtractors: LanguageExtractors = {
                     is_async: false,
                     decorators: [],
                     throws: extractThrows(node, ['throw_expression']),
+                    complexity: computeCyclomatic(node, PHP_BRANCH_KINDS),
                 });
             }
         }

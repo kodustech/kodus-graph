@@ -35,3 +35,13 @@ fn test_new_user_service() {
     let svc = UserService::new("test".to_string());
     assert_eq!(svc.get_name(), "test");
 }
+
+pub fn classify(x: i32) -> &'static str {
+    if x > 0 {
+        "positive"
+    } else if x < 0 {
+        "negative"
+    } else {
+        "zero"
+    }
+}

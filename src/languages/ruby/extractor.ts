@@ -4,9 +4,32 @@ import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { NOISE } from '../../shared/filters';
 import { log } from '../../shared/logger';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Ruby cyclomatic complexity.
+// Ruby's grammar reuses bare keywords (`if`, `when`, etc.) as BOTH named
+// container-node kinds AND anonymous keyword leaves; the helper filters to
+// named nodes to avoid double-counting. `when` (case-arm) is used; outer
+// `case` is excluded. `elsif` is a named sibling inside `if`, so both are
+// listed. Modifiers (`x if cond`) have their own kind (`if_modifier`).
+const RUBY_BRANCH_KINDS = [
+    'if',
+    'elsif',
+    'unless',
+    'if_modifier',
+    'unless_modifier',
+    'while',
+    'until',
+    'while_modifier',
+    'until_modifier',
+    'for',
+    'when',
+    'rescue',
+    'conditional',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Core extraction (returns ExtractionResult directly)
@@ -98,6 +121,7 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
                 is_async: false, // Ruby has no native async
                 decorators: [], // Ruby has no decorators
                 throws: [], // Ruby uses raise but no declaration
+                complexity: computeCyclomatic(node, RUBY_BRANCH_KINDS),
             });
         }
     }
@@ -143,6 +167,7 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
                         is_async: false,
                         decorators: [],
                         throws: [],
+                        complexity: computeCyclomatic(m, RUBY_BRANCH_KINDS),
                     });
                 }
             }

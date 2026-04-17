@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
     computeContentHash,
@@ -13,6 +14,21 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Rust cyclomatic complexity.
+// `match_arm` is the case-arm kind (skip outer `match_expression`).
+// `if_expression` alone covers both `else if` and `if let` (both are nested
+// `if_expression` / `let_condition`, not separate kinds). Similarly,
+// `while let` is still a `while_expression`. `loop_expression` is infinite
+// but included for parity with most tools (break-on-condition adds reachable
+// branches).
+const RUST_BRANCH_KINDS = [
+    'if_expression',
+    'match_arm',
+    'for_expression',
+    'while_expression',
+    'loop_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Import extraction helpers
@@ -204,6 +220,7 @@ export const rustExtractors: LanguageExtractors = {
                 is_async: isAsync(node),
                 decorators: extractDecorators(node, ['attribute_item']),
                 throws: [],
+                complexity: computeCyclomatic(node, RUST_BRANCH_KINDS),
             });
         }
 

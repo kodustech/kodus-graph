@@ -32,6 +32,19 @@ namespace Example
         {
             return "Hello, " + GetName();
         }
+
+        public string Classify(int x)
+        {
+            if (x > 0)
+            {
+                return "positive";
+            }
+            else if (x < 0)
+            {
+                return "negative";
+            }
+            return "zero";
+        }
     }
 
     public class UserServiceTests

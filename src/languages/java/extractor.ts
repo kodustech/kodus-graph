@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
     computeContentHash,
@@ -12,6 +13,22 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Java cyclomatic complexity.
+// `else if` is a nested `if_statement` in the alternative — `if_statement`
+// alone suffices. `switch_label` is the case-level kind (skip the outer
+// `switch_expression` / `switch_block`). Java has both classic `for_statement`
+// and `enhanced_for_statement` (for-each) — both are decisions.
+const JAVA_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'enhanced_for_statement',
+    'while_statement',
+    'do_statement',
+    'switch_label',
+    'catch_clause',
+    'ternary_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Import extraction helpers
@@ -247,6 +264,7 @@ export const javaExtractors: LanguageExtractors = {
                     is_async: false,
                     decorators: extractDecorators(node, ['marker_annotation', 'annotation']),
                     throws: javaThrows,
+                    complexity: computeCyclomatic(node, JAVA_BRANCH_KINDS),
                 });
             }
         }

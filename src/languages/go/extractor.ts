@@ -1,9 +1,25 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Go cyclomatic complexity.
+// Case-level kinds only: `expression_case`, `type_case`, `communication_case`
+// — skip outer `expression_switch_statement` / `type_switch_statement` /
+// `select_statement` to avoid double-counting. `else if` is a nested
+// `if_statement` inside the outer if's alternative, so `if_statement` alone
+// covers both. `default_case` is excluded (it isn't a decision — a switch
+// always falls through to it and it matches no value).
+const GO_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'expression_case',
+    'type_case',
+    'communication_case',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Go disambiguation helpers
@@ -245,6 +261,7 @@ export const goExtractors: LanguageExtractors = {
                     is_async: false,
                     decorators: [],
                     throws: [],
+                    complexity: computeCyclomatic(node, GO_BRANCH_KINDS),
                 });
             }
         }

@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
     computeContentHash,
@@ -12,6 +13,23 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Swift cyclomatic complexity.
+// Empirically verified against the Swift tree-sitter grammar:
+// - `switch_entry` is the case-arm kind (NOT `case_statement`); skip outer `switch_statement`.
+// - `catch_block` is the Swift kind (NOT `catch_clause`).
+// - `else if` is a nested `if_statement` in the alternative; `if_statement` alone covers it.
+// - `guard` is a decision (guarded fall-through vs. else branch).
+const SWIFT_BRANCH_KINDS = [
+    'if_statement',
+    'guard_statement',
+    'for_statement',
+    'while_statement',
+    'repeat_while_statement',
+    'switch_entry',
+    'catch_block',
+    'ternary_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Swift disambiguation helpers
@@ -375,6 +393,7 @@ export const swiftExtractors: LanguageExtractors = {
                 is_async: isAsync(node),
                 decorators: swiftDecorators(node),
                 throws: swiftThrows(node),
+                complexity: computeCyclomatic(node, SWIFT_BRANCH_KINDS),
             });
         }
 
@@ -408,6 +427,7 @@ export const swiftExtractors: LanguageExtractors = {
                 is_async: isAsync(node),
                 decorators: swiftDecorators(node),
                 throws: swiftThrows(node),
+                complexity: computeCyclomatic(node, SWIFT_BRANCH_KINDS),
             });
         }
 

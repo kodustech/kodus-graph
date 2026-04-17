@@ -24,6 +24,66 @@ import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 
 // ---------------------------------------------------------------------------
+// Elixir-specific cyclomatic complexity
+// ---------------------------------------------------------------------------
+
+/**
+ * Branching control-flow macros in Elixir. These all appear as `call` nodes
+ * in the tree-sitter grammar (Elixir represents nearly everything as a call).
+ * Each match inside a function body adds one decision point.
+ */
+const ELIXIR_BRANCHING_CALLS = new Set(['if', 'unless', 'cond', 'case', 'for', 'with', 'try']);
+
+/**
+ * Named block kinds that represent case/arm-level decisions.
+ * - `stab_clause`: individual arm of case / cond / with-else / rescue / catch
+ * - `rescue_block` / `catch_block`: outer containers — skipped to avoid
+ *    double-counting with their inner `stab_clause` arms
+ *
+ * NOTE: `else_block` is intentionally NOT counted. In Elixir's grammar, an
+ * `if` / `unless` / `with` with an `else` emits BOTH a `call` node (targeting
+ * `if`/`unless`/`with`) AND a named `else_block` child. Counting both would
+ * double-count a single binary decision (e.g. `if x do :a else :b end` would
+ * score 3 instead of the correct 2). The parent construct's `call` count
+ * already represents the decision; the `else_block` is just its second arm.
+ */
+const ELIXIR_BRANCH_KINDS = new Set(['stab_clause']);
+
+/**
+ * Compute cyclomatic complexity for an Elixir `def`/`defp` node.
+ *
+ * Elixir's grammar is hostile to the generic kind-based helper: `if`,
+ * `unless`, `case`, `cond`, `for`, `with`, and `try` are all emitted as
+ * `call` nodes with an `identifier` target (not distinct node kinds). We
+ * walk the tree and count both (a) `call` nodes whose target matches a
+ * branching keyword, and (b) `stab_clause` named nodes which handle
+ * arm-level decisions for case/cond/with/try/rescue/catch.
+ */
+function computeElixirComplexity(fn: SgNode): number {
+    let count = 0;
+    const stack: SgNode[] = [fn];
+    while (stack.length > 0) {
+        const node = stack.pop()!;
+        const kind = String(node.kind());
+
+        if (node.isNamed() && ELIXIR_BRANCH_KINDS.has(kind)) {
+            count++;
+        } else if (kind === 'call') {
+            // Only count branching calls, not the outer def/defp itself.
+            const target = node.field('target')?.text();
+            if (target && target !== 'def' && target !== 'defp' && ELIXIR_BRANCHING_CALLS.has(target)) {
+                count++;
+            }
+        }
+
+        for (const child of node.children()) {
+            stack.push(child);
+        }
+    }
+    return 1 + count;
+}
+
+// ---------------------------------------------------------------------------
 // AST helpers
 // ---------------------------------------------------------------------------
 
@@ -240,6 +300,7 @@ const elixirExtractors: LanguageExtractors = {
                 is_async: false, // Elixir uses processes, not async/await
                 decorators: [], // Elixir module attributes are not decorators
                 throws: [], // No throw declarations
+                complexity: computeElixirComplexity(node),
             });
         }
 
@@ -277,6 +338,7 @@ const elixirExtractors: LanguageExtractors = {
                 is_async: false,
                 decorators: [],
                 throws: [],
+                complexity: computeElixirComplexity(node),
             });
         }
 

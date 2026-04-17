@@ -28,3 +28,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	svc := NewUserService("test")
 	svc.GetName()
 }
+
+func classify(x int) string {
+	if x > 0 {
+		return "positive"
+	}
+	if x < 0 {
+		return "negative"
+	}
+	return "zero"
+}

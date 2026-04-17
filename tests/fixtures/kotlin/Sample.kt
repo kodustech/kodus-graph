@@ -48,3 +48,12 @@ fun testGetName() {
     val svc = UserService(MockRepo())
     assert(svc.getName() == "test")
 }
+
+fun classify(x: Int): String {
+    if (x > 0) {
+        return "positive"
+    } else if (x < 0) {
+        return "negative"
+    }
+    return "zero"
+}

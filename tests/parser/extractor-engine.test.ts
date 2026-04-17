@@ -116,6 +116,7 @@ describe('extractor engine — extractAll', () => {
                     is_async: false,
                     decorators: [],
                     throws: [],
+                    complexity: 1,
                 },
                 {
                     name: 'TestGetUser',
@@ -133,6 +134,7 @@ describe('extractor engine — extractAll', () => {
                     is_async: false,
                     decorators: [],
                     throws: [],
+                    complexity: 1,
                 },
             ],
         };

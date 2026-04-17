@@ -33,4 +33,13 @@ public class UserService extends BaseService implements Greetable {
         UserService svc = new UserService("test");
         assert svc.getName().equals("test");
     }
+
+    public String classify(int x) {
+        if (x > 0) {
+            return "positive";
+        } else if (x < 0) {
+            return "negative";
+        }
+        return "zero";
+    }
 }

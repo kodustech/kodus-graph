@@ -37,3 +37,12 @@ struct UserDTO {
 func createService() -> UserService {
     return UserService(repo: InMemoryRepo())
 }
+
+func classify(x: Int) -> String {
+    if x > 0 {
+        return "positive"
+    } else if x < 0 {
+        return "negative"
+    }
+    return "zero"
+}

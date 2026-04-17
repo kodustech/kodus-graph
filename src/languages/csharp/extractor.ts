@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
     computeContentHash,
@@ -12,6 +13,23 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for C# cyclomatic complexity.
+// `switch_section` is the per-case kind (skip outer `switch_statement`).
+// `if_statement` alone covers `else if` (nested if in alternative).
+// `conditional_access_expression` is `?.` (short-circuiting) which adds a
+// branch.
+const CSHARP_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'foreach_statement',
+    'while_statement',
+    'do_statement',
+    'switch_section',
+    'catch_clause',
+    'conditional_expression',
+    'conditional_access_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Heritage helpers
@@ -250,6 +268,7 @@ export const csharpExtractors: LanguageExtractors = {
                     is_async: csharpIsAsync(node),
                     decorators: extractDecorators(node, ['attribute_list']),
                     throws: extractThrows(node, ['throw_statement']),
+                    complexity: computeCyclomatic(node, CSHARP_BRANCH_KINDS),
                 });
             }
         }

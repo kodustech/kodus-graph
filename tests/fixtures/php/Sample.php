@@ -28,6 +28,16 @@ class UserService extends BaseService implements Greetable
     {
         return "Hello, " . $this->getName();
     }
+
+    public function classify(int $x): string
+    {
+        if ($x > 0) {
+            return "positive";
+        } elseif ($x < 0) {
+            return "negative";
+        }
+        return "zero";
+    }
 }
 
 function helperFunction(): void

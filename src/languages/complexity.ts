@@ -16,6 +16,11 @@ import type { SgNode } from '@ast-grep/napi';
  * and `switch_case` are passed, a switch with N cases contributes N+1 (which
  * is wrong). Pick one level; see language extractor branch-kind lists in
  * Task 4 for the canonical choice per language.
+ *
+ * Only NAMED nodes are counted (via `isNamed()`). Some grammars (notably
+ * Ruby) reuse a keyword string like `if` as BOTH the named container-node
+ * kind AND the anonymous keyword-leaf kind — counting both double-counts
+ * every `if`. Filtering to named nodes keeps callers from having to care.
  */
 export function computeCyclomatic(fn: SgNode, branchKinds: readonly string[]): number {
     if (branchKinds.length === 0) {
@@ -26,7 +31,7 @@ export function computeCyclomatic(fn: SgNode, branchKinds: readonly string[]): n
     const stack: SgNode[] = [fn];
     while (stack.length > 0) {
         const node = stack.pop()!;
-        if (kindSet.has(String(node.kind()))) {
+        if (node.isNamed() && kindSet.has(String(node.kind()))) {
             count++;
         }
         for (const child of node.children()) {

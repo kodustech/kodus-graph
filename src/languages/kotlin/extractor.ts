@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
     computeContentHash,
@@ -13,6 +14,19 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Kotlin cyclomatic complexity.
+// `when_entry` is the case-arm kind (skip outer `when_expression`).
+// `if_expression` alone covers `else if` (nested if_expression in alternative).
+// Kotlin uses `catch_block` (not `catch_clause`).
+const KOTLIN_BRANCH_KINDS = [
+    'if_expression',
+    'for_statement',
+    'while_statement',
+    'do_while_statement',
+    'when_entry',
+    'catch_block',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Kotlin disambiguation helpers
@@ -367,6 +381,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 is_async: kotlinIsAsync(node),
                 decorators: extractDecorators(node, ['annotation']),
                 throws: kotlinThrows(node),
+                complexity: computeCyclomatic(node, KOTLIN_BRANCH_KINDS),
             });
         }
 

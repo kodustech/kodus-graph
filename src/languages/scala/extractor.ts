@@ -1,9 +1,24 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Scala cyclomatic complexity.
+// `case_clause` is reused for BOTH match-arms AND catch-arms (Scala catch
+// syntax uses pattern matching: `catch { case e: T => ... }`). Including
+// both `case_clause` and `catch_clause` would double-count every catch arm.
+// Pick `case_clause` alone — it naturally covers match cases and catch cases.
+// `if_expression` alone covers `else if` (nested if in alternative).
+const SCALA_BRANCH_KINDS = [
+    'if_expression',
+    'for_expression',
+    'while_expression',
+    'do_while_expression',
+    'case_clause',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Scala naming helpers
@@ -338,6 +353,7 @@ export const scalaExtractors: LanguageExtractors = {
                 is_async: false, // Scala has no async keyword; uses Futures
                 decorators: scalaDecorators(node),
                 throws: scalaThrows(node),
+                complexity: computeCyclomatic(node, SCALA_BRANCH_KINDS),
             });
         }
 
@@ -380,6 +396,7 @@ export const scalaExtractors: LanguageExtractors = {
                 is_async: false,
                 decorators: scalaDecorators(node),
                 throws: scalaThrows(node),
+                complexity: computeCyclomatic(node, SCALA_BRANCH_KINDS),
             });
         }
 

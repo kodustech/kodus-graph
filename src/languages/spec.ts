@@ -30,8 +30,8 @@ export interface ExtractedFunction {
     is_async: boolean;
     decorators: string[];
     throws: string[];
-    /** McCabe cyclomatic complexity. 1 = straight-line code. Optional until Task 4 makes all extractors populate it. */
-    complexity?: number;
+    /** McCabe cyclomatic complexity. 1 = straight-line code. */
+    complexity: number;
 }
 
 export interface ExtractedImport {

@@ -1,9 +1,26 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for C / C++ cyclomatic complexity.
+// `case_statement` is the case-level kind (also used for `default:`).
+// `if_statement` alone covers `else if` (nested if_statement in `else_clause`);
+// including `else_clause` would double-count. `catch_clause` is C++-only
+// (C has no exceptions) but harmless to list for both since it just won't
+// match in C code.
+const C_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'while_statement',
+    'do_statement',
+    'case_statement',
+    'conditional_expression',
+    'catch_clause',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -457,6 +474,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     is_async: false, // C/C++ have no native async
                     decorators: [], // C/C++ have no decorators
                     throws: [], // C++ exceptions are implicit; not extracted
+                    complexity: computeCyclomatic(node, C_BRANCH_KINDS),
                 });
             }
 

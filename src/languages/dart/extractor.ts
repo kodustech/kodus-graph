@@ -1,9 +1,37 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+
+// Branch kinds for Dart cyclomatic complexity.
+// Empirically verified: Dart uses `switch_label` (NOT `case_statement`) as
+// the per-case kind. `if_statement` alone covers `else if`. Dart has two
+// `for_statement` forms (classic + for-in) but both share the kind.
+const DART_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'while_statement',
+    'do_statement',
+    'switch_label',
+    'catch_clause',
+    'conditional_expression',
+] as const;
+
+/**
+ * Dart `method_signature` / `function_signature` nodes contain only the
+ * signature; the body lives in a sibling `function_body`. Compute complexity
+ * against the body (if present) since branching statements live there.
+ */
+function dartComplexityRoot(sigNode: SgNode): SgNode {
+    const nextSib = sigNode.next();
+    if (nextSib && nextSib.kind() === 'function_body') {
+        return nextSib;
+    }
+    return sigNode;
+}
 
 // ---------------------------------------------------------------------------
 // Dart naming helpers
@@ -417,6 +445,7 @@ export const dartExtractors: LanguageExtractors = {
                 is_async: dartIsAsync(node),
                 decorators: dartDecorators(node),
                 throws: [], // Dart has no throws clause
+                complexity: computeCyclomatic(dartComplexityRoot(node), DART_BRANCH_KINDS),
             });
         }
 
@@ -459,6 +488,7 @@ export const dartExtractors: LanguageExtractors = {
                 is_async: false,
                 decorators: [],
                 throws: [],
+                complexity: computeCyclomatic(dartComplexityRoot(node), DART_BRANCH_KINDS),
             });
         }
 
@@ -508,6 +538,7 @@ export const dartExtractors: LanguageExtractors = {
                 is_async: dartIsAsync(node),
                 decorators: dartDecorators(node),
                 throws: [],
+                complexity: computeCyclomatic(dartComplexityRoot(node), DART_BRANCH_KINDS),
             });
         }
 

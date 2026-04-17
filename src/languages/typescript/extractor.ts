@@ -4,6 +4,7 @@ import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { NOISE } from '../../shared/filters';
+import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
 import type {
@@ -25,6 +26,21 @@ import type {
 const EXPORT_RULES = { exportKeywords: ['export_statement', 'export'] } as const;
 const DECORATOR_KINDS = ['decorator'] as const;
 const THROW_KINDS = ['throw_statement'] as const;
+
+// Branch kinds for TS/JS cyclomatic complexity.
+// Notes on double-counting avoidance:
+// - `switch_case` (case-level) only; skip `switch_statement` — outer switch + per-case would N+1.
+// - `if_statement` alone covers else-if chains (elif is nested if_statement in alternative).
+const TS_BRANCH_KINDS = [
+    'if_statement',
+    'for_statement',
+    'for_in_statement',
+    'while_statement',
+    'do_statement',
+    'switch_case',
+    'catch_clause',
+    'ternary_expression',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Core extraction (returns ExtractionResult directly)
@@ -160,6 +176,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
                 is_async: false,
                 decorators: extractDecorators(node, [...DECORATOR_KINDS]),
                 throws: extractThrows(node, [...THROW_KINDS]),
+                complexity: computeCyclomatic(node, TS_BRANCH_KINDS),
             });
         } else {
             functions.push({
@@ -180,6 +197,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
                 is_async: isAsync(node),
                 decorators: extractDecorators(node, [...DECORATOR_KINDS]),
                 throws: extractThrows(node, [...THROW_KINDS]),
+                complexity: computeCyclomatic(node, TS_BRANCH_KINDS),
             });
         }
     }
@@ -217,6 +235,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
             is_async: isAsync(node),
             decorators: extractDecorators(node, [...DECORATOR_KINDS]),
             throws: extractThrows(node, [...THROW_KINDS]),
+            complexity: computeCyclomatic(node, TS_BRANCH_KINDS),
         });
     }
 
@@ -251,6 +270,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
             is_async: arrow ? isAsync(arrow) : false,
             decorators: [],
             throws: arrow ? extractThrows(arrow, [...THROW_KINDS]) : [],
+            complexity: computeCyclomatic(arrow ?? node, TS_BRANCH_KINDS),
         });
     }
 
@@ -400,6 +420,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
                     is_async: false,
                     decorators: [],
                     throws: [],
+                    complexity: computeCyclomatic(m, TS_BRANCH_KINDS),
                 });
             }
         }
