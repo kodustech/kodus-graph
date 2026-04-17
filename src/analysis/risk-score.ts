@@ -27,12 +27,22 @@ export function computeRiskScore(
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
 
-    // Factor 3: Complexity (Task 5 will swap this to cyclomatic; kept as lines for this task)
-    const avgSize =
-        changedNodes.length > 0
-            ? changedNodes.reduce((s, n) => s + (n.line_end - n.line_start), 0) / changedNodes.length
-            : 0;
-    const cxValue = Math.min(avgSize / caps.complexity, 1);
+    // Factor 3: Complexity — prefer cyclomatic when nodes have it, fall back to LoC for legacy graphs.
+    const nodesWithComplexity = changedNodes.filter((n) => typeof n.complexity === 'number');
+    let cxValue: number;
+    let cxDetail: string;
+    if (nodesWithComplexity.length > 0) {
+        const avgCx = nodesWithComplexity.reduce((s, n) => s + (n.complexity ?? 0), 0) / nodesWithComplexity.length;
+        cxValue = Math.min(avgCx / caps.complexity, 1);
+        cxDetail = `avg cyclomatic ${Math.round(avgCx)}`;
+    } else {
+        const avgSize =
+            changedNodes.length > 0
+                ? changedNodes.reduce((s, n) => s + (n.line_end - n.line_start), 0) / changedNodes.length
+                : 0;
+        cxValue = Math.min(avgSize / caps.complexity, 1);
+        cxDetail = `avg ${Math.round(avgSize)} lines (legacy)`;
+    }
 
     // Factor 4: Inheritance
     const hasInheritance = graph.edges.some(
@@ -64,7 +74,7 @@ export function computeRiskScore(
             complexity: {
                 weight: weights.complexity,
                 value: Math.round(cxValue * 100) / 100,
-                detail: `avg ${Math.round(avgSize)} lines`,
+                detail: cxDetail,
             },
             inheritance: {
                 weight: weights.inheritance,

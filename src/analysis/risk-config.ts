@@ -11,7 +11,13 @@ export interface RiskWeights {
 export interface RiskCaps {
     /** Blast radius normalization cap (total functions). */
     blast_functions: number;
-    /** Complexity normalization cap. Kept in lines-of-code units for Task 2; Task 5 switches to cyclomatic complexity. */
+    /**
+     * Complexity normalization cap. Used for cyclomatic complexity on graphs
+     * that have the field (default units: decision points), and as a lines-of-code
+     * cap for legacy graphs without `complexity`. The default value (50) is
+     * calibrated for the LoC fallback; callers reading cyclomatic-heavy graphs
+     * should lower it (e.g. 10) via --risk-config.
+     */
     complexity: number;
 }
 
