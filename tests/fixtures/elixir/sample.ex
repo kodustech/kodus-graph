@@ -21,6 +21,22 @@ defmodule MyApp.UserService do
     :ok
   end
 
+  def classify(x) do
+    case x do
+      1 -> :one
+      2 -> :two
+      _ -> :other
+    end
+  end
+
+  def check(x) do
+    cond do
+      x > 0 -> :pos
+      x < 0 -> :neg
+      true -> :zero
+    end
+  end
+
   @impl true
   def init(opts) do
     {:ok, opts}

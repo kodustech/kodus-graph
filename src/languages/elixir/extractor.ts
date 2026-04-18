@@ -30,51 +30,67 @@ import { ELIXIR_NOISE } from './noise';
 // ---------------------------------------------------------------------------
 
 /**
- * Branching control-flow macros in Elixir. These all appear as `call` nodes
- * in the tree-sitter grammar (Elixir represents nearly everything as a call).
- * Each match inside a function body adds one decision point.
+ * Scalar-decision branching macros: each occurrence contributes exactly ONE
+ * decision point (like a plain `if` in C-family languages). These are
+ * counted at the `call` level.
+ *
+ * `if` / `unless` / `for` in Elixir wrap a single predicate; their `else`
+ * (when present) is just the alternative arm of that single decision.
  */
-const ELIXIR_BRANCHING_CALLS = new Set(['if', 'unless', 'cond', 'case', 'for', 'with', 'try']);
+const ELIXIR_SCALAR_BRANCH_CALLS: ReadonlySet<string> = new Set(['if', 'unless', 'for']);
 
 /**
- * Named block kinds that represent case/arm-level decisions.
- * - `stab_clause`: individual arm of case / cond / with-else / rescue / catch
- * - `rescue_block` / `catch_block`: outer containers — skipped to avoid
- *    double-counting with their inner `stab_clause` arms
+ * Multi-arm branching macros: the block itself is NOT a decision — each arm
+ * (beyond the first) is. Elixir emits these as a `call` node whose
+ * `do_block` contains one `stab_clause` per arm.
  *
- * NOTE: `else_block` is intentionally NOT counted. In Elixir's grammar, an
- * `if` / `unless` / `with` with an `else` emits BOTH a `call` node (targeting
- * `if`/`unless`/`with`) AND a named `else_block` child. Counting both would
- * double-count a single binary decision (e.g. `if x do :a else :b end` would
- * score 3 instead of the correct 2). The parent construct's `call` count
- * already represents the decision; the `else_block` is just its second arm.
+ * We track the number of these blocks separately so we can subtract one
+ * `stab_clause` per block (strict McCabe: an N-arm switch contributes N-1
+ * decisions, since the first arm is the base case).
  */
-const ELIXIR_BRANCH_KINDS = new Set(['stab_clause']);
+const ELIXIR_MULTI_ARM_BRANCH_CALLS: ReadonlySet<string> = new Set(['case', 'cond', 'with', 'try']);
 
 /**
  * Compute cyclomatic complexity for an Elixir `def`/`defp` node.
  *
- * Elixir's grammar is hostile to the generic kind-based helper: `if`,
- * `unless`, `case`, `cond`, `for`, `with`, and `try` are all emitted as
- * `call` nodes with an `identifier` target (not distinct node kinds). We
- * walk the tree and count both (a) `call` nodes whose target matches a
- * branching keyword, and (b) `stab_clause` named nodes which handle
- * arm-level decisions for case/cond/with/try/rescue/catch.
+ * Elixir's grammar is hostile to the generic kind-based helper: control-flow
+ * macros are all emitted as `call` nodes with an `identifier` target (not
+ * distinct node kinds). We walk the tree and compute:
+ *
+ *   complexity = 1
+ *              + count(call-target in ELIXIR_SCALAR_BRANCH_CALLS)   // if/unless/for
+ *              + max(0, count(stab_clause) - count(call-target in ELIXIR_MULTI_ARM_BRANCH_CALLS))
+ *
+ * The `stab_clause - multiArmBlockCount` term implements strict McCabe for
+ * case/cond/with/try: an N-arm block has N `stab_clause` children but
+ * contributes only N-1 decisions (the first arm is the base case). The
+ * `max(0, ...)` guards against `stab_clause` nodes emitted outside a
+ * case/cond/with/try (rare, possible via macros).
+ *
+ * NOTE: `else_block` is intentionally NOT counted. In Elixir's grammar, an
+ * `if` / `unless` / `with` with an `else` emits BOTH a `call` node (targeting
+ * `if`/`unless`/`with`) AND a named `else_block` child. Counting both would
+ * double-count a single binary decision.
  */
 function computeElixirComplexity(fn: SgNode): number {
-    let count = 0;
+    let scalarBranchCount = 0;
+    let multiArmBlockCount = 0;
+    let stabClauseCount = 0;
+
     const stack: SgNode[] = [fn];
     while (stack.length > 0) {
         const node = stack.pop()!;
-        const kind = String(node.kind());
-
-        if (node.isNamed() && ELIXIR_BRANCH_KINDS.has(kind)) {
-            count++;
-        } else if (kind === 'call') {
-            // Only count branching calls, not the outer def/defp itself.
-            const target = node.field('target')?.text();
-            if (target && target !== 'def' && target !== 'defp' && ELIXIR_BRANCHING_CALLS.has(target)) {
-                count++;
+        if (node.isNamed()) {
+            const kind = String(node.kind());
+            if (kind === 'call') {
+                const target = node.field('target')?.text();
+                if (target && ELIXIR_SCALAR_BRANCH_CALLS.has(target)) {
+                    scalarBranchCount++;
+                } else if (target && ELIXIR_MULTI_ARM_BRANCH_CALLS.has(target)) {
+                    multiArmBlockCount++;
+                }
+            } else if (kind === 'stab_clause') {
+                stabClauseCount++;
             }
         }
 
@@ -82,7 +98,9 @@ function computeElixirComplexity(fn: SgNode): number {
             stack.push(child);
         }
     }
-    return 1 + count;
+
+    const multiArmDecisions = Math.max(0, stabClauseCount - multiArmBlockCount);
+    return 1 + scalarBranchCount + multiArmDecisions;
 }
 
 // ---------------------------------------------------------------------------
