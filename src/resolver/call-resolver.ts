@@ -9,7 +9,9 @@
  */
 
 import type { RawCallEdge, RawCallSite } from '../graph/types';
-import { AMBIGUOUS_NOISE, NOISE } from '../shared/filters';
+import { languageOfFile } from '../languages/language-of-file';
+import { getNoiseFor } from '../languages/noise-registry';
+import { AMBIGUOUS_NOISE } from '../shared/filters';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
 
@@ -62,7 +64,9 @@ export function resolveAllCalls(
     };
 
     for (const call of rawCalls) {
-        if (NOISE.has(call.callName)) {
+        const lang = languageOfFile(call.source);
+        const noise = lang ? getNoiseFor(lang) : null;
+        if (noise && noise.has(call.callName)) {
             stats.noise++;
             continue;
         }
@@ -229,7 +233,9 @@ function resolveByName(
     if (candidates.length > 1) {
         // Drop generic/noisy names at the ambiguous tier to avoid polluting
         // the graph with low-signal 0.30 edges across unrelated modules.
-        if (NOISE.has(callName) || AMBIGUOUS_NOISE.has(callName)) {
+        const callerLang = languageOfFile(currentFile);
+        const callerNoise = callerLang ? getNoiseFor(callerLang) : null;
+        if ((callerNoise && callerNoise.has(callName)) || AMBIGUOUS_NOISE.has(callName)) {
             return AMBIGUOUS_NOISE_DROP;
         }
         const best = pickClosestCandidate(candidates, currentFile);
@@ -306,7 +312,9 @@ export function resolveCall(
     symbolTable: SymbolTable,
     importMap: ImportMap,
 ): { target: string; confidence: number } | null {
-    if (NOISE.has(callName)) {
+    const lang = languageOfFile(currentFile);
+    const noise = lang ? getNoiseFor(lang) : null;
+    if (noise && noise.has(callName)) {
         return null;
     }
 

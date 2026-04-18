@@ -5,6 +5,7 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { SCALA_NOISE } from './noise';
 
 // Branch kinds for Scala cyclomatic complexity.
 // `case_clause` is reused for BOTH match-arms AND catch-arms (Scala catch
@@ -434,6 +435,7 @@ export const scalaExtractors: LanguageExtractors = {
             getParentClass: (classNode) => {
                 return scalaExtends(classNode);
             },
+            noise: SCALA_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

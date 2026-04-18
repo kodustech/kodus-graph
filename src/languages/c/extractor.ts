@@ -5,6 +5,7 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { C_NOISE } from './noise';
 
 // Branch kinds for C / C++ cyclomatic complexity.
 // `case_statement` is the case-level kind (also used for `default:`).
@@ -510,6 +511,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 selfPrefixes: langKey === 'cpp' ? ['this->'] : [],
                 superPrefixes: [],
                 findEnclosingClass,
+                noise: C_NOISE,
             };
             extractCalls(root, fp, config, calls);
         },

@@ -1,6 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../graph/types';
-import { NOISE } from './filters';
 
 /**
  * Language-specific configuration for call extraction.
@@ -17,6 +16,11 @@ export interface CallExtractionConfig {
     getParentClass?: (classNode: SgNode) => string | undefined;
     /** Skip this callee entirely (e.g., TS skips this.field.method — handled by DI) */
     skipCallee?: (callee: string) => boolean;
+    /**
+     * Per-language noise set. Calls whose final name is in this set are
+     * dropped during extraction (stdlib/framework builtins).
+     */
+    noise: ReadonlySet<string>;
 }
 
 /**
@@ -37,7 +41,7 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
         }
 
         const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-        if (NOISE.has(callName)) {
+        if (config.noise.has(callName)) {
             continue;
         }
 

@@ -6,6 +6,7 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
+import { PYTHON_NOISE } from './noise';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -187,6 +188,7 @@ const PYTHON_CALL_CONFIG: CallExtractionConfig = {
             .find((c: SgNode) => c.kind() === 'identifier')
             ?.text();
     },
+    noise: PYTHON_NOISE,
 };
 
 function extractCallsPython(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {

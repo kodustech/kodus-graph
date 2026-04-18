@@ -5,6 +5,7 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { DART_NOISE } from './noise';
 
 // Branch kinds for Dart cyclomatic complexity.
 // Empirically verified: Dart uses `switch_label` (NOT `case_statement`) as
@@ -588,6 +589,7 @@ export const dartExtractors: LanguageExtractors = {
                 }
                 return undefined;
             },
+            noise: DART_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

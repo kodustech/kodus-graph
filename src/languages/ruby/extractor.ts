@@ -2,12 +2,12 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
-import { NOISE } from '../../shared/filters';
 import { log } from '../../shared/logger';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
+import { RUBY_NOISE } from './noise';
 
 // Branch kinds for Ruby cyclomatic complexity.
 // Ruby's grammar reuses bare keywords (`if`, `when`, etc.) as BOTH named
@@ -224,6 +224,7 @@ function createRubyCallConfig(): CallExtractionConfig {
         findEnclosingClass: (node) =>
             node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module) ?? null,
         getParentClass: (classNode) => classNode.field('superclass')?.text(),
+        noise: RUBY_NOISE,
     };
 }
 
@@ -244,7 +245,7 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
     for (const node of rootNode.findAll({ rule: { kind: 'call' } })) {
         const methodNode = node.field('method');
         const callName = methodNode?.text();
-        if (!callName || NOISE.has(callName)) {
+        if (!callName || RUBY_NOISE.has(callName)) {
             continue;
         }
         const line = node.range().start.line;
@@ -275,7 +276,7 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
             continue;
         }
         const callName = node.text();
-        if (NOISE.has(callName)) {
+        if (RUBY_NOISE.has(callName)) {
             continue;
         }
         const line = node.range().start.line;

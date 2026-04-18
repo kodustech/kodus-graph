@@ -18,10 +18,10 @@
 
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { NOISE } from '../../shared/filters';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { ELIXIR_NOISE } from './noise';
 
 // ---------------------------------------------------------------------------
 // Elixir-specific cyclomatic complexity
@@ -454,7 +454,7 @@ const elixirExtractors: LanguageExtractors = {
                 }
 
                 // Regular function call
-                if (NOISE.has(targetText)) {
+                if (ELIXIR_NOISE.has(targetText)) {
                     continue;
                 }
                 const line = node.range().start.line;
@@ -479,7 +479,7 @@ const elixirExtractors: LanguageExtractors = {
                 const methodNode = children[children.length - 1];
                 const callName = methodNode.text();
 
-                if (NOISE.has(callName)) {
+                if (ELIXIR_NOISE.has(callName)) {
                     continue;
                 }
                 const line = node.range().start.line;

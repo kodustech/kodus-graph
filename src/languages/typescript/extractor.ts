@@ -3,7 +3,6 @@ import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
-import { NOISE } from '../../shared/filters';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
@@ -18,6 +17,7 @@ import type {
     ExtractionResult,
     LanguageExtractors,
 } from '../spec';
+import { TS_NOISE } from './noise';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -455,6 +455,7 @@ const TS_CALL_CONFIG: CallExtractionConfig = {
     },
     // Skip this.field.method — already handled by the DI pattern
     skipCallee: (callee) => callee.startsWith('this.') && callee.substring(5).includes('.'),
+    noise: TS_NOISE,
 };
 
 function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
@@ -462,7 +463,7 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
     for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
         const field = m.getMatch('FIELD')?.text();
         const method = m.getMatch('METHOD')?.text();
-        if (!method || NOISE.has(method)) {
+        if (!method || TS_NOISE.has(method)) {
             continue;
         }
         calls.push({

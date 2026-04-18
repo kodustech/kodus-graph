@@ -13,6 +13,7 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { CSHARP_NOISE } from './noise';
 
 // Branch kinds for C# cyclomatic complexity.
 // `switch_section` is the per-case kind (skip outer `switch_statement`).
@@ -311,6 +312,7 @@ export const csharpExtractors: LanguageExtractors = {
                     .find((c) => c.kind() === 'identifier' || c.kind() === 'type_identifier')
                     ?.text();
             },
+            noise: CSHARP_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

@@ -13,6 +13,7 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { JAVA_NOISE } from './noise';
 
 // Branch kinds for Java cyclomatic complexity.
 // `else if` is a nested `if_statement` in the alternative — `if_statement`
@@ -307,6 +308,7 @@ export const javaExtractors: LanguageExtractors = {
                     .find((c) => c.kind() === 'type_identifier')
                     ?.text();
             },
+            noise: JAVA_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

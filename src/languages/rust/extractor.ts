@@ -14,6 +14,7 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { RUST_NOISE } from './noise';
 
 // Branch kinds for Rust cyclomatic complexity.
 // `match_arm` is the case-arm kind (skip outer `match_expression`).
@@ -246,6 +247,7 @@ export const rustExtractors: LanguageExtractors = {
             selfPrefixes: ['self.'],
             superPrefixes: [],
             findEnclosingClass: (node) => node.ancestors().find((a) => a.kind() === 'impl_item') ?? null,
+            noise: RUST_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

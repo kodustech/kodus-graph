@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { __clearNoiseRegistryForTests, getNoiseFor, registerNoise } from '../../src/languages/noise-registry';
+import { getNoiseFor, registerNoise } from '../../src/languages/noise-registry';
 // Side-effect imports — mirrors how the resolver will pull them.
 import '../../src/languages/go';
 import '../../src/languages/java';
@@ -54,10 +54,11 @@ describe('per-language NOISE registry', () => {
     });
 
     it('registerNoise replaces previous entry for the same language', () => {
-        __clearNoiseRegistryForTests();
-        registerNoise('TestLang', new Set(['a']));
-        registerNoise('TestLang', new Set(['b']));
-        expect(getNoiseFor('TestLang').has('b')).toBe(true);
-        expect(getNoiseFor('TestLang').has('a')).toBe(false);
+        // Use a synthetic language key so we don't disturb real entries that
+        // other test files depend on (the registry is a process-wide singleton).
+        registerNoise('TestLang_replace', new Set(['a']));
+        registerNoise('TestLang_replace', new Set(['b']));
+        expect(getNoiseFor('TestLang_replace').has('b')).toBe(true);
+        expect(getNoiseFor('TestLang_replace').has('a')).toBe(false);
     });
 });

@@ -5,6 +5,7 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { PHP_NOISE } from './noise';
 
 // Branch kinds for PHP cyclomatic complexity.
 // PHP grammar emits `else_if_clause` as a named child of `if_statement`
@@ -260,6 +261,7 @@ export const phpExtractors: LanguageExtractors = {
             selfPrefixes: ['$this->'],
             superPrefixes: ['parent::'],
             findEnclosingClass,
+            noise: PHP_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

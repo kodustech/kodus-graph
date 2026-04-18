@@ -3,7 +3,8 @@ import { parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { extname, relative } from 'path';
 import type { ParseBatchResult, RawCallSite, RawGraph } from '../graph/types';
-import { NOISE } from '../shared/filters';
+import { languageOfFile } from '../languages/language-of-file';
+import { getNoiseFor } from '../languages/noise-registry';
 import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
 import { getLanguage } from './languages';
@@ -70,11 +71,14 @@ export async function parseBatch(
             }
 
             try {
-                // Extract calls into a temporary buffer, then filter noise before pushing
+                // Extract calls into a temporary buffer, then filter noise before pushing.
+                // Noise is routed per-language so Ruby `update()` isn't silenced by a TS-centric list.
                 const rawCalls: RawCallSite[] = [];
                 extractCallsFromFile(root, fp, lang, rawCalls);
+                const noiseLang = languageOfFile(fp);
+                const noise = noiseLang ? getNoiseFor(noiseLang) : null;
                 for (const call of rawCalls) {
-                    if (!NOISE.has(call.callName)) {
+                    if (!noise || !noise.has(call.callName)) {
                         graph.rawCalls.push(call);
                     }
                 }

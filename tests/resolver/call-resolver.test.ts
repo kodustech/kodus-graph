@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+// Side-effect imports populate the per-language noise registry used by the resolver.
+import '../../src/languages/typescript';
 import { resolveCall } from '../../src/resolver/call-resolver';
 import { createImportMap } from '../../src/resolver/import-map';
 import { createSymbolTable } from '../../src/resolver/symbol-table';
