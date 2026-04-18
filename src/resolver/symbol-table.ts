@@ -12,6 +12,18 @@ export interface SymbolTable {
     lookupInFile(file: string, name: string, className: string): string | null;
     isUnique(name: string): boolean;
     lookupGlobal(name: string): string[];
+    /**
+     * Number of distinct files that declare a symbol with this name.
+     * Used by the resolver to decide if a name is "codebase-ambiguous" without
+     * relying on a hardcoded blacklist.
+     */
+    countDefinitions(name: string): number;
+    /**
+     * Total distinct files represented in the global index. Used by the
+     * resolver to scale the codebase-ambiguous threshold proportionally to
+     * repo size.
+     */
+    totalIndexedFiles(): number;
     readonly size: number;
     readonly fileCount: number;
 }
@@ -60,6 +72,26 @@ export function createSymbolTable(): SymbolTable {
 
         lookupGlobal(name) {
             return byName.get(name) ?? [];
+        },
+
+        countDefinitions(name) {
+            const candidates = byName.get(name);
+            if (!candidates || candidates.length === 0) {
+                return 0;
+            }
+            const files = new Set<string>();
+            for (const q of candidates) {
+                const file = q.includes('::') ? q.split('::')[0] : q;
+                files.add(file);
+            }
+            return files.size;
+        },
+
+        totalIndexedFiles() {
+            // byFile is the canonical per-file index; its size matches the
+            // notion of "file" used by countDefinitions (the left side of
+            // `file::qualified`).
+            return byFile.size;
         },
 
         get size() {

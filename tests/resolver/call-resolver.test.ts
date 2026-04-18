@@ -131,19 +131,21 @@ describe('resolveCall', () => {
         expect(result!.target).toBe('src/auth/login.ts::foo');
     });
 
-    it('should return null for ambiguous generic names in AMBIGUOUS_NOISE', () => {
+    it('should return null when a name is defined in so many files it is codebase-ambiguous', () => {
         const st = createSymbolTable();
-        // Two candidates for `validate` in unrelated dirs → would be ambiguous
-        st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
-        st.add('src/billing/payment.ts', 'validate', 'src/billing/payment.ts::PaymentService.validate');
+        // Seed 20 definitions of `validate` to exceed the statistical threshold
+        // (max(15 absolute, 2% of total indexed files)).
+        for (let i = 0; i < 20; i++) {
+            st.add(`src/m${i}.ts`, 'validate', `src/m${i}.ts::Mod${i}.validate`);
+        }
         const im = createImportMap();
 
         const result = resolveCall('validate', 'src/other/caller.ts', st, im);
-        // Dropped: generic name + ambiguous tier = no 0.30 edge
+        // Dropped: codebase-ambiguous signal at ambiguous tier = no 0.30 edge
         expect(result).toBeNull();
     });
 
-    it('should still resolve AMBIGUOUS_NOISE names at higher tiers', () => {
+    it('should still resolve codebase-ambiguous names at higher tiers', () => {
         const st = createSymbolTable();
         // Single definition of `validate` → unique tier, not ambiguous
         st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
@@ -154,13 +156,17 @@ describe('resolveCall', () => {
         expect(result!.confidence).toBe(0.5);
     });
 
-    it('should resolve AMBIGUOUS_NOISE name at same-file tier', () => {
+    it('should resolve codebase-ambiguous name at same-file tier', () => {
         const st = createSymbolTable();
+        // Seed enough definitions to cross the codebase-ambiguous threshold.
+        for (let i = 0; i < 20; i++) {
+            st.add(`src/m${i}.ts`, 'validate', `src/m${i}.ts::validate`);
+        }
+        // Caller's own file also defines `validate`.
         st.add('src/auth.ts', 'validate', 'src/auth.ts::validate');
-        st.add('src/billing.ts', 'validate', 'src/billing.ts::validate');
         const im = createImportMap();
 
-        // Same-file wins over ambiguous-noise filtering
+        // Same-file wins over statistical-ambiguous filtering
         const result = resolveCall('validate', 'src/auth.ts', st, im);
         expect(result).not.toBeNull();
         expect(result!.confidence).toBe(0.85);
@@ -250,8 +256,11 @@ describe('resolveAllCalls (pure, no I/O)', () => {
 
     it('should count ambiguous-noise drops in stats, not emit edges', () => {
         const st = createSymbolTable();
-        st.add('src/auth/user.ts', 'validate', 'src/auth/user.ts::UserService.validate');
-        st.add('src/billing/payment.ts', 'validate', 'src/billing/payment.ts::PaymentService.validate');
+        // Seed enough definitions of `validate` to exceed the statistical
+        // codebase-ambiguous threshold (max(15, 2% of total)).
+        for (let i = 0; i < 20; i++) {
+            st.add(`src/m${i}.ts`, 'validate', `src/m${i}.ts::Mod${i}.validate`);
+        }
         const im = createImportMap();
         const diMaps = new Map<string, Map<string, string>>();
 

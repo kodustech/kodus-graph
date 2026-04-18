@@ -11,7 +11,6 @@
 import type { RawCallEdge, RawCallSite } from '../graph/types';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
-import { AMBIGUOUS_NOISE } from '../shared/filters';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
 
@@ -235,7 +234,7 @@ function resolveByName(
         // the graph with low-signal 0.30 edges across unrelated modules.
         const callerLang = languageOfFile(currentFile);
         const callerNoise = callerLang ? getNoiseFor(callerLang) : null;
-        if ((callerNoise && callerNoise.has(callName)) || AMBIGUOUS_NOISE.has(callName)) {
+        if ((callerNoise && callerNoise.has(callName)) || isCodebaseAmbiguous(callName, symbolTable)) {
             return AMBIGUOUS_NOISE_DROP;
         }
         const best = pickClosestCandidate(candidates, currentFile);
@@ -243,6 +242,25 @@ function resolveByName(
     }
 
     return null;
+}
+
+/**
+ * A name is codebase-ambiguous when it is defined in so many files that
+ * proximity-based disambiguation becomes unreliable. Replaces the legacy
+ * hardcoded `AMBIGUOUS_NOISE` list with a statistical signal derived from
+ * the symbol table — self-tunes per repo.
+ *
+ * Threshold: max(15 absolute, 2% of total indexed files). Small projects
+ * with natural duplication (e.g. 3 `save` methods) aren't over-filtered;
+ * large monorepos with 50 `validate` methods still drop them.
+ */
+function isCodebaseAmbiguous(name: string, symbolTable: SymbolTable): boolean {
+    const definingFiles = symbolTable.countDefinitions(name);
+    const totalFiles = symbolTable.totalIndexedFiles();
+    const floor = 15;
+    const fractional = Math.ceil(totalFiles * 0.02);
+    const threshold = Math.max(floor, fractional);
+    return definingFiles >= threshold;
 }
 
 function getDir(file: string): string {

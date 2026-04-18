@@ -184,6 +184,7 @@ tests/fixtures/         # Sample files per language (follow language naming conv
 - **Streaming JSON** for output — use `json-writer.ts`, don't `JSON.stringify` large graphs
 - **Content hashing** for incremental parsing — always set `content_hash` on nodes
 - **Memory resilience:** `--max-memory` flag, dynamic batch sizing, rawGraph incremental release
+- **No cross-language hardcoded heuristics.** Any string list that depends on a specific language (builtins, noise names, branching AST kinds) lives in `src/languages/<lang>/`, not in `src/shared/`. Any heuristic that depends on the shape of the current codebase (e.g. "this name is too common to disambiguate") is computed from the symbol table at resolve time, not blacklisted statically. `src/shared/` is reserved for utilities that are genuinely language- and repo-agnostic (filesystem filters, hashing, logging, schemas).
 
 ### Common Pitfalls
 
