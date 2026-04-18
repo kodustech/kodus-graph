@@ -187,6 +187,7 @@ export function buildGraphData(
             file_path: sourceFile,
             line: ce.line,
             confidence: ce.confidence,
+            ...(ce.alternatives && ce.alternatives.length > 0 ? { alternatives: ce.alternatives } : {}),
         });
     }
 

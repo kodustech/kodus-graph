@@ -1,4 +1,5 @@
 import type { EnrichedFunction } from '../graph/types';
+import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import type { ContractDiff } from './diff';
 import { computeFunctionRisk } from './prompt-formatter';
@@ -393,9 +394,27 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
 
             lines.push(`    <Callers count="${fn.callers.length}" untestedCount="${untestedCallerCount}">`);
             for (const c of shownCallers) {
-                lines.push(
-                    `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}" />`,
-                );
+                const isAmbiguous = c.confidence <= 0.3 && c.alternatives && c.alternatives.length > 0;
+                if (isAmbiguous && c.alternatives && c.alternatives.length > 0) {
+                    const alts = c.alternatives;
+                    lines.push(
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}">`,
+                    );
+                    lines.push('        <Alternatives>');
+                    const shownAlts = alts.slice(0, MAX_ALTERNATIVES_RENDERED);
+                    for (const alt of shownAlts) {
+                        lines.push(`          <Alt>${escapeXml(alt)}</Alt>`);
+                    }
+                    if (alts.length > MAX_ALTERNATIVES_RENDERED) {
+                        lines.push(`          <!-- +${alts.length - MAX_ALTERNATIVES_RENDERED} more -->`);
+                    }
+                    lines.push('        </Alternatives>');
+                    lines.push('      </Caller>');
+                } else {
+                    lines.push(
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}" />`,
+                    );
+                }
             }
             if (fn.callers.length > maxCallers) {
                 const remaining = fn.callers.length - maxCallers;

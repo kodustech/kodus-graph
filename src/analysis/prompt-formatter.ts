@@ -1,4 +1,5 @@
 import type { EnrichedFunction, ImpactCategory } from '../graph/types';
+import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 
 export interface PromptFormatterOptions {
@@ -101,6 +102,16 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                 for (const c of shown) {
                     const conf = c.confidence < 0.85 ? ` ~${Math.round(c.confidence * 100)}%` : '';
                     lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}`);
+                    // Surface non-picked candidates so the LLM can see what the
+                    // resolver passed over at the ambiguous (0.30) tier.
+                    if (c.confidence <= 0.3 && c.alternatives && c.alternatives.length > 0) {
+                        const altSlice = c.alternatives.slice(0, MAX_ALTERNATIVES_RENDERED).join(', ');
+                        const extra =
+                            c.alternatives.length > MAX_ALTERNATIVES_RENDERED
+                                ? `, +${c.alternatives.length - MAX_ALTERNATIVES_RENDERED} more`
+                                : '';
+                        lines.push(`      Alternatives considered: ${altSlice}${extra}`);
+                    }
                 }
                 if (fn.callers.length > MAX_CALLERS) {
                     const remaining = fn.callers.slice(MAX_CALLERS);

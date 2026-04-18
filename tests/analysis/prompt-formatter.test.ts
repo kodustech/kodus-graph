@@ -867,6 +867,171 @@ describe('formatPrompt', () => {
         }
     });
 
+    it('should render alternatives for low-confidence (ambiguous) callers', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/feature/target.ts::validate',
+                    file_path: 'src/feature/target.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '(x: string)',
+                    return_type: 'boolean',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'caller',
+                    qualified_name: 'src/caller.ts::caller',
+                    file_path: 'src/caller.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/caller.ts::caller',
+                    target_qualified: 'src/feature/target.ts::validate',
+                    file_path: 'src/caller.ts',
+                    line: 5,
+                    confidence: 0.3,
+                    alternatives: ['src/other/m2.ts::validate', 'src/other/m3.ts::validate'],
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/feature/target.ts'],
+            minConfidence: 0.3,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        expect(text).toContain('Alternatives considered:');
+        expect(text).toContain('src/other/m2.ts::validate');
+        expect(text).toContain('src/other/m3.ts::validate');
+    });
+
+    it('should cap alternatives at 3 and note the overflow', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/feature/target.ts::validate',
+                    file_path: 'src/feature/target.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'caller',
+                    qualified_name: 'src/caller.ts::caller',
+                    file_path: 'src/caller.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/caller.ts::caller',
+                    target_qualified: 'src/feature/target.ts::validate',
+                    file_path: 'src/caller.ts',
+                    line: 5,
+                    confidence: 0.3,
+                    alternatives: [
+                        'src/m1.ts::validate',
+                        'src/m2.ts::validate',
+                        'src/m3.ts::validate',
+                        'src/m4.ts::validate',
+                        'src/m5.ts::validate',
+                    ],
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/feature/target.ts'],
+            minConfidence: 0.3,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        expect(text).toContain('Alternatives considered:');
+        expect(text).toContain('+2 more');
+        // 4th/5th entries should not be rendered inline
+        expect(text).not.toContain('src/m4.ts::validate');
+        expect(text).not.toContain('src/m5.ts::validate');
+    });
+
+    it('should NOT render alternatives for high-confidence callers', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/feature/target.ts::validate',
+                    file_path: 'src/feature/target.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'caller',
+                    qualified_name: 'src/caller.ts::caller',
+                    file_path: 'src/caller.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/caller.ts::caller',
+                    target_qualified: 'src/feature/target.ts::validate',
+                    file_path: 'src/caller.ts',
+                    line: 5,
+                    confidence: 0.9,
+                    // Even if alternatives were somehow present, high confidence shouldn't render them.
+                    alternatives: ['src/other.ts::validate'],
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/feature/target.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+
+        expect(text).not.toContain('Alternatives considered:');
+    });
+
     it('should truncate BLAST RADIUS section when maxPromptChars is exceeded', () => {
         // Build a graph that produces BLAST RADIUS
         const nodes = [];

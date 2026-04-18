@@ -33,6 +33,7 @@ export const graphEdgeSchema = z.object({
     file_path: z.string(),
     line: z.number(),
     confidence: z.number().optional(),
+    alternatives: z.array(z.string()).optional(),
 });
 
 // ── Parse output metadata ──

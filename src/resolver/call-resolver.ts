@@ -20,6 +20,8 @@ interface ResolveResult {
     target: string;
     confidence: number;
     strategy: 'di' | 'same' | 'import' | 'unique' | 'ambiguous';
+    /** Non-picked candidates — populated only at the ambiguous tier (0.30). */
+    alternatives?: string[];
 }
 
 interface CallResolverStats {
@@ -118,6 +120,9 @@ export function resolveAllCalls(
                 callName: call.callName,
                 line: call.line,
                 confidence: resolved.confidence,
+                ...(resolved.alternatives && resolved.alternatives.length > 0
+                    ? { alternatives: resolved.alternatives }
+                    : {}),
             });
             stats[resolved.strategy]++;
         }
@@ -238,7 +243,12 @@ function resolveByName(
             return AMBIGUOUS_NOISE_DROP;
         }
         const best = pickClosestCandidate(candidates, currentFile);
-        return { target: best, confidence: 0.3, strategy: 'ambiguous' };
+        // `lookupGlobal` returns candidates in insertion (filesystem traversal)
+        // order, which isn't stable across OSes or re-indexes. Sort here so the
+        // `alternatives` array is deterministic — graph snapshots stay stable
+        // and LLM prompts don't churn between runs.
+        const alternatives = candidates.filter((c) => c !== best).sort();
+        return { target: best, confidence: 0.3, strategy: 'ambiguous', alternatives };
     }
 
     return null;

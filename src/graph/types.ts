@@ -38,6 +38,8 @@ export interface GraphEdge {
     file_path: string;
     line: number;
     confidence?: number; // 0.0-1.0, only for CALLS
+    /** Non-picked candidates when confidence is low (CALLS edges at the ambiguous tier). */
+    alternatives?: string[];
 }
 
 // ── Full graph data ──
@@ -153,6 +155,8 @@ export interface CallerRef {
     file_path: string;
     line: number;
     confidence: number;
+    /** Non-picked resolver candidates — mirrors GraphEdge.alternatives for ambiguous CALLS. */
+    alternatives?: string[];
 }
 
 export interface CalleeRef {
@@ -305,6 +309,8 @@ export interface RawCallEdge {
     callName: string;
     line: number;
     confidence: number;
+    /** Non-picked candidates at the ambiguous tier; useful for LLM consumers to see what was passed over. */
+    alternatives?: string[];
 }
 
 export interface ImportEdge {
