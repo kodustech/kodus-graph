@@ -3,11 +3,13 @@ import { parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { extname, relative } from 'path';
 import type { ParseBatchResult, RawCallSite, RawGraph } from '../graph/types';
+import { extractReceiverTypesFromEngine } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
+import { locationKey } from '../languages/receiver-types';
 import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
-import { getLanguage } from './languages';
+import { getLanguage, getLanguageName } from './languages';
 
 const INITIAL_BATCH = 50;
 const MEMORY_THRESHOLD_RATIO = 0.7;
@@ -75,12 +77,33 @@ export async function parseBatch(
                 // Noise is routed per-language so Ruby `update()` isn't silenced by a TS-centric list.
                 const rawCalls: RawCallSite[] = [];
                 extractCallsFromFile(root, fp, lang, rawCalls);
+
+                // Receiver-type inference pass — returns a map keyed by
+                // `${file}:${line}:${column}` for each call site the language
+                // extractor could infer a scope-local type for. Dynamic
+                // languages (Ruby/PHP/Elixir) return an empty map. We use
+                // column when the extractor provides it; otherwise fall back
+                // to line-only matching (documented as a known limitation for
+                // extractors that don't yet thread column through calls).
+                const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
+                const receiverMap = extractReceiverTypesFromEngine(root, fp, langStr);
+
                 const noiseLang = languageOfFile(fp);
                 const noise = noiseLang ? getNoiseFor(noiseLang) : null;
                 for (const call of rawCalls) {
-                    if (!noise || !noise.has(call.callName)) {
-                        graph.rawCalls.push(call);
+                    if (noise?.has(call.callName)) {
+                        continue;
                     }
+                    if (receiverMap.size > 0) {
+                        // Try column-qualified key first, then line-only fallback.
+                        const keyed = locationKey(fp, call.line, call.column ?? -1);
+                        const lineOnly = locationKey(fp, call.line, -1);
+                        const rt = receiverMap.get(keyed) ?? receiverMap.get(lineOnly);
+                        if (rt) {
+                            call.receiverType = rt;
+                        }
+                    }
+                    graph.rawCalls.push(call);
                 }
             } catch (err) {
                 log.error('Call extraction crashed', { file: fp, error: String(err) });

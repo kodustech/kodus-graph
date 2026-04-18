@@ -20,7 +20,7 @@ import type { SymbolTable } from './symbol-table';
 interface ResolveResult {
     target: string;
     confidence: number;
-    strategy: 'di' | 'same' | 'import' | 'unique' | 'ambiguous';
+    strategy: 'di' | 'same' | 'import' | 'unique' | 'ambiguous' | 'receiver';
     /** Non-picked candidates — populated only at the ambiguous tier (0.30). */
     alternatives?: string[];
 }
@@ -33,6 +33,12 @@ interface CallResolverStats {
     ambiguous: number;
     noise: number;
     ambiguousNoise: number;
+    /**
+     * Receiver-type-aware resolutions (new high-confidence tier at 0.95 /
+     * 0.90). Triggered when `RawCallSite.receiverType` is set and the
+     * symbol table has a matching `::Type.method` qualified name.
+     */
+    receiver: number;
 }
 
 interface ResolveAllResult {
@@ -63,18 +69,56 @@ export function resolveAllCalls(
         ambiguous: 0,
         noise: 0,
         ambiguousNoise: 0,
+        receiver: 0,
     };
 
     for (const call of rawCalls) {
         const lang = languageOfFile(call.source);
         const noise = lang ? getNoiseFor(lang) : null;
-        if (noise && noise.has(call.callName)) {
+        if (noise?.has(call.callName)) {
             stats.noise++;
             continue;
         }
 
         const fp = call.source;
         const diMap = diMaps.get(fp);
+
+        // Receiver-type-aware resolution (highest tier after noise).
+        // When the extractor has inferred that `x` in `x.method()` is of
+        // type `Foo`, we can pick `Foo.method` directly — higher confidence
+        // than same-file or DI fallback because it reflects an explicit
+        // binding in the caller's scope.
+        if (call.receiverType) {
+            const needle = `::${call.receiverType}.${call.callName}`;
+            const all = symbolTable.lookupGlobal(call.callName);
+            const matches = all.filter((q) => q.includes(needle));
+            if (matches.length === 1) {
+                callEdges.push({
+                    source: fp,
+                    target: matches[0],
+                    callName: call.callName,
+                    line: call.line,
+                    confidence: 0.95,
+                });
+                stats.receiver++;
+                continue;
+            }
+            if (matches.length > 1) {
+                const best = pickClosestCandidate(matches, fp);
+                const alternatives = matches.filter((q) => q !== best).sort();
+                callEdges.push({
+                    source: fp,
+                    target: best,
+                    callName: call.callName,
+                    line: call.line,
+                    confidence: 0.9,
+                    ...(alternatives.length > 0 ? { alternatives } : {}),
+                });
+                stats.receiver++;
+                continue;
+            }
+            // No match — fall through to DI + name-based cascade.
+        }
 
         // Try DI resolution first if diField is present
         if (call.diField) {
@@ -257,7 +301,7 @@ function resolveByName(
         // the graph with low-signal 0.30 edges across unrelated modules.
         const callerLang = languageOfFile(currentFile);
         const callerNoise = callerLang ? getNoiseFor(callerLang) : null;
-        if ((callerNoise && callerNoise.has(callName)) || isCodebaseAmbiguous(callName, symbolTable)) {
+        if (callerNoise?.has(callName) || isCodebaseAmbiguous(callName, symbolTable)) {
             return AMBIGUOUS_NOISE_DROP;
         }
         const best = pickClosestCandidate(candidates, currentFile);
@@ -360,7 +404,7 @@ export function resolveCall(
 ): { target: string; confidence: number } | null {
     const lang = languageOfFile(currentFile);
     const noise = lang ? getNoiseFor(lang) : null;
-    if (noise && noise.has(callName)) {
+    if (noise?.has(callName)) {
         return null;
     }
 

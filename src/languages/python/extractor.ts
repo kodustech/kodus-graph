@@ -4,7 +4,8 @@ import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
 import { PYTHON_NOISE } from './noise';
@@ -221,7 +222,21 @@ const pythonExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: no-op for now.
+//
+// Python's method invocations (`x.update()`) aren't currently captured by
+// the shared `$CALLEE($$$ARGS)` pattern for this grammar (they produce
+// multi-node matches), so any bindings would never match a RawCallSite
+// line/column. We register a function (returning an empty map) for
+// registry consistency. Explicit type hints (`x: Bar = ...`) and uppercase
+// constructor heuristics (`x = Foo()`) are easy to enumerate later once
+// call extraction surfaces member invocations.
+function extractReceiverTypesPython(_root: SgNode, _fp: string): ReceiverTypeMap {
+    return new Map();
+}
+
 registerExtractor('python', pythonExtractors);
+registerReceiverTypes('python', extractReceiverTypesPython);
 
 // Capabilities: async/await since 3.5, decorators, try/except, duck typing,
 // type hints are gradual and not enforced at runtime.

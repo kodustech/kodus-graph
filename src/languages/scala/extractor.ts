@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { SCALA_NOISE } from './noise';
@@ -442,7 +443,62 @@ export const scalaExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `val x = new Foo()` (instance_expression),
+// `val y: Bar = ...` (explicit type).
+function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const vd of root.findAll({ rule: { kind: 'val_definition' } })) {
+        const kids = vd.children();
+        const name = kids.find((c: SgNode) => c.kind() === 'identifier')?.text();
+        if (!name) {
+            continue;
+        }
+        const explicitType = kids.find((c: SgNode) => c.kind() === 'type_identifier');
+        let typeName: string | undefined = explicitType?.text();
+        if (!typeName) {
+            const inst = kids.find((c: SgNode) => c.kind() === 'instance_expression');
+            if (inst) {
+                // `new Foo()` — final identifier inside is the type.
+                const ti = inst
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier');
+                typeName = ti?.text();
+                if (!typeName) {
+                    // Might wrap call_expression → function identifier.
+                    const innerCall = inst.children().find((c: SgNode) => c.kind() === 'call_expression');
+                    const fn = innerCall?.field('function');
+                    if (fn?.kind() === 'identifier' || fn?.kind() === 'type_identifier') {
+                        typeName = fn.text();
+                    }
+                }
+            }
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const fn = ce.field('function');
+        if (!fn || fn.kind() !== 'field_expression') {
+            continue;
+        }
+        const base = fn.children()[0];
+        if (!base || base.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(base.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('scala', scalaExtractors);
+registerReceiverTypes('scala', extractReceiverTypesScala);
 
 // Capabilities: async via Future/Akka + Scala 3 `async { }`, annotations,
 // try/catch exceptions, static types, structural refinements plus traits

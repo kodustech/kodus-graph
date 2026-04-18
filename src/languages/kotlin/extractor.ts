@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import {
     computeContentHash,
     emptyResult,
@@ -438,7 +439,59 @@ export const kotlinExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `val x = Foo()` (constructor-like call),
+// `val x: Foo = ...` (explicit type annotation).
+function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+        const varDecl = pd.children().find((c: SgNode) => c.kind() === 'variable_declaration');
+        const name = varDecl
+            ?.children()
+            .find((c: SgNode) => c.kind() === 'simple_identifier')
+            ?.text();
+        if (!name) {
+            continue;
+        }
+        // Explicit type annotation: `val y: Bar` — user_type inside variable_declaration.
+        const userType = varDecl
+            ?.children()
+            .find((c: SgNode) => c.kind() === 'user_type')
+            ?.text();
+        let typeName: string | undefined = userType;
+        if (!typeName) {
+            // Constructor-like call on RHS: `val x = Foo()` → call_expression with simple_identifier function.
+            const call = pd.children().find((c: SgNode) => c.kind() === 'call_expression');
+            const fnId = call?.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+            if (fnId && /^[A-Z]/.test(fnId.text())) {
+                typeName = fnId.text();
+            }
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
+        if (!nav) {
+            continue;
+        }
+        const base = nav.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+        if (!base) {
+            continue;
+        }
+        const typeName = bindings.get(base.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('kotlin', kotlinExtractors);
+registerReceiverTypes('kotlin', extractReceiverTypesKotlin);
 
 // Capabilities: suspend functions / coroutines (async), annotations, try/catch
 // (all unchecked), static types, nominal interfaces. Mirrors Java profile.

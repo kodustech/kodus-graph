@@ -307,8 +307,16 @@ export interface RawCallSite {
     source: string; // relative file path
     callName: string; // function or method name being called
     line: number; // line number of the call
+    column?: number; // column number of the call (optional — used to key receiver-type inference)
     diField?: string; // if DI pattern (this.field.method), the field name
     resolveInClass?: string; // class to resolve in: current class for self.X(), parent for super().X()
+    /**
+     * Inferred type of the receiver object (e.g. 'Foo' for `x.method()` where `x: Foo`).
+     * Populated by the parser batch after call extraction, using the per-file
+     * receiver-type map returned by `LanguageExtractors.extractReceiverTypes`.
+     * Consumed by the resolver's receiver-aware tier (0.95 / 0.90 confidence).
+     */
+    receiverType?: string;
 }
 
 export interface RawCallEdge {

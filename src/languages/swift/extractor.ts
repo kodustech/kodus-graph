@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import {
     computeContentHash,
     emptyResult,
@@ -481,7 +482,62 @@ export const swiftExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `let x = Foo()` (call_expression),
+// `let y: Bar = ...` (type_annotation).
+function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+        const kids = pd.children();
+        // `pattern` → first simple_identifier inside.
+        const pattern = kids.find((c: SgNode) => c.kind() === 'pattern');
+        const name = pattern
+            ?.children()
+            .find((c: SgNode) => c.kind() === 'simple_identifier')
+            ?.text();
+        if (!name) {
+            continue;
+        }
+        const typeAnn = kids.find((c: SgNode) => c.kind() === 'type_annotation');
+        let typeName: string | undefined;
+        if (typeAnn) {
+            const uti = typeAnn
+                .children()
+                .find((c: SgNode) => c.kind() === 'user_type' || c.kind() === 'type_identifier');
+            typeName = uti?.text();
+        }
+        if (!typeName) {
+            const call = kids.find((c: SgNode) => c.kind() === 'call_expression');
+            const fnId = call?.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+            if (fnId && /^[A-Z]/.test(fnId.text())) {
+                typeName = fnId.text();
+            }
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
+        if (!nav) {
+            continue;
+        }
+        const base = nav.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+        if (!base) {
+            continue;
+        }
+        const typeName = bindings.get(base.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('swift', swiftExtractors);
+registerReceiverTypes('swift', extractReceiverTypesSwift);
 
 // Capabilities: async/await, attributes (`@Published`, `@objc`), throws/do-catch
 // exceptions, static types, nominal protocols.

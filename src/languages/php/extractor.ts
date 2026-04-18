@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { PHP_NOISE } from './noise';
@@ -268,7 +269,20 @@ export const phpExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: no-op.
+//
+// PHP variables don't require type declarations and are frequently
+// reassigned. While explicit parameter/property types and `/** @var */`
+// PHPDoc hints exist, tracking them reliably in scope requires parsing
+// PHPDoc and cross-referencing assignments — more than a surface walk
+// can justify. Registering an empty map so the cascade falls back to
+// name-based resolution with no regression.
+function extractReceiverTypesPHP(_root: SgNode, _fp: string): ReceiverTypeMap {
+    return new Map();
+}
+
 registerExtractor('php', phpExtractors);
+registerReceiverTypes('php', extractReceiverTypesPHP);
 
 // Capabilities: no async/await in core PHP (Fibers exist but are not
 // async/await; concurrency libs like Amp/ReactPHP are opt-in). Attributes

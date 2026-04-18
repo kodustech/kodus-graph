@@ -5,7 +5,8 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { log } from '../../shared/logger';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
 import { RUBY_NOISE } from './noise';
@@ -319,7 +320,20 @@ const rubyExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: no-op.
+//
+// Ruby is duck-typed without type annotations. A `x = Foo.new` binding
+// ties `x` to `Foo`, but in practice `x` is commonly reassigned to
+// anything, so inferring a single receiver type reliably requires runtime
+// data (or a full Ruby-style type inferencer like Sorbet). We register
+// an empty map and defer — the resolver falls through to name-based
+// cascade with no regression.
+function extractReceiverTypesRuby(_root: SgNode, _fp: string): ReceiverTypeMap {
+    return new Map();
+}
+
 registerExtractor('ruby', rubyExtractors);
+registerReceiverTypes('ruby', extractReceiverTypesRuby);
 
 // Capabilities: Ruby has no native async/await (concurrency via threads/fibers/
 // gems like async-rb), no first-class decorators (macros like `attr_accessor`

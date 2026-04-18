@@ -19,7 +19,8 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { registerCapabilities } from '../capabilities';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { ELIXIR_NOISE } from './noise';
@@ -509,7 +510,18 @@ const elixirExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: no-op.
+//
+// Elixir is dynamically typed with pattern-matched bindings — there's no
+// notion of a variable "being of type Foo" in the surface syntax that we
+// can scope-locally infer. Registering an empty map so the cascade falls
+// back to name-based resolution with no regression.
+function extractReceiverTypesElixir(_root: SgNode, _fp: string): ReceiverTypeMap {
+    return new Map();
+}
+
 registerExtractor('elixir', elixirExtractors);
+registerReceiverTypes('elixir', extractReceiverTypesElixir);
 
 // Capabilities: Elixir runs on the BEAM — concurrency is via processes (Task,
 // GenServer, `spawn`), NOT language-level async/await. Attributes/module

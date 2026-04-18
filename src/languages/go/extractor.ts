@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { GO_NOISE } from './noise';
@@ -305,7 +306,86 @@ export const goExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference for Go.
+//
+// Covers three idioms:
+//   1. `var y Bar`                     — explicit type declaration
+//   2. `z := Baz{}` / `z := &Baz{...}` — composite literal (direct type name)
+//   3. `x := NewFoo()`                 — factory prefix heuristic: strip
+//      leading `New` when the call is a bare identifier. We intentionally
+//      don't consult the symbol table here (it's built later in the
+//      pipeline); the heuristic is conservative but catches the dominant
+//      Go factory convention.
+function extractReceiverTypesGo(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    // `var y Bar`
+    for (const vs of root.findAll({ rule: { kind: 'var_spec' } })) {
+        const name = vs.field('name')?.text();
+        const type = vs.field('type')?.text();
+        if (name && type) {
+            bindings.set(name, type);
+        }
+    }
+    // `x := ...`
+    for (const svd of root.findAll({ rule: { kind: 'short_var_declaration' } })) {
+        const kids = svd.children();
+        const lhs = kids.find((c: SgNode) => c.kind() === 'expression_list');
+        const rhsIdx = kids.findIndex((c: SgNode) => c.kind() === ':=');
+        const rhs =
+            rhsIdx >= 0 ? kids.slice(rhsIdx + 1).find((c: SgNode) => c.kind() === 'expression_list') : undefined;
+        if (!lhs || !rhs) {
+            continue;
+        }
+        const nameNode = lhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        const name = nameNode?.text();
+        const rhsExpr = rhs.children()[0];
+        if (!name || !rhsExpr) {
+            continue;
+        }
+        let typeName: string | undefined;
+        // composite literal: `Foo{...}` has kind `composite_literal` with a type field.
+        if (rhsExpr.kind() === 'composite_literal') {
+            typeName = rhsExpr.field('type')?.text();
+        } else if (rhsExpr.kind() === 'unary_expression') {
+            // `&Foo{...}` — child is composite_literal.
+            const cl = rhsExpr.children().find((c: SgNode) => c.kind() === 'composite_literal');
+            typeName = cl?.field('type')?.text();
+        } else if (rhsExpr.kind() === 'call_expression') {
+            const fn = rhsExpr.field('function');
+            if (fn?.kind() === 'identifier') {
+                const t = fn.text();
+                // Factory heuristic: `NewFoo` → `Foo` (dominant Go convention).
+                if (t.startsWith('New') && t.length > 3 && /^[A-Z]/.test(t[3])) {
+                    typeName = t.substring(3);
+                }
+            }
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const fn = ce.field('function');
+        if (!fn || fn.kind() !== 'selector_expression') {
+            continue;
+        }
+        const operand = fn.field('operand') ?? fn.children()[0];
+        if (!operand || operand.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(operand.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('go', goExtractors);
+registerReceiverTypes('go', extractReceiverTypesGo);
 
 // Capabilities: Go has no async/await (goroutines + channels drive concurrency),
 // no decorators, no try/catch (panic/recover is not idiomatic exception handling),

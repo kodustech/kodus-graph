@@ -5,7 +5,8 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { computeContentHash } from '../../shared/file-hash';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
 import type {
     ExtractedClass,
@@ -504,7 +505,141 @@ function createTsExtractors(isTS: boolean): LanguageExtractors {
         extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
             extractCallsTS(rootNode, fp, calls);
         },
+        extractReceiverTypes(rootNode: SgNode, fp: string): ReceiverTypeMap {
+            return extractReceiverTypesTS(rootNode, fp);
+        },
     };
+}
+
+// ---------------------------------------------------------------------------
+// Receiver-type inference (scope-local, two-pass)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the unqualified type name from a TS `new Foo()` or
+ * `new foo.Foo<T>()` expression. Returns `undefined` for anything
+ * we can't confidently name.
+ */
+function typeFromNewExpression(newExpr: SgNode): string | undefined {
+    const cons = newExpr.field('constructor');
+    if (!cons) {
+        return undefined;
+    }
+    const k = cons.kind();
+    if (k === 'identifier' || k === 'type_identifier') {
+        return cons.text();
+    }
+    // `new pkg.Foo()` — take the final member
+    if (k === 'member_expression') {
+        const prop = cons.field('property');
+        return prop?.text();
+    }
+    return undefined;
+}
+
+/** Extract a type name from a `: Foo` type_annotation. */
+function typeFromAnnotation(typeAnn: SgNode): string | undefined {
+    const typeNode = typeAnn
+        .children()
+        .find(
+            (c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier' || c.kind() === 'generic_type',
+        );
+    if (!typeNode) {
+        return undefined;
+    }
+    if (typeNode.kind() === 'generic_type') {
+        return (
+            typeNode
+                .children()
+                .find((c: SgNode) => c.kind() === 'type_identifier')
+                ?.text() ?? undefined
+        );
+    }
+    return typeNode.text();
+}
+
+/**
+ * Collect variable-to-type bindings within a given scope (function body or
+ * file root). Only tracks explicit type annotations and `new` expressions —
+ * we deliberately do NOT attempt to infer from arbitrary expressions.
+ */
+function collectBindings(scopeNode: SgNode): Map<string, string> {
+    const bindings = new Map<string, string>();
+    for (const vd of scopeNode.findAll({ rule: { kind: 'variable_declarator' } })) {
+        const nameNode = vd.children().find((c: SgNode) => c.kind() === 'identifier');
+        const name = nameNode?.text();
+        if (!name) {
+            continue;
+        }
+        const typeAnn = vd.children().find((c: SgNode) => c.kind() === 'type_annotation');
+        const newExpr = vd.children().find((c: SgNode) => c.kind() === 'new_expression');
+        let typeName: string | undefined;
+        if (typeAnn) {
+            typeName = typeFromAnnotation(typeAnn);
+        }
+        if (!typeName && newExpr) {
+            typeName = typeFromNewExpression(newExpr);
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    return bindings;
+}
+
+function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    // File-level bindings act as fallbacks for top-level method calls.
+    const fileBindings = collectBindings(rootNode);
+    // Per-function bindings override file-level ones inside the function body.
+    const functionKinds = ['function_declaration', 'method_definition', 'arrow_function', 'function_expression'];
+    const functionRanges: { node: SgNode; bindings: Map<string, string> }[] = [];
+    for (const kind of functionKinds) {
+        for (const fn of rootNode.findAll({ rule: { kind } })) {
+            functionRanges.push({ node: fn, bindings: collectBindings(fn) });
+        }
+    }
+    // For each member_expression used as a call receiver, find the innermost
+    // enclosing function whose binding matches `x`. Fall back to file scope.
+    for (const ce of rootNode.findAll({ rule: { kind: 'call_expression' } })) {
+        const fnField = ce.field('function');
+        if (!fnField || fnField.kind() !== 'member_expression') {
+            continue;
+        }
+        const objectNode = fnField.field('object');
+        if (!objectNode || objectNode.kind() !== 'identifier') {
+            continue;
+        }
+        const receiver = objectNode.text();
+        // Walk function ranges inside-out using node ranges as a cheap scope test.
+        const callRange = ce.range();
+        let typeName: string | undefined;
+        // Prefer the innermost function — iterate in reverse of discovery order
+        // where innermost functions are encountered after their outer parent.
+        // Since ast-grep findAll is document-order, innermost shows up later
+        // ONLY for siblings; for nesting we need containment test.
+        let bestSize = Infinity;
+        for (const { node, bindings } of functionRanges) {
+            const nr = node.range();
+            if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
+                continue;
+            }
+            const size = nr.end.index - nr.start.index;
+            if (size < bestSize && bindings.has(receiver)) {
+                typeName = bindings.get(receiver);
+                bestSize = size;
+            }
+        }
+        if (!typeName) {
+            typeName = fileBindings.get(receiver);
+        }
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
 }
 
 const tsExtractors = createTsExtractors(true);
@@ -542,3 +677,11 @@ function tsDiHeuristics(typeName: string): string[] {
 registerDIHeuristics('TypeScript', tsDiHeuristics);
 registerDIHeuristics('Tsx', tsDiHeuristics);
 registerDIHeuristics('JavaScript', tsDiHeuristics);
+
+// Receiver-type inference: scope-local bindings from `const x = new Foo()` /
+// `const x: Foo = ...`. JS uses the same algorithm — type annotations don't
+// exist there, so `new` expressions are the only signal; registering for JS
+// is still useful for that half.
+registerReceiverTypes('TypeScript', extractReceiverTypesTS);
+registerReceiverTypes('Tsx', extractReceiverTypesTS);
+registerReceiverTypes('JavaScript', extractReceiverTypesTS);

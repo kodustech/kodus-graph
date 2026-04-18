@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { DART_NOISE } from './noise';
@@ -596,7 +597,20 @@ export const dartExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: no-op for Dart.
+//
+// Dart's method invocations aren't currently captured by the shared
+// `$CALLEE($$$ARGS)` extraction pattern (the pattern parser rejects them
+// as multi-node), so any bindings we collect would never match a
+// RawCallSite's line/column. We still register a function (returning an
+// empty map) to keep the registry populated consistently — swap this
+// for the collection logic once Dart call extraction is upgraded.
+function extractReceiverTypesDart(_root: SgNode, _fp: string): ReceiverTypeMap {
+    return new Map();
+}
+
 registerExtractor('dart', dartExtractors);
+registerReceiverTypes('dart', extractReceiverTypesDart);
 
 // Capabilities: async/await + Futures, metadata annotations (`@override`),
 // try/catch exceptions, static+sound null-safe types, nominal interfaces.

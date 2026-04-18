@@ -81,6 +81,10 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
             source: fp,
             callName,
             line: m.range().start.line,
+            // Thread column through so the receiver-type inference pass can
+            // cross-reference each call site precisely (multiple method
+            // calls on the same line share a line but not a column).
+            column: m.range().start.column,
             ...(resolveInClass ? { resolveInClass } : {}),
         });
     }

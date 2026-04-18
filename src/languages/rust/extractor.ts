@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import {
     computeContentHash,
     emptyResult,
@@ -254,7 +255,60 @@ export const rustExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `let x = Foo::new()` (scoped_identifier call),
+// `let x: Foo = ...` (explicit type annotation).
+function extractReceiverTypesRust(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const ld of root.findAll({ rule: { kind: 'let_declaration' } })) {
+        const kids = ld.children();
+        const nameNode = kids.find((c: SgNode) => c.kind() === 'identifier');
+        const name = nameNode?.text();
+        if (!name) {
+            continue;
+        }
+        // Explicit type annotation — `type_identifier` appears as a child after `:`.
+        const explicitType = kids.find((c: SgNode) => c.kind() === 'type_identifier');
+        let typeName: string | undefined = explicitType?.text();
+        if (!typeName) {
+            // `let x = Foo::new()` → call_expression with scoped_identifier function.
+            const call = kids.find((c: SgNode) => c.kind() === 'call_expression');
+            const fn = call?.field('function');
+            if (fn?.kind() === 'scoped_identifier') {
+                // Take the segment before `::` as type.
+                const path = fn
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'type_identifier');
+                if (path) {
+                    typeName = path.text();
+                }
+            }
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const fn = ce.field('function');
+        if (!fn || fn.kind() !== 'field_expression') {
+            continue;
+        }
+        const base = fn.field('value') ?? fn.children()[0];
+        if (!base || base.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(base.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('rust', rustExtractors);
+registerReceiverTypes('rust', extractReceiverTypesRust);
 
 // Capabilities: Rust has async/await, attributes (`#[derive(...)]`) which we
 // model as decorators, Result<_, E>/? for recoverable errors (NOT exceptions —

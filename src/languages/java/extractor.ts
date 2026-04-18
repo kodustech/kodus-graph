@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import {
     computeContentHash,
     emptyResult,
@@ -315,7 +316,51 @@ export const javaExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `Foo x = new Foo()` (explicit type), `var x = new Foo()` (Java 10+).
+function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const lvd of root.findAll({ rule: { kind: 'local_variable_declaration' } })) {
+        const declaredType = lvd.field('type')?.text();
+        for (const vd of lvd.children()) {
+            if (vd.kind() !== 'variable_declarator') {
+                continue;
+            }
+            const name = vd.field('name')?.text();
+            if (!name) {
+                continue;
+            }
+            let typeName: string | undefined;
+            if (declaredType && declaredType !== 'var') {
+                typeName = declaredType;
+            } else {
+                const value = vd.field('value');
+                if (value?.kind() === 'object_creation_expression') {
+                    typeName = value.field('type')?.text();
+                }
+            }
+            if (typeName) {
+                bindings.set(name, typeName);
+            }
+        }
+    }
+    for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {
+        const obj = mi.field('object');
+        if (!obj || obj.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(obj.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = mi.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('java', javaExtractors);
+registerReceiverTypes('java', extractReceiverTypesJava);
 
 // Capabilities: CompletableFuture/async (framework-level), annotations,
 // checked+unchecked exceptions, static types, nominal interfaces.

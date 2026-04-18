@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { C_NOISE } from './noise';
@@ -519,8 +520,58 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
     };
 }
 
+// Receiver-type inference for C / C++.
+//
+// Covers `Foo x;` (declaration with no initializer), `Foo y = Foo();`
+// (init_declarator) and `Type x = Type(...);`. We intentionally skip
+// `auto x = ...;` because the type lives in the RHS expression and
+// resolving it reliably requires more than a surface walk.
+function extractReceiverTypesC(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const decl of root.findAll({ rule: { kind: 'declaration' } })) {
+        const typeNode = decl.field('type');
+        const typeName = typeNode?.kind() === 'type_identifier' ? typeNode.text() : undefined;
+        if (!typeName) {
+            continue;
+        }
+        for (const c of decl.children()) {
+            if (c.kind() === 'identifier') {
+                bindings.set(c.text(), typeName);
+            } else if (c.kind() === 'init_declarator') {
+                const name = c
+                    .children()
+                    .find((x: SgNode) => x.kind() === 'identifier')
+                    ?.text();
+                if (name) {
+                    bindings.set(name, typeName);
+                }
+            }
+        }
+    }
+    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+        const fn = ce.field('function');
+        if (!fn || fn.kind() !== 'field_expression') {
+            continue;
+        }
+        const base = fn.field('argument') ?? fn.children()[0];
+        if (!base || base.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(base.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = ce.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('c', createCExtractor('c'));
 registerExtractor('cpp', createCExtractor('cpp'));
+registerReceiverTypes('c', extractReceiverTypesC);
+registerReceiverTypes('cpp', extractReceiverTypesC);
 
 // Capabilities:
 //   C: no async/await, no decorators/attributes at the language level, no

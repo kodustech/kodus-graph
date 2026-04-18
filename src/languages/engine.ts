@@ -1,5 +1,6 @@
-import type { SgRoot } from '@ast-grep/napi';
+import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
+import type { ReceiverTypeMap } from './receiver-types';
 import type { LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,31 @@ export function registerDIHeuristics(language: string, fn: (typeName: string) =>
 
 export function getDIHeuristicsFor(language: string): ((typeName: string) => string[]) | null {
     return DI_REGISTRY.get(language) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Receiver-type inference registry
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-language receiver-type inference hook. Walks a file's AST and returns
+ * a map from call-site location key (`file:line:column`) to the inferred
+ * receiver type name (e.g. `'Foo'` for `x.update()` where `x: Foo`).
+ *
+ * Dynamic languages (Ruby/PHP/Elixir) register a no-op that returns an
+ * empty map; static languages implement a scope-local two-pass walk over
+ * `let`/`const`/`var` declarations and member-expression call sites.
+ */
+type ReceiverTypesFn = (root: SgNode, fp: string) => ReceiverTypeMap;
+
+const RECEIVER_TYPES_REGISTRY = new Map<string, ReceiverTypesFn>();
+
+export function registerReceiverTypes(language: string, fn: ReceiverTypesFn): void {
+    RECEIVER_TYPES_REGISTRY.set(language, fn);
+}
+
+export function getReceiverTypesFor(language: string): ReceiverTypesFn | null {
+    return RECEIVER_TYPES_REGISTRY.get(language) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,4 +258,18 @@ export function extractCallsFromEngine(root: SgRoot, fp: string, lang: string, c
         return;
     }
     extractor.extractCalls(root.root(), fp, calls);
+}
+
+/**
+ * Run the registered receiver-type inference pass for `lang`, returning the
+ * resulting map (or an empty map if no language registered one). The parser
+ * batch calls this after `extractCallsFromEngine` and copies matching
+ * entries into each call's `receiverType` field.
+ */
+export function extractReceiverTypesFromEngine(root: SgRoot, fp: string, lang: string): ReceiverTypeMap {
+    const fn = RECEIVER_TYPES_REGISTRY.get(lang);
+    if (!fn) {
+        return new Map();
+    }
+    return fn(root.root(), fp);
 }

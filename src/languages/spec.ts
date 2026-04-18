@@ -1,5 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../graph/types';
+import type { ReceiverTypeMap } from './receiver-types';
 
 export interface ExtractedClass {
     name: string;
@@ -96,4 +97,21 @@ export interface LanguageExtractors {
      * without holding a reference to the extractor struct.
      */
     diHeuristics?(typeName: string): string[];
+
+    /**
+     * Optional scope-local receiver-type inference. Walks the file's AST and
+     * returns a map from call-site location keys to inferred type names, e.g.
+     * records `'src/a.ts:10:4' → 'Foo'` for `x.update()` where `x` was
+     * declared as `const x = new Foo()`.
+     *
+     * Dynamic languages (Ruby, PHP, Elixir) should either omit this or
+     * register a no-op returning an empty map. The parser batch wires the
+     * result into `RawCallSite.receiverType` for the resolver's high-
+     * confidence receiver tier.
+     *
+     * Actual wiring uses `registerReceiverTypes(key, fn)` at module-load
+     * time in each language's extractor — the property here is an optional
+     * contract marker for documentation.
+     */
+    extractReceiverTypes?(root: SgNode, fp: string): ReceiverTypeMap;
 }

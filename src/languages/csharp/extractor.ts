@@ -3,7 +3,8 @@ import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
-import { registerDIHeuristics, registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import {
     computeContentHash,
     emptyResult,
@@ -319,7 +320,65 @@ export const csharpExtractors: LanguageExtractors = {
     },
 };
 
+// Receiver-type inference: `Foo x = new Foo()` (explicit type),
+// `var x = new Foo()` (implicit type — take from object_creation_expression).
+function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+    for (const vdWrap of root.findAll({ rule: { kind: 'variable_declaration' } })) {
+        const first = vdWrap.children()[0];
+        // `Foo x = ...` → explicit; `var x = ...` → first child kind is `implicit_type`.
+        const declaredType =
+            first && (first.kind() === 'identifier' || first.kind() === 'type_identifier') ? first.text() : undefined;
+        for (const vd of vdWrap.children()) {
+            if (vd.kind() !== 'variable_declarator') {
+                continue;
+            }
+            const name = vd
+                .children()
+                .find((c: SgNode) => c.kind() === 'identifier')
+                ?.text();
+            if (!name) {
+                continue;
+            }
+            let typeName: string | undefined = declaredType;
+            if (!typeName) {
+                const oce = vd.children().find((c: SgNode) => c.kind() === 'object_creation_expression');
+                if (oce) {
+                    typeName =
+                        oce.field('type')?.text() ??
+                        oce
+                            .children()
+                            .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'type_identifier')
+                            ?.text();
+                }
+            }
+            if (typeName) {
+                bindings.set(name, typeName);
+            }
+        }
+    }
+    for (const inv of root.findAll({ rule: { kind: 'invocation_expression' } })) {
+        const fn = inv.field('function');
+        if (!fn || fn.kind() !== 'member_access_expression') {
+            continue;
+        }
+        const expr = fn.field('expression') ?? fn.children()[0];
+        if (!expr || expr.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(expr.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = inv.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+    return out;
+}
+
 registerExtractor('csharp', csharpExtractors);
+registerReceiverTypes('csharp', extractReceiverTypesCsharp);
 
 // Capabilities: async/await + Task, attributes, try/catch exceptions,
 // static types, nominal interfaces.
