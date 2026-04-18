@@ -277,6 +277,31 @@ kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 | Unique match | 0.50 | Only one candidate across codebase |
 | Ambiguous | 0.30 | Multiple candidates found |
 
+#### `metadata.tier_distribution` (optional)
+
+Per-tier counts of call-resolver outcomes across the parse run. Useful for
+calibrating trust per-repo — statically-typed languages produce higher-
+confidence edges (`receiver`, `di`, `same`, `import`); dynamic languages skew
+toward `ambiguous` and `noise`.
+
+~~~bash
+kodus-graph parse --all --repo-dir . --out - | jq '.metadata.tier_distribution'
+# {
+#   "receiver": 12,
+#   "di": 34,
+#   "same": 189,
+#   "import": 72,
+#   "unique": 21,
+#   "ambiguous": 8,
+#   "noise": 41,
+#   "ambiguousNoise": 3
+# }
+~~~
+
+In incremental updates (`kodus-graph update`) `tier_distribution` reflects only
+the re-parsed slice (changed + added files), not the merged full graph.
+Re-run `kodus-graph parse --all` for a whole-repo snapshot.
+
 ## Workflows
 
 ### Full Repository Analysis (first time)

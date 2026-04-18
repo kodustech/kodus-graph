@@ -48,6 +48,18 @@ export const parseMetadataSchema = z.object({
     extract_errors: z.number(),
     files_unchanged: z.number().optional(),
     incremental: z.boolean().optional(),
+    tier_distribution: z
+        .object({
+            receiver: z.number(),
+            di: z.number(),
+            same: z.number(),
+            import: z.number(),
+            unique: z.number(),
+            ambiguous: z.number(),
+            noise: z.number(),
+            ambiguousNoise: z.number(),
+        })
+        .optional(),
 });
 
 // ── Full parse-command output (metadata + nodes + edges) ──

@@ -3,7 +3,7 @@ import { dirname, relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
 import { loadGraph } from '../graph/loader';
-import type { GraphEdge, GraphNode, ImportEdge, ParseOutput } from '../graph/types';
+import type { GraphEdge, GraphNode, ImportEdge, ParseOutput, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { resolveAllCalls } from '../resolver/call-resolver';
@@ -138,7 +138,25 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    const { callEdges } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+    const { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+
+    // Tier distribution for this incremental run reflects ONLY the re-parsed
+    // slice (changed + added files), not the merged full graph. Consumers that
+    // need a full-repo snapshot should re-run `kodus-graph parse --all`.
+    // Rationale: merging this slice with the old graph's `tier_distribution`
+    // would require rerunning the resolver over unchanged files or trusting
+    // stale counters — neither is honest. Surface the partial slice and let
+    // consumers decide.
+    const tierDistribution: TierDistribution = {
+        receiver: stats.receiver,
+        di: stats.di,
+        same: stats.same,
+        import: stats.import,
+        unique: stats.unique,
+        ambiguous: stats.ambiguous,
+        noise: stats.noise,
+        ambiguousNoise: stats.ambiguousNoise,
+    };
 
     const fileHashes = new Map<string, string>();
     for (const f of absToReparse) {
@@ -172,6 +190,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             extract_errors: rawGraph.extractErrors,
             incremental: true,
             schema_version: SCHEMA_VERSION,
+            tier_distribution: tierDistribution,
         },
         nodes: mergedNodes,
         edges: mergedEdges,

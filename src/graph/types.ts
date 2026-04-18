@@ -49,6 +49,25 @@ export interface GraphData {
 }
 
 // ── Parse command output ──
+
+/**
+ * Per-tier counts of call resolution outcomes. Useful for calibrating trust
+ * in the graph: a repo skewed toward `ambiguous`/`noise` has more uncertainty
+ * than one skewed toward `receiver`/`di`/`same`/`import`.
+ *
+ * Fields mirror `CallResolverStats` in `src/resolver/call-resolver.ts`.
+ */
+export interface TierDistribution {
+    receiver: number;
+    di: number;
+    same: number;
+    import: number;
+    unique: number;
+    ambiguous: number;
+    noise: number;
+    ambiguousNoise: number;
+}
+
 export interface ParseMetadata {
     /** Kodus-graph schema version. See src/shared/constants.ts. */
     schema_version?: string;
@@ -61,6 +80,13 @@ export interface ParseMetadata {
     extract_errors: number;
     files_unchanged?: number;
     incremental?: boolean;
+    /**
+     * Per-tier resolver counts across the parse run. In incremental updates
+     * (`kodus-graph update`) this reflects ONLY the re-parsed slice, not the
+     * full graph — re-run `kodus-graph parse --all` for a complete picture.
+     * See `TierDistribution`.
+     */
+    tier_distribution?: TierDistribution;
 }
 
 export interface ParseOutput {

@@ -2,7 +2,7 @@ import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
 import { writeGraphJSON } from '../graph/json-writer';
-import type { ImportEdge } from '../graph/types';
+import type { ImportEdge, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { resolveAllCalls } from '../resolver/call-resolver';
@@ -97,6 +97,20 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         `[4/5] Resolved ${callEdges.length} calls (DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
     );
 
+    // Snapshot resolver stats into a plain TierDistribution for the metadata.
+    // Stats mirror CallResolverStats 1:1 — we copy by name so the metadata
+    // contract doesn't drift if the resolver adds internal fields later.
+    const tierDistribution: TierDistribution = {
+        receiver: stats.receiver,
+        di: stats.di,
+        same: stats.same,
+        import: stats.import,
+        unique: stats.unique,
+        ambiguous: stats.ambiguous,
+        noise: stats.noise,
+        ambiguousNoise: stats.ambiguousNoise,
+    };
+
     // Phase 5: Build output
     const fileHashes = new Map<string, string>();
     for (const f of files) {
@@ -128,6 +142,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         parse_errors: parseErrors,
         extract_errors: extractErrors,
         schema_version: SCHEMA_VERSION,
+        tier_distribution: tierDistribution,
     };
 
     writeGraphJSON(opts.out, metadata, graphData.nodes, graphData.edges);
