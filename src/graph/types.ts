@@ -202,14 +202,6 @@ export interface EnrichedFunction {
     file_path: string;
     line_start: number;
     line_end: number;
-    /**
-     * Registry key matching `LanguageCapabilities` / extractor registration
-     * (e.g. `'TypeScript'`, `'go'`, `'rust'`). Present when the file extension
-     * maps to a known language; otherwise undefined. Derived from
-     * `languageOfFile(file_path)` so downstream formatters can consult
-     * capability flags without re-deriving the key.
-     */
-    language?: string;
     callers: CallerRef[];
     callees: CalleeRef[];
     has_test_coverage: boolean;

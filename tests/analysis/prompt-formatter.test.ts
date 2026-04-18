@@ -1350,13 +1350,16 @@ describe('computeFunctionRisk — capability-aware contract diff counting', () =
             { field: 'throws' as const, old_value: '', new_value: 'IOException' },
             { field: 'decorators' as const, old_value: '', new_value: '@Tracked' },
         ];
-        const goFn = makeFn({ language: 'go', file_path: 'src/a.go', contract_diffs: diffs });
-        const tsFn = makeFn({ language: 'TypeScript', file_path: 'src/a.ts', contract_diffs: diffs });
+        // Language is derived from `file_path` via `languageOfFile` — see
+        // `applicableContractDiffs` in prompt-formatter. No `language` field
+        // on EnrichedFunction post-Phase-3.5 Task 2.
+        const goFn = makeFn({ file_path: 'src/a.go', contract_diffs: diffs });
+        const tsFn = makeFn({ file_path: 'src/a.ts', contract_diffs: diffs });
 
         expect(computeFunctionRisk(tsFn)).toBeGreaterThan(computeFunctionRisk(goFn));
         // And the Go function should score the same as one with zero diffs,
         // since all diffs were suppressed.
-        const goNoDiff = makeFn({ language: 'go', file_path: 'src/a.go', contract_diffs: [] });
+        const goNoDiff = makeFn({ file_path: 'src/a.go', contract_diffs: [] });
         expect(computeFunctionRisk(goFn)).toBe(computeFunctionRisk(goNoDiff));
     });
 });

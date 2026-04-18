@@ -1,3 +1,4 @@
+import { languageOfFile } from '../languages/language-of-file';
 import { deriveEdges } from './edges';
 import type { GraphData, GraphEdge, GraphNode, ImportEdge, RawCallEdge, RawGraph } from './types';
 
@@ -256,33 +257,19 @@ export function buildGraphData(
     return { nodes, edges };
 }
 
+/**
+ * Emits the canonical language key used by registry consumers — extractors,
+ * capabilities, noise, receiver types, DI heuristics all key off these exact
+ * strings. Delegates to `languageOfFile` so this function and the resolver-side
+ * helper stay in lockstep.
+ *
+ * The JS family uses capitalized keys (`'TypeScript'`, `'Tsx'`, `'JavaScript'`)
+ * because that's what the ast-grep `Lang` enum emits at parse time and what
+ * the TS/JS extractors register under. Everything else is lowercase.
+ *
+ * Unrecognized extensions return `'unknown'` (sentinel preserved for
+ * back-compat with existing consumers / tests).
+ */
 function detectLang(file: string): string {
-    if (file.endsWith('.ts') || file.endsWith('.tsx')) {
-        return 'typescript';
-    }
-    if (file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.mjs') || file.endsWith('.cjs')) {
-        return 'javascript';
-    }
-    if (file.endsWith('.py')) {
-        return 'python';
-    }
-    if (file.endsWith('.rb')) {
-        return 'ruby';
-    }
-    if (file.endsWith('.go')) {
-        return 'go';
-    }
-    if (file.endsWith('.java')) {
-        return 'java';
-    }
-    if (file.endsWith('.rs')) {
-        return 'rust';
-    }
-    if (file.endsWith('.cs')) {
-        return 'csharp';
-    }
-    if (file.endsWith('.php')) {
-        return 'php';
-    }
-    return 'unknown';
+    return languageOfFile(file) ?? 'unknown';
 }

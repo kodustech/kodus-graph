@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { buildGraphData } from '../../src/graph/builder';
 import type { RawCallEdge, RawGraph } from '../../src/graph/types';
+import { getCapabilitiesFor } from '../../src/languages/capabilities';
+// Ensure language capabilities are registered — `parser/extractor` imports
+// every language barrel, triggering side-effect registration of extractors
+// and their capability entries.
+import '../../src/parser/extractor';
 
 describe('buildGraphData', () => {
     it('should convert raw graph to GraphData with correct node kinds', () => {
@@ -497,5 +502,193 @@ describe('buildGraphData', () => {
 
         expect(calls).toHaveLength(1);
         expect(calls[0].target_qualified).toBe('src/utils.ts::helper');
+    });
+
+    // ── GraphNode.language uses canonical registry keys (Phase 3.5 Task 2) ──
+    // `detectLang` previously emitted lowercase legacy keys ('typescript', 'javascript')
+    // that diverged from the canonical registry keys used by `registerExtractor`,
+    // `getCapabilitiesFor`, `getNoiseFor`, etc. These tests pin the canonical
+    // output so consumers can look up capabilities via `node.language` directly.
+    it('emits canonical "TypeScript" for .ts files (not lowercase "typescript")', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'foo',
+                    file: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/a.ts::foo',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+
+        const result = buildGraphData(raw, [], [], 'src', new Map());
+        const node = result.nodes.find((n) => n.name === 'foo');
+        expect(node?.language).toBe('TypeScript');
+    });
+
+    it('emits canonical "Tsx" for .tsx files', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'Page',
+                    file: 'src/page.tsx',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/page.tsx::Page',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+
+        const result = buildGraphData(raw, [], [], 'src', new Map());
+        const node = result.nodes.find((n) => n.name === 'Page');
+        expect(node?.language).toBe('Tsx');
+    });
+
+    it('emits canonical "JavaScript" for .js files (not lowercase "javascript")', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'bar',
+                    file: 'src/b.js',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/b.js::bar',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+
+        const result = buildGraphData(raw, [], [], 'src', new Map());
+        const node = result.nodes.find((n) => n.name === 'bar');
+        expect(node?.language).toBe('JavaScript');
+    });
+
+    it('emits lowercase "python" for .py files (matches registry key)', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'g',
+                    file: 'src/a.py',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_definition',
+                    className: '',
+                    qualified: 'src/a.py::g',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+
+        const result = buildGraphData(raw, [], [], 'src', new Map());
+        const node = result.nodes.find((n) => n.name === 'g');
+        expect(node?.language).toBe('python');
+    });
+
+    // Cross-registry sanity: `GraphNode.language` must map directly into the
+    // capabilities registry without any translation layer. Pre-Phase-3.5 this
+    // was broken — `'typescript'` (lowercase) did not resolve because caps
+    // registered under `'TypeScript'`. Post-fix, `node.language` is the key.
+    it('GraphNode.language is a valid key into the capabilities registry', () => {
+        const raw: RawGraph = {
+            functions: [
+                {
+                    name: 'tsFn',
+                    file: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/a.ts::tsFn',
+                },
+                {
+                    name: 'goFn',
+                    file: 'src/a.go',
+                    line_start: 1,
+                    line_end: 5,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Function',
+                    ast_kind: 'function_declaration',
+                    className: '',
+                    qualified: 'src/a.go::goFn',
+                },
+            ],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            tests: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+        };
+
+        const result = buildGraphData(raw, [], [], 'src', new Map());
+        const tsNode = result.nodes.find((n) => n.name === 'tsFn');
+        const goNode = result.nodes.find((n) => n.name === 'goFn');
+
+        // TypeScript caps exist and include async + exceptions + decorators.
+        const tsCaps = getCapabilitiesFor(tsNode!.language);
+        expect(tsCaps).not.toBeNull();
+        expect(tsCaps?.hasAsync).toBe(true);
+
+        // Go caps exist and exclude async + exceptions (register-level truth
+        // that `applicableContractDiffs` relies on for suppression).
+        const goCaps = getCapabilitiesFor(goNode!.language);
+        expect(goCaps).not.toBeNull();
+        expect(goCaps?.hasAsync).toBe(false);
+        expect(goCaps?.hasExceptions).toBe(false);
     });
 });

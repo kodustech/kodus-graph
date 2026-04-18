@@ -1,5 +1,6 @@
 import type { EnrichedFunction, ImpactCategory } from '../graph/types';
 import { getCapabilitiesFor } from '../languages/capabilities';
+import { languageOfFile } from '../languages/language-of-file';
 import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import type { ContractDiff } from './diff';
@@ -30,7 +31,12 @@ const DEFAULT_MAX_PROMPT_CHARS = 20_000;
  * `enrich.ts::caller_impact` uses an inline equivalent for per-field narration.
  */
 export function applicableContractDiffs(fn: EnrichedFunction): ContractDiff[] {
-    const caps = fn.language ? getCapabilitiesFor(fn.language) : null;
+    // Derive language from file_path — equivalent to `node.language` now that
+    // `detectLang` (GraphNode side) and `languageOfFile` (resolver side) emit
+    // the same canonical registry keys. Inline lookup keeps EnrichedFunction
+    // free of a derived-redundant field.
+    const lang = languageOfFile(fn.file_path);
+    const caps = lang ? getCapabilitiesFor(lang) : null;
     if (!caps) {
         return fn.contract_diffs;
     }

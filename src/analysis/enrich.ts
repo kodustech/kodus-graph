@@ -156,7 +156,9 @@ export function enrichChangedFunctions(
 
             // Resolve language first — the caller-impact narration below consults
             // capability flags so we don't emit e.g. "must add await" for a Go
-            // function that got a spurious `is_async` diff.
+            // function that got a spurious `is_async` diff. Derived locally
+            // from `file_path`; post-Phase-3.5 `node.language` uses the same
+            // canonical keys so either source would work.
             const language = languageOfFile(node.file_path) ?? undefined;
 
             // Caller impact.
@@ -218,7 +220,6 @@ export function enrichChangedFunctions(
                 file_path: node.file_path,
                 line_start: node.line_start,
                 line_end: node.line_end,
-                language,
                 callers,
                 callees,
                 has_test_coverage: testedFunctions.has(node.qualified_name) || testedFiles.has(node.file_path),
