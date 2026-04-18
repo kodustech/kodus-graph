@@ -1363,3 +1363,171 @@ describe('computeFunctionRisk — capability-aware contract diff counting', () =
         expect(computeFunctionRisk(goFn)).toBe(computeFunctionRisk(goNoDiff));
     });
 });
+
+describe('formatPrompt — long contract diff rendering', () => {
+    const longBefore =
+        '(context: ReviewContext, config: ReviewConfig, options: { tier: string, mode: string, priority: number })';
+    const longAfter =
+        '(context: ReviewContext, config: ReviewConfig, options: { tier: string, mode: string, priority: number }, byokConfig?: BYOKConfig)';
+
+    function buildOutputWithParams(before: string, after: string) {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'reviewPR',
+                    qualified_name: 'src/review.ts::reviewPR',
+                    file_path: 'src/review.ts',
+                    line_start: 10,
+                    line_end: 50,
+                    language: 'typescript',
+                    params: after,
+                    return_type: 'Promise<Result>',
+                    is_test: false,
+                    file_hash: 'n',
+                },
+            ],
+            edges: [],
+        };
+
+        return buildContextV2({
+            mergedGraph: graph,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'reviewPR',
+                        qualified_name: 'src/review.ts::reviewPR',
+                        file_path: 'src/review.ts',
+                        line_start: 10,
+                        line_end: 45,
+                        language: 'typescript',
+                        params: before,
+                        return_type: 'Promise<Result>',
+                        is_test: false,
+                        file_hash: 'n',
+                        content_hash: 'old',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/review.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+    }
+
+    it('short params diff renders with simple → arrow', () => {
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'foo',
+                    qualified_name: 'src/a.ts::foo',
+                    file_path: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    params: '(a: string, b: number)',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'h',
+                },
+            ],
+            edges: [],
+        };
+        const output = buildContextV2({
+            mergedGraph: graph,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'foo',
+                        qualified_name: 'src/a.ts::foo',
+                        file_path: 'src/a.ts',
+                        line_start: 1,
+                        line_end: 5,
+                        language: 'typescript',
+                        params: '(a: string)',
+                        return_type: 'void',
+                        is_test: false,
+                        file_hash: 'h',
+                        content_hash: 'o',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/a.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+        expect(text).toContain('⚠ params: (a: string) → (a: string, b: number)');
+        expect(text).not.toContain('params changed:');
+    });
+
+    it('long params diff renders token-level with + added lines only (no full before blob)', () => {
+        const output = buildOutputWithParams(longBefore, longAfter);
+        const text = formatPrompt(output);
+
+        expect(text).toContain('⚠ params changed:');
+        expect(text).toContain('+ byokConfig?: BYOKConfig');
+        // The long before blob must NOT appear verbatim — that's the whole point
+        expect(text).not.toContain(`${longBefore} → ${longAfter}`);
+    });
+
+    it('long return_type diff renders with before:/after: labels', () => {
+        const longRtBefore = 'Promise<UserResult<SomeVeryLongGenericArgs, AndAnotherOne, AndAThirdOne, AndOneMore>>';
+        const longRtAfter =
+            'Promise<UserResult<SomeVeryLongGenericArgs, AndAnotherOne, AndAThirdOne, AndOneMore> | null>';
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'loadUser',
+                    qualified_name: 'src/u.ts::loadUser',
+                    file_path: 'src/u.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    params: '(id: number)',
+                    return_type: longRtAfter,
+                    is_test: false,
+                    file_hash: 'h',
+                },
+            ],
+            edges: [],
+        };
+        const output = buildContextV2({
+            mergedGraph: graph,
+            oldGraph: {
+                nodes: [
+                    {
+                        kind: 'Function',
+                        name: 'loadUser',
+                        qualified_name: 'src/u.ts::loadUser',
+                        file_path: 'src/u.ts',
+                        line_start: 1,
+                        line_end: 5,
+                        language: 'typescript',
+                        params: '(id: number)',
+                        return_type: longRtBefore,
+                        is_test: false,
+                        file_hash: 'h',
+                        content_hash: 'o',
+                    },
+                ],
+                edges: [],
+            },
+            changedFiles: ['src/u.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+        expect(text).toContain('⚠ return_type changed:');
+        expect(text).toContain('before:');
+        expect(text).toContain('after:');
+    });
+});

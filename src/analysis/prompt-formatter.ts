@@ -3,6 +3,7 @@ import { getCapabilitiesFor } from '../languages/capabilities';
 import { languageOfFile } from '../languages/language-of-file';
 import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
+import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
 
 export interface PromptFormatterOptions {
@@ -134,7 +135,29 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
             // support (same gate used by `computeFunctionRisk` and `enrich.ts` so
             // render, risk scoring, and caller_impact narration stay aligned).
             for (const cd of applicableContractDiffs(fn)) {
-                lines.push(`    ⚠ ${cd.field}: ${cd.old_value} → ${cd.new_value}`);
+                if (cd.field === 'params') {
+                    const r = renderParamsDiff(cd.old_value, cd.new_value);
+                    if (r.mode === 'simple') {
+                        lines.push(`    ⚠ params: ${r.text}`);
+                    } else {
+                        lines.push(`    ⚠ params changed:`);
+                        for (const tokLine of r.text.split('\n')) {
+                            lines.push(`        ${tokLine}`);
+                        }
+                    }
+                } else if (cd.field === 'return_type') {
+                    const r = renderReturnTypeDiff(cd.old_value, cd.new_value);
+                    if (r.mode === 'simple') {
+                        lines.push(`    ⚠ return_type: ${r.text}`);
+                    } else {
+                        lines.push(`    ⚠ return_type changed:`);
+                        for (const tokLine of r.text.split('\n')) {
+                            lines.push(`        ${tokLine}`);
+                        }
+                    }
+                } else {
+                    lines.push(`    ⚠ ${cd.field}: ${cd.old_value} → ${cd.new_value}`);
+                }
             }
             if (fn.caller_impact) {
                 lines.push(`    ⚠ ${fn.caller_impact}`);

@@ -1,6 +1,7 @@
 import type { EnrichedFunction } from '../graph/types';
 import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
+import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
 import { computeFunctionRisk } from './prompt-formatter';
 
@@ -185,12 +186,35 @@ function buildWhatChanged(fn: EnrichedFunction): string {
 
     for (const cd of fn.contract_diffs) {
         switch (cd.field) {
-            case 'params':
-                parts.push(`Parameters changed: ${cd.old_value} → ${cd.new_value}`);
+            case 'params': {
+                const r = renderParamsDiff(cd.old_value, cd.new_value);
+                if (r.mode === 'simple') {
+                    parts.push(`Parameters changed: ${r.text}`);
+                } else {
+                    const chunks: string[] = [];
+                    if (r.added.length > 0) {
+                        chunks.push(`added ${r.added.join(', ')}`);
+                    }
+                    if (r.removed.length > 0) {
+                        chunks.push(`removed ${r.removed.join(', ')}`);
+                    }
+                    parts.push(
+                        chunks.length > 0
+                            ? `Parameters changed: ${chunks.join('; ')}`
+                            : `Parameters changed: ${cd.old_value} → ${cd.new_value}`,
+                    );
+                }
                 break;
-            case 'return_type':
-                parts.push(`Return type changed: ${cd.old_value} → ${cd.new_value}`);
+            }
+            case 'return_type': {
+                const r = renderReturnTypeDiff(cd.old_value, cd.new_value);
+                if (r.mode === 'simple') {
+                    parts.push(`Return type changed: ${r.text}`);
+                } else {
+                    parts.push(`Return type changed (see ContractDiff)`);
+                }
                 break;
+            }
             case 'is_async':
                 parts.push(`Async modifier changed: ${cd.old_value} → ${cd.new_value}`);
                 break;
@@ -234,18 +258,46 @@ function buildWhatChanged(fn: EnrichedFunction): string {
 
 function contractDiffToSignal(cd: ContractDiff): { type: string; severity: string; text: string } {
     switch (cd.field) {
-        case 'params':
+        case 'params': {
+            const r = renderParamsDiff(cd.old_value, cd.new_value);
+            if (r.mode === 'simple') {
+                return {
+                    type: 'param-changed',
+                    severity: 'high',
+                    text: `Parameters changed: ${r.text}`,
+                };
+            }
+            const chunks: string[] = [];
+            if (r.added.length > 0) {
+                chunks.push(`added ${r.added.join(', ')}`);
+            }
+            if (r.removed.length > 0) {
+                chunks.push(`removed ${r.removed.join(', ')}`);
+            }
             return {
                 type: 'param-changed',
                 severity: 'high',
-                text: `Parameters changed: ${cd.old_value} → ${cd.new_value}`,
+                text:
+                    chunks.length > 0
+                        ? `Parameters changed: ${chunks.join('; ')}`
+                        : `Parameters changed: ${cd.old_value} → ${cd.new_value}`,
             };
-        case 'return_type':
+        }
+        case 'return_type': {
+            const r = renderReturnTypeDiff(cd.old_value, cd.new_value);
+            if (r.mode === 'simple') {
+                return {
+                    type: 'return-type-changed',
+                    severity: 'high',
+                    text: `Return type changed: ${r.text}`,
+                };
+            }
             return {
                 type: 'return-type-changed',
                 severity: 'high',
-                text: `Return type changed: ${cd.old_value} → ${cd.new_value}`,
+                text: 'Return type changed (see ContractDiff)',
             };
+        }
         case 'throws': {
             const oldSet = new Set(cd.old_value === '(none)' ? [] : cd.old_value.split(', '));
             const newItems = cd.new_value === '(none)' ? [] : cd.new_value.split(', ');
@@ -350,6 +402,32 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
 
         // WhatChanged
         lines.push(`    <WhatChanged>${escapeXml(buildWhatChanged(fn))}</WhatChanged>`);
+
+        // ContractDiffs — emit structured elements only for long params/return_type
+        // (short cases are already fully represented in WhatChanged/RiskSignals).
+        for (const cd of fn.contract_diffs) {
+            if (cd.field === 'params') {
+                const r = renderParamsDiff(cd.old_value, cd.new_value);
+                if (r.mode === 'token') {
+                    lines.push(`    <ContractDiff field="params">`);
+                    for (const rm of r.removed) {
+                        lines.push(`      <Removed>${escapeXml(rm)}</Removed>`);
+                    }
+                    for (const add of r.added) {
+                        lines.push(`      <Added>${escapeXml(add)}</Added>`);
+                    }
+                    lines.push(`    </ContractDiff>`);
+                }
+            } else if (cd.field === 'return_type') {
+                const r = renderReturnTypeDiff(cd.old_value, cd.new_value);
+                if (r.mode === 'long') {
+                    lines.push(`    <ContractDiff field="return_type">`);
+                    lines.push(`      <Before>${escapeXml(cd.old_value)}</Before>`);
+                    lines.push(`      <After>${escapeXml(cd.new_value)}</After>`);
+                    lines.push(`    </ContractDiff>`);
+                }
+            }
+        }
 
         // RiskSignals
         const signals: Array<{ type: string; severity: string; text: string }> = [];
