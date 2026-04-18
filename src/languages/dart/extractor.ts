@@ -1,10 +1,9 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
-import type { ReceiverTypeMap } from '../receiver-types';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { DART_NOISE } from './noise';
@@ -570,43 +569,232 @@ export const dartExtractors: LanguageExtractors = {
     },
 
     extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void {
-        const findEnclosingClass = (node: SgNode): SgNode | null => {
-            return (
-                node.ancestors().find((a) => {
-                    const k = String(a.kind());
-                    return k === 'class_definition' || k === 'mixin_declaration';
-                }) ?? null
-            );
+        // The shared `$CALLEE($$$ARGS)` pattern is rejected outright by Dart's
+        // tree-sitter grammar ("Multiple AST nodes are detected") because Dart
+        // encodes calls as sibling nodes rather than a single wrapper:
+        //   bare():         identifier[bare] + selector[(args)]
+        //   x.method():     identifier[x]   + selector[.method]
+        //                                   + selector[(args)]
+        //   this.method():  this            + selector[.method]
+        //                                   + selector[(args)]
+        //   super.method(): super + unconditional_assignable_selector[.method]
+        //                         + selector[(args)]
+        // We walk every `selector` that owns an `argument_part` child, then
+        // look backward through its siblings to resolve the callee name and
+        // optional `this`/`super` receiver.
+
+        const findEnclosingClass = (node: SgNode): SgNode | null =>
+            node.ancestors().find((a) => {
+                const k = String(a.kind());
+                return k === 'class_definition' || k === 'mixin_declaration';
+            }) ?? null;
+
+        const getParentClass = (classNode: SgNode): string | undefined => {
+            const superclass = classNode.children().find((c) => c.kind() === 'superclass');
+            if (!superclass) {
+                return undefined;
+            }
+            const typeId = superclass.children().find((c) => c.kind() === 'type_identifier');
+            return typeId?.text();
         };
 
-        const config: CallExtractionConfig = {
-            selfPrefixes: ['this.'],
-            superPrefixes: ['super.'],
-            findEnclosingClass,
-            getParentClass: (classNode) => {
-                const superclass = classNode.children().find((c) => c.kind() === 'superclass');
-                if (superclass) {
-                    const typeId = superclass.children().find((c) => c.kind() === 'type_identifier');
-                    return typeId?.text();
-                }
+        /** Extract the method name from a `.name` access-selector node. */
+        const nameFromAccess = (access: SgNode): string | undefined => {
+            // access may be `selector` wrapping `unconditional_assignable_selector`
+            // (for regular `x.method`) OR a bare `unconditional_assignable_selector`
+            // (for `super.method`).
+            const inner =
+                access.kind() === 'unconditional_assignable_selector'
+                    ? access
+                    : access.children().find((c) => c.kind() === 'unconditional_assignable_selector');
+            if (!inner) {
                 return undefined;
-            },
-            noise: DART_NOISE,
+            }
+            return inner
+                .children()
+                .find((c) => c.kind() === 'identifier')
+                ?.text();
         };
-        extractCalls(root, fp, config, calls);
+
+        /** Is `node` an access-selector (`.method` lookup, no args)? */
+        const isAccessSelector = (node: SgNode): boolean => {
+            const k = node.kind();
+            if (k === 'unconditional_assignable_selector') {
+                return true;
+            }
+            if (k !== 'selector') {
+                return false;
+            }
+            const hasArgs = node.children().some((c) => c.kind() === 'argument_part');
+            const hasAccess = node.children().some((c) => c.kind() === 'unconditional_assignable_selector');
+            return hasAccess && !hasArgs;
+        };
+
+        for (const callSel of root.findAll({ rule: { kind: 'selector' } })) {
+            const hasArgs = callSel.children().some((c) => c.kind() === 'argument_part');
+            if (!hasArgs) {
+                continue;
+            }
+
+            const prev = callSel.prev();
+            if (!prev) {
+                continue;
+            }
+
+            let callName: string | undefined;
+            let receiverKind: 'this' | 'super' | 'other' | 'none' = 'none';
+
+            if (isAccessSelector(prev)) {
+                // `receiver.method(args)` — callee name comes from the access selector.
+                callName = nameFromAccess(prev);
+                const beforeAccess = prev.prev();
+                if (beforeAccess) {
+                    const bk = beforeAccess.kind();
+                    if (bk === 'this') {
+                        receiverKind = 'this';
+                    } else if (bk === 'super') {
+                        receiverKind = 'super';
+                    } else {
+                        receiverKind = 'other';
+                    }
+                }
+            } else if (prev.kind() === 'identifier') {
+                // `bare(args)` — the identifier is the callee.
+                callName = prev.text();
+            } else {
+                // Chained `.a().b()` — the inner call was already captured via
+                // its own access-selector. Skip the outer `(...)` here.
+                continue;
+            }
+
+            if (!callName || DART_NOISE.has(callName)) {
+                continue;
+            }
+
+            let resolveInClass: string | undefined;
+            if (receiverKind === 'this') {
+                const classNode = findEnclosingClass(callSel);
+                resolveInClass = classNode ? dartName(classNode) : undefined;
+            } else if (receiverKind === 'super') {
+                const classNode = findEnclosingClass(callSel);
+                if (classNode) {
+                    resolveInClass = getParentClass(classNode);
+                }
+            }
+
+            // Line/column point at the argument selector (`(args)`) rather
+            // than the method name — that matches what the receiver-type
+            // inference pass keys on below.
+            const r = callSel.range().start;
+            calls.push({
+                source: fp,
+                callName,
+                line: r.line,
+                column: r.column,
+                ...(resolveInClass ? { resolveInClass } : {}),
+            });
+        }
     },
 };
 
-// Receiver-type inference: no-op for Dart.
+// Receiver-type inference for Dart.
 //
-// Dart's method invocations aren't currently captured by the shared
-// `$CALLEE($$$ARGS)` extraction pattern (the pattern parser rejects them
-// as multi-node), so any bindings we collect would never match a
-// RawCallSite's line/column. We still register a function (returning an
-// empty map) to keep the registry populated consistently — swap this
-// for the collection logic once Dart call extraction is upgraded.
-function extractReceiverTypesDart(_root: SgNode, _fp: string): ReceiverTypeMap {
-    return new Map();
+// Collects `Foo x = ...` / `Foo x = new Foo()` / `var x = Foo()` bindings via
+// `initialized_variable_definition` nodes, then attaches the resulting type
+// name to the `x.method(...)` call site by keying on the call-selector's
+// line/column (matching what the walk-based `extractCalls` above records).
+function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const bindings = new Map<string, string>();
+
+    for (const ivd of root.findAll({ rule: { kind: 'initialized_variable_definition' } })) {
+        const childs = ivd.children();
+
+        // Variable name is the first `identifier` child that isn't the RHS.
+        // Dart places the declared type (`type_identifier`) or `inferred_type`
+        // before the name, then `=`, then the initializer.
+        const eqIdx = childs.findIndex((c) => c.kind() === '=');
+        if (eqIdx < 0) {
+            continue;
+        }
+        const lhs = childs.slice(0, eqIdx);
+        const rhs = childs.slice(eqIdx + 1);
+
+        const declaredType = lhs.find((c) => c.kind() === 'type_identifier')?.text();
+        const nameNode = lhs.find((c) => c.kind() === 'identifier');
+        const name = nameNode?.text();
+        if (!name) {
+            continue;
+        }
+
+        let typeName: string | undefined;
+        if (declaredType) {
+            typeName = declaredType;
+        } else {
+            // `var x = Foo(...)` — infer from the constructor call on the RHS.
+            // RHS shape: `identifier[Foo]` + `selector[(args)]`  OR
+            //            `new_expression` wrapping `type_identifier[Foo]`.
+            const newExpr = rhs.find((c) => c.kind() === 'new_expression');
+            if (newExpr) {
+                typeName = newExpr
+                    .children()
+                    .find((c) => c.kind() === 'type_identifier')
+                    ?.text();
+            } else {
+                const ctorId = rhs.find((c) => c.kind() === 'identifier');
+                const nextIsCall = rhs.some(
+                    (c) => c.kind() === 'selector' && c.children().some((cc) => cc.kind() === 'argument_part'),
+                );
+                if (ctorId && nextIsCall) {
+                    const t = ctorId.text();
+                    // Treat as a constructor only when the identifier looks
+                    // like a type name (starts uppercase). Lowercase factory
+                    // functions (e.g. `makeFoo()`) can't be resolved without
+                    // cross-file knowledge, so we skip them.
+                    if (t.length > 0 && t[0] === t[0].toUpperCase()) {
+                        typeName = t;
+                    }
+                }
+            }
+        }
+
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
+
+    // Cross-reference each receiver-qualified call site with its binding.
+    // The call-extractor records location at the argument selector's start,
+    // so we scan the same shape here to stay in sync.
+    for (const callSel of root.findAll({ rule: { kind: 'selector' } })) {
+        if (!callSel.children().some((c) => c.kind() === 'argument_part')) {
+            continue;
+        }
+        const accessor = callSel.prev();
+        if (!accessor) {
+            continue;
+        }
+        // Only `selector[.method]` (not `unconditional_assignable_selector` — that
+        // path is reserved for `super.method` which doesn't bind to a local).
+        if (accessor.kind() !== 'selector') {
+            continue;
+        }
+        if (!accessor.children().some((c) => c.kind() === 'unconditional_assignable_selector')) {
+            continue;
+        }
+        const receiver = accessor.prev();
+        if (!receiver || receiver.kind() !== 'identifier') {
+            continue;
+        }
+        const typeName = bindings.get(receiver.text());
+        if (!typeName) {
+            continue;
+        }
+        const r = callSel.range().start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+
+    return out;
 }
 
 registerExtractor('dart', dartExtractors);

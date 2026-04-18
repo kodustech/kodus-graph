@@ -19,6 +19,9 @@ import '../../src/languages/scala';
 import '../../src/languages/swift';
 import '../../src/languages/c';
 import { extractCallsFromFile } from '../../src/parser/extractor';
+import { resolveAllCalls } from '../../src/resolver/call-resolver';
+import { createImportMap } from '../../src/resolver/import-map';
+import { createSymbolTable } from '../../src/resolver/symbol-table';
 
 async function extractWithReceiver(lang: string, source: string, fp: string): Promise<RawCallSite[]> {
     const root = await parseAsync(lang as never, source);
@@ -36,20 +39,13 @@ async function extractWithReceiver(lang: string, source: string, fp: string): Pr
 
 describe('receiver-type inference per language', () => {
     it('Java infers receiverType from `Foo x = new Foo()`', async () => {
-        // Java's method invocations are not captured by the shared call-pattern
-        // today, so the inferred receiver types have nowhere to attach. The
-        // extractor still populates its internal binding map correctly, but the
-        // parser batch finds no matching call sites. Verifying the map is
-        // populated keeps the implementation honest and guards against a future
-        // regression if Java call extraction is upgraded.
-        const root = await parseAsync('java' as never, 'class A { void r() { Foo x = new Foo(); x.update(); } }');
-        const map = extractReceiverTypesFromEngine(root, 'src/A.java', 'java');
-        // Either (a) no calls were extracted for member invocation (current
-        // state — map may legitimately be empty) or (b) the map contains `Foo`
-        // at the `x.update()` line. Both outcomes are acceptable here.
-        for (const v of map.values()) {
-            expect(v).toBe('Foo');
-        }
+        const calls = await extractWithReceiver(
+            'java',
+            'class A { void r() { Foo x = new Foo(); x.doWork(); } }',
+            'src/A.java',
+        );
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
     });
 
     it('C# infers receiverType from `Foo x = new Foo()`', async () => {
@@ -135,15 +131,89 @@ describe('receiver-type inference per language', () => {
         expect(map.size).toBe(0);
     });
 
-    it('Dart extractor returns an empty receiver-type map (no-op)', async () => {
-        const root = await parseAsync('dart' as never, 'class A { void r() { Foo x = Foo(); x.update(); } }');
-        const map = extractReceiverTypesFromEngine(root, 'src/a.dart', 'dart');
-        expect(map.size).toBe(0);
+    it('Dart infers receiverType from `Foo x = Foo()`', async () => {
+        const calls = await extractWithReceiver(
+            'dart',
+            'class A { void r() { Foo x = Foo(); x.doWork(); } }',
+            'src/a.dart',
+        );
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
     });
 
     it('Python extractor returns an empty receiver-type map (no-op)', async () => {
+        // Python member-call extraction lands via the shared `$CALLEE($$$ARGS)`
+        // pattern (Phase 3.5 Task 3), but scope-local type inference for
+        // dynamically-typed Python was intentionally left out of Phase 3 Task 2.
+        // Member calls fall back to the name-based cascade (same-file 0.85 or
+        // ambiguous 0.30) rather than the 0.95 receiver tier.
         const root = await parseAsync('python' as never, 'def r():\n    x = Foo()\n    x.update()');
         const map = extractReceiverTypesFromEngine(root, 'src/a.py', 'python');
         expect(map.size).toBe(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: resolver confidence for Java/Dart/Python member calls.
+// Exercises the same cascade as receiver-aware.test.ts but for the three
+// languages that just gained member-call extraction.
+// ---------------------------------------------------------------------------
+
+describe('receiver-type resolver cascade (Java/Dart/Python)', () => {
+    it('Java `x.doWork()` resolves to Foo.doWork at 0.95 when receiverType is Foo', async () => {
+        const src = 'class Caller { void run() { Foo x = new Foo(); x.doWork(); } }';
+        const calls = await extractWithReceiver('java', src, 'src/Caller.java');
+        const doWorkCall = calls.find((c) => c.callName === 'doWork');
+        expect(doWorkCall?.receiverType).toBe('Foo');
+
+        const table = createSymbolTable();
+        table.add('src/Foo.java', 'doWork', 'src/Foo.java::Foo.doWork');
+        table.add('src/Bar.java', 'doWork', 'src/Bar.java::Bar.doWork');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'doWork');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('src/Foo.java::Foo.doWork');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('Dart `x.doWork()` resolves to Foo.doWork at 0.95 when receiverType is Foo', async () => {
+        const src = 'class Caller { void run() { Foo x = Foo(); x.doWork(); } }';
+        const calls = await extractWithReceiver('dart', src, 'src/caller.dart');
+        const doWorkCall = calls.find((c) => c.callName === 'doWork');
+        expect(doWorkCall?.receiverType).toBe('Foo');
+
+        const table = createSymbolTable();
+        table.add('src/foo.dart', 'doWork', 'src/foo.dart::Foo.doWork');
+        table.add('src/bar.dart', 'doWork', 'src/bar.dart::Bar.doWork');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'doWork');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('src/foo.dart::Foo.doWork');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('Python `x.doWork()` is captured by the extractor and flows through the name cascade (no 0.95)', async () => {
+        // Python has no registered receiver-type inference (see note in the
+        // previous describe block). The extractor still emits the call site
+        // so the name-based cascade can match same-file / import tiers. This
+        // test locks in that behavior; upgrading Python to the 0.95 tier is
+        // a future task.
+        const src = 'def run():\n    x = Foo()\n    x.doWork()\n';
+        const calls = await extractWithReceiver('python', src, 'src/a.py');
+        const doWorkCall = calls.find((c) => c.callName === 'doWork');
+        expect(doWorkCall).toBeDefined();
+        expect(doWorkCall!.receiverType).toBeUndefined();
+
+        const table = createSymbolTable();
+        // Put the definition in the same file so the cascade can resolve via
+        // the 0.85 same-file tier. This is the best Python can do right now.
+        table.add('src/a.py', 'doWork', 'src/a.py::Foo.doWork');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'doWork');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).not.toBe(0.95);
+        expect(stats.receiver).toBe(0);
     });
 });

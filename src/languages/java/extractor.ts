@@ -1,6 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -290,29 +289,69 @@ export const javaExtractors: LanguageExtractors = {
     },
 
     extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void {
-        const findEnclosingClass = (node: SgNode): SgNode | null => {
-            return (
-                node.ancestors().find((a) => {
-                    const k = String(a.kind());
-                    return k.includes('class') || k.includes('struct') || k.includes('impl');
-                }) ?? null
-            );
+        // Java needs a walk-based extraction rather than the shared
+        // `$CALLEE($$$ARGS)` pattern: that pattern only binds to bare
+        // `foo(args)` invocations in the tree-sitter-java grammar and drops
+        // member calls like `x.method(args)` on the floor (the grammar puts
+        // those under a distinct `method_invocation` shape with separate
+        // `object` / `name` fields that the pattern parser can't unify).
+        // Walking `method_invocation` directly captures both uniformly.
+
+        const getParentClass = (classNode: SgNode): string | undefined => {
+            const sc = classNode.children().find((c) => c.kind() === 'superclass');
+            return sc
+                ?.children()
+                .find((c) => c.kind() === 'type_identifier')
+                ?.text();
         };
 
-        const config: CallExtractionConfig = {
-            selfPrefixes: ['this.'],
-            superPrefixes: ['super.'],
-            findEnclosingClass,
-            getParentClass: (classNode) => {
-                const sc = classNode.children().find((c) => c.kind() === 'superclass');
-                return sc
-                    ?.children()
-                    .find((c) => c.kind() === 'type_identifier')
-                    ?.text();
-            },
-            noise: JAVA_NOISE,
-        };
-        extractCalls(root, fp, config, calls);
+        // Use declaration-kind names rather than substring checks — `class_body`
+        // also contains "class" and would shadow the enclosing declaration.
+        const CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration', 'enum_declaration']);
+        const findEnclosingClass = (node: SgNode): SgNode | null =>
+            node.ancestors().find((a) => CLASS_DECL_KINDS.has(String(a.kind()))) ?? null;
+
+        for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {
+            const nameNode = mi.field('name');
+            const callName = nameNode?.text();
+            if (!callName) {
+                continue;
+            }
+            if (JAVA_NOISE.has(callName)) {
+                continue;
+            }
+
+            const obj = mi.field('object');
+            let resolveInClass: string | undefined;
+
+            if (obj) {
+                const objText = obj.text();
+                const objKind = obj.kind();
+                // `this.method()` — resolve against current class.
+                if (objKind === 'this' || objText === 'this') {
+                    const classNode = findEnclosingClass(mi);
+                    resolveInClass = classNode?.field('name')?.text();
+                } else if (objKind === 'super' || objText === 'super') {
+                    // `super.method()` — resolve against parent class.
+                    const classNode = findEnclosingClass(mi);
+                    if (classNode) {
+                        resolveInClass = getParentClass(classNode);
+                    }
+                }
+                // For other `x.method()` member calls, `callName` alone is
+                // enough — the receiver-type inference pass cross-references
+                // by file/line/column to surface `receiverType`.
+            }
+
+            const r = mi.range().start;
+            calls.push({
+                source: fp,
+                callName,
+                line: r.line,
+                column: r.column,
+                ...(resolveInClass ? { resolveInClass } : {}),
+            });
+        }
     },
 };
 
