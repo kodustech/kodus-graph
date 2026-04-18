@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { GO_NOISE } from './noise';
@@ -305,3 +305,18 @@ export const goExtractors: LanguageExtractors = {
 };
 
 registerExtractor('go', goExtractors);
+
+// DI heuristic: Go uses `-er` suffix for single-method interfaces
+// (`Reader` → `Read`) and `Default<Type>` for interface implementations
+// (`Storage` → `DefaultStorage`). Both forms are common enough that we
+// try them in order.
+function goDiHeuristics(typeName: string): string[] {
+    const out: string[] = [];
+    if (typeName.endsWith('er') && typeName.length > 2) {
+        out.push(typeName.substring(0, typeName.length - 2));
+    }
+    out.push(`Default${typeName}`);
+    return out;
+}
+
+registerDIHeuristics('go', goDiHeuristics);

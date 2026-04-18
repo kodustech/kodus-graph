@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
     computeContentHash,
     emptyResult,
@@ -319,3 +319,13 @@ export const csharpExtractors: LanguageExtractors = {
 };
 
 registerExtractor('csharp', csharpExtractors);
+
+// DI heuristic: `IFoo` → `Foo` (canonical C# interface naming convention).
+function csharpDiHeuristics(typeName: string): string[] {
+    if (typeName.length > 1 && typeName[0] === 'I' && typeName[1] === typeName[1].toUpperCase()) {
+        return [typeName.substring(1)];
+    }
+    return [];
+}
+
+registerDIHeuristics('csharp', csharpDiHeuristics);

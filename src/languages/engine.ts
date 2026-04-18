@@ -24,6 +24,31 @@ export function hasExtractor(lang: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// DI heuristics registry
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-language DI implementation-naming heuristics.
+ *
+ * Given a DI type name (e.g. `IUserService`, `UserService`, `Reader`), the
+ * function returns candidate implementation class names the language's
+ * community would conventionally resolve to, in preference order. An empty
+ * array means the heuristic had nothing to suggest for this specific type.
+ * A language that has no convention at all should NOT register a heuristic —
+ * `getDIHeuristicsFor` returns `null` for unregistered languages so callers
+ * can distinguish "no convention" from "convention exists but no match".
+ */
+const DI_REGISTRY = new Map<string, (typeName: string) => string[]>();
+
+export function registerDIHeuristics(language: string, fn: (typeName: string) => string[]): void {
+    DI_REGISTRY.set(language, fn);
+}
+
+export function getDIHeuristicsFor(language: string): ((typeName: string) => string[]) | null {
+    return DI_REGISTRY.get(language) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Extraction
 // ---------------------------------------------------------------------------
 

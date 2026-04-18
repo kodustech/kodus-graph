@@ -9,6 +9,7 @@
  */
 
 import type { RawCallEdge, RawCallSite } from '../graph/types';
+import { getDIHeuristicsFor } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
 import type { ImportMap } from './import-map';
@@ -160,30 +161,47 @@ function resolveInClass(
 function resolveDICall(
     fieldName: string,
     methodName: string,
-    _currentFile: string,
+    currentFile: string,
     diMap: Map<string, string> | undefined,
     symbolTable: SymbolTable,
 ): ResolveResult | null {
     if (!diMap?.has(fieldName)) {
         return null;
     }
-
     const typeName = diMap.get(fieldName)!;
 
-    // Direct class match
-    const candidates = symbolTable.lookupGlobal(typeName);
-    if (candidates.length >= 1) {
-        const typeFile = candidates[0].split('::')[0];
-        return { target: `${typeFile}::${typeName}.${methodName}`, confidence: 0.95, strategy: 'di' };
+    // 1) Direct type match — pick by proximity so a multi-package monorepo
+    //    doesn't silently bind to whichever file was indexed first.
+    const direct = symbolTable.lookupGlobal(typeName);
+    if (direct.length >= 1) {
+        const best = pickClosestCandidate(direct, currentFile);
+        const typeFile = best.includes('::') ? best.split('::')[0] : best;
+        return {
+            target: `${typeFile}::${typeName}.${methodName}`,
+            confidence: 0.95,
+            strategy: 'di',
+        };
     }
 
-    // ISomething → Something heuristic for interface → implementation
-    if (typeName.startsWith('I') && typeName[1] === typeName[1]?.toUpperCase()) {
-        const implName = typeName.substring(1);
-        const implCandidates = symbolTable.lookupGlobal(implName);
-        if (implCandidates.length >= 1) {
-            const implFile = implCandidates[0].split('::')[0];
-            return { target: `${implFile}::${implName}.${methodName}`, confidence: 0.9, strategy: 'di' };
+    // 2) Language-specific implementation heuristics (e.g. C#/TS `IFoo → Foo`,
+    //    Java/Kotlin/Scala/PHP `Foo → FooImpl|DefaultFoo`, Go `Reader → Read`).
+    //    Languages without a consistent DI convention (Python/Ruby/Rust/Swift/
+    //    Dart/Elixir/C) intentionally don't register a heuristic — we fall
+    //    through to `null` and the caller continues its cascade.
+    const lang = languageOfFile(currentFile);
+    const heuristics = lang ? getDIHeuristicsFor(lang) : null;
+    if (heuristics) {
+        for (const implName of heuristics(typeName)) {
+            const implCandidates = symbolTable.lookupGlobal(implName);
+            if (implCandidates.length >= 1) {
+                const best = pickClosestCandidate(implCandidates, currentFile);
+                const implFile = best.includes('::') ? best.split('::')[0] : best;
+                return {
+                    target: `${implFile}::${implName}.${methodName}`,
+                    confidence: 0.9,
+                    strategy: 'di',
+                };
+            }
         }
     }
 

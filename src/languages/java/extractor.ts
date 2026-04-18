@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
     computeContentHash,
     emptyResult,
@@ -315,3 +315,11 @@ export const javaExtractors: LanguageExtractors = {
 };
 
 registerExtractor('java', javaExtractors);
+
+// DI heuristic: bare interface `UserService` → `UserServiceImpl` or
+// `DefaultUserService` (dominant Spring/JEE community conventions).
+function javaDiHeuristics(typeName: string): string[] {
+    return [`${typeName}Impl`, `Default${typeName}`];
+}
+
+registerDIHeuristics('java', javaDiHeuristics);

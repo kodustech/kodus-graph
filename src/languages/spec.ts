@@ -83,4 +83,17 @@ export interface ExtractionResult {
 export interface LanguageExtractors {
     extract(root: SgNode, fp: string): ExtractionResult;
     extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void;
+    /**
+     * Given a DI type name (e.g. `IUserService`, `UserService`, `Storage`),
+     * return candidate implementation names the language would resolve to,
+     * in preference order. Empty array when no implementations exist for
+     * this specific type. Omit the property entirely when the language has
+     * no naming convention at all.
+     *
+     * Note: this field is an optional contract marker — actual wiring uses
+     * `registerDIHeuristics(key, fn)` at module-load time in each language's
+     * extractor, so the resolver can discover heuristics via language key
+     * without holding a reference to the extractor struct.
+     */
+    diHeuristics?(typeName: string): string[];
 }

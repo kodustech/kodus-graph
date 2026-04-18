@@ -4,7 +4,7 @@ import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
 import type {
     ExtractedClass,
@@ -514,3 +514,17 @@ const jsExtractors = createTsExtractors(false);
 registerExtractor('TypeScript', tsExtractors);
 registerExtractor('Tsx', tsExtractors);
 registerExtractor('JavaScript', jsExtractors);
+
+// DI heuristic: `IFoo` → `Foo` (TS/JS community convention; also applies to
+// idiomatic JSDoc-typed JS code). Second char must be uppercase to avoid
+// stripping the `I` from names like `Iterator`.
+function tsDiHeuristics(typeName: string): string[] {
+    if (typeName.length > 1 && typeName[0] === 'I' && typeName[1] === typeName[1].toUpperCase()) {
+        return [typeName.substring(1)];
+    }
+    return [];
+}
+
+registerDIHeuristics('TypeScript', tsDiHeuristics);
+registerDIHeuristics('Tsx', tsDiHeuristics);
+registerDIHeuristics('JavaScript', tsDiHeuristics);

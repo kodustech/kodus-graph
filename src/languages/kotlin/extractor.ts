@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
     computeContentHash,
     emptyResult,
@@ -438,3 +438,10 @@ export const kotlinExtractors: LanguageExtractors = {
 };
 
 registerExtractor('kotlin', kotlinExtractors);
+
+// DI heuristic: Kotlin reuses the Java/Spring convention.
+function kotlinDiHeuristics(typeName: string): string[] {
+    return [`${typeName}Impl`, `Default${typeName}`];
+}
+
+registerDIHeuristics('kotlin', kotlinDiHeuristics);

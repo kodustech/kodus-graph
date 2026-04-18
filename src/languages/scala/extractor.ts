@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { SCALA_NOISE } from './noise';
@@ -442,3 +442,10 @@ export const scalaExtractors: LanguageExtractors = {
 };
 
 registerExtractor('scala', scalaExtractors);
+
+// DI heuristic: Scala/Play projects mirror the Java/Spring convention.
+function scalaDiHeuristics(typeName: string): string[] {
+    return [`${typeName}Impl`, `Default${typeName}`];
+}
+
+registerDIHeuristics('scala', scalaDiHeuristics);

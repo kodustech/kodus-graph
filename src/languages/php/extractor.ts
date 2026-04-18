@@ -2,7 +2,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeCyclomatic } from '../complexity';
-import { registerExtractor } from '../engine';
+import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { PHP_NOISE } from './noise';
@@ -268,3 +268,10 @@ export const phpExtractors: LanguageExtractors = {
 };
 
 registerExtractor('php', phpExtractors);
+
+// DI heuristic: Symfony/Laravel projects mirror the Java/Spring convention.
+function phpDiHeuristics(typeName: string): string[] {
+    return [`${typeName}Impl`, `Default${typeName}`];
+}
+
+registerDIHeuristics('php', phpDiHeuristics);
