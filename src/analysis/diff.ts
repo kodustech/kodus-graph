@@ -2,6 +2,50 @@ import type { IndexedGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode } from '../graph/types';
 import { log } from '../shared/logger';
 
+/**
+ * Collapse whitespace and strip insignificant formatting before comparing
+ * params strings for contract-diff purposes. Identical signatures reformatted
+ * across multiple lines, or with a trailing comma added, must not produce a
+ * contract-diff entry.
+ *
+ * Also strips the leading `_` from parameter names (TS/ESLint unused-param
+ * convention). Callers of `fn(ctx)` vs `fn(_ctx)` pass the same argument;
+ * the underscore signals "intentionally unused" inside the body, not a
+ * public-contract change. The regex only matches a `_` immediately after a
+ * name-position entry point (`(`, `,`, `{`, `[`), so a type-position
+ * `_Private` (which follows `:` + whitespace) is not mangled.
+ *
+ * Used only for the equality compare — the original string is kept in the
+ * emitted diff entry so reviewers see the real before/after text.
+ */
+export function normalizeParams(s: string | undefined): string {
+    if (!s) {
+        return '';
+    }
+    return s
+        .replace(/\s+/g, ' ')
+        .replace(/([({[,])\s*_([a-zA-Z])/g, '$1$2')
+        .replace(/,\s*([)\]}])/g, '$1')
+        .replace(/([({[])\s+/g, '$1')
+        .replace(/\s+([)\]}])/g, '$1')
+        .trim();
+}
+
+/**
+ * Collapse whitespace before comparing return-type strings. No underscore
+ * handling — there's no equivalent `_Foo` convention for types.
+ */
+export function normalizeReturnType(s: string | undefined): string {
+    if (!s) {
+        return '';
+    }
+    return s
+        .replace(/\s+/g, ' ')
+        .replace(/([(<[{])\s+/g, '$1')
+        .replace(/\s+([)>\]}])/g, '$1')
+        .trim();
+}
+
 export interface NodeChange {
     qualified_name: string;
     kind: string;
@@ -128,11 +172,15 @@ export function computeStructuralDiff(
             }
             const contractDiffs: ContractDiff[] = [];
 
-            if ((n.params || '') !== (newN.params || '')) {
+            // Normalize whitespace/formatting/unused-prefix before comparing
+            // so pure reformats (multiline, trailing comma, `ctx` -> `_ctx`)
+            // don't emit false-positive contract diffs. Keep the ORIGINAL
+            // strings in the emitted entry so reviewers see the real text.
+            if (normalizeParams(n.params) !== normalizeParams(newN.params)) {
                 changes.push('params');
                 contractDiffs.push({ field: 'params', old_value: n.params || '()', new_value: newN.params || '()' });
             }
-            if ((n.return_type || '') !== (newN.return_type || '')) {
+            if (normalizeReturnType(n.return_type) !== normalizeReturnType(newN.return_type)) {
                 changes.push('return_type');
                 contractDiffs.push({
                     field: 'return_type',
