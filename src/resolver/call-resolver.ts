@@ -73,21 +73,14 @@ export function resolveAllCalls(
     };
 
     for (const call of rawCalls) {
-        const lang = languageOfFile(call.source);
-        const noise = lang ? getNoiseFor(lang) : null;
-        if (noise?.has(call.callName)) {
-            stats.noise++;
-            continue;
-        }
-
         const fp = call.source;
-        const diMap = diMaps.get(fp);
 
-        // Receiver-type-aware resolution (highest tier after noise).
-        // When the extractor has inferred that `x` in `x.method()` is of
-        // type `Foo`, we can pick `Foo.method` directly — higher confidence
-        // than same-file or DI fallback because it reflects an explicit
-        // binding in the caller's scope.
+        // Receiver-type-aware resolution (runs BEFORE the noise filter so
+        // user-domain calls like `user.update()` — where `update` is in a
+        // language noise list but `UserService.update` exists in the symbol
+        // table — aren't dropped. Only commits to the 0.95 / 0.90 tier when
+        // the symbol table has a concrete `::Type.method` match; otherwise
+        // falls through silently to the existing noise → DI → cascade order.
         if (call.receiverType) {
             const needle = `::${call.receiverType}.${call.callName}`;
             const all = symbolTable.lookupGlobal(call.callName);
@@ -117,8 +110,18 @@ export function resolveAllCalls(
                 stats.receiver++;
                 continue;
             }
-            // No match — fall through to DI + name-based cascade.
+            // No symbol-table match — fall through. Stdlib / external types
+            // are correctly handled by the noise filter and name cascade below.
         }
+
+        const lang = languageOfFile(call.source);
+        const noise = lang ? getNoiseFor(lang) : null;
+        if (noise?.has(call.callName)) {
+            stats.noise++;
+            continue;
+        }
+
+        const diMap = diMaps.get(fp);
 
         // Try DI resolution first if diField is present
         if (call.diField) {
