@@ -5,7 +5,7 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
-import type { ReceiverTypeMap } from '../receiver-types';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
 import { PYTHON_NOISE } from './noise';
@@ -222,17 +222,188 @@ const pythonExtractors: LanguageExtractors = {
     },
 };
 
-// Receiver-type inference: no-op for now.
+// ---------------------------------------------------------------------------
+// Receiver-type inference (scope-local, two-pass)
+// ---------------------------------------------------------------------------
 //
-// Python's method invocations (`x.update()`) aren't currently captured by
-// the shared `$CALLEE($$$ARGS)` pattern for this grammar (they produce
-// multi-node matches), so any bindings would never match a RawCallSite
-// line/column. We register a function (returning an empty map) for
-// registry consistency. Explicit type hints (`x: Bar = ...`) and uppercase
-// constructor heuristics (`x = Foo()`) are easy to enumerate later once
-// call extraction surfaces member invocations.
-function extractReceiverTypesPython(_root: SgNode, _fp: string): ReceiverTypeMap {
-    return new Map();
+// Grammar shape (tree-sitter-python via ast-grep):
+//   `svc = Foo()`          → assignment { identifier, '=', call { identifier, argument_list } }
+//   `x: Foo = Foo()`       → assignment { identifier, ':', type { identifier }, '=', call { ... } }
+//   `y: Foo`               → assignment { identifier, ':', type { identifier } } (no '=')
+//   `def f(s: Foo)`        → parameters { typed_parameter { identifier, ':', type { identifier } }, ... }
+//   `svc.update(1)`        → call { attribute { identifier (receiver), '.', identifier (method) }, argument_list }
+//
+// Scope is function-local: we walk each function_definition /
+// async_function_definition body, collect bindings, then record location
+// keys for method calls. File-level bindings are ignored (Python code at
+// module top-level is rarely typed and `x = Foo()` at module scope is a
+// less trustworthy signal than in a function body).
+//
+// Rules:
+//   1. Typed parameter `p: T`  → bind p: T.
+//   2. Typed variable `x: T`   → bind x: T. (overrides any constructor heuristic)
+//   3. Uppercase constructor `x = Foo(...)` → bind x: Foo (Foo must start uppercase).
+//   4. Only the first binding wins; later reassignment is ignored to avoid
+//      false positives from flow-insensitive tracking.
+
+function isLikelyClassName(name: string): boolean {
+    if (name.length === 0) {
+        return false;
+    }
+    const first = name[0];
+    return first === first.toUpperCase() && first !== first.toLowerCase();
+}
+
+/**
+ * Extract the type name from a Python `type` node. The `type` node is a
+ * wrapper whose first `identifier` child is the simple name; generic /
+ * subscript forms like `List[Foo]` are skipped (no confident bind).
+ */
+function typeNameFromTypeNode(typeNode: SgNode): string | undefined {
+    const first = typeNode.children().find((c: SgNode) => c.kind() === 'identifier');
+    return first?.text();
+}
+
+/**
+ * Collect var-to-type bindings inside a single function body. The caller
+ * passes the function_definition node; we walk its descendants and stop
+ * descending into nested functions so each scope gets its own bindings.
+ */
+function collectPythonBindings(fnNode: SgNode): Map<string, string> {
+    const bindings = new Map<string, string>();
+
+    // 1. Typed parameters on the function itself.
+    const params = fnNode.field('parameters');
+    if (params) {
+        for (const p of params.findAll({ rule: { kind: 'typed_parameter' } })) {
+            const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
+            const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
+            if (!ident || !typeNode) {
+                continue;
+            }
+            const name = ident.text();
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (name && typeName && !bindings.has(name)) {
+                bindings.set(name, typeName);
+            }
+        }
+    }
+
+    // 2. Assignments inside the function body.
+    //    Walk `assignment` nodes but skip any that live inside a nested
+    //    function/class so bindings stay scope-local.
+    const body = fnNode.field('body');
+    if (!body) {
+        return bindings;
+    }
+    for (const a of body.findAll({ rule: { kind: 'assignment' } })) {
+        // Skip assignments nested inside another function/class within this body.
+        // Note: ast-grep returns fresh SgNode wrappers from `ancestors()`, so we
+        // can't use reference equality with `fnNode`. Compare byte ranges instead.
+        const fnRange = fnNode.range();
+        const nested = a.ancestors().some((anc: SgNode) => {
+            const k = anc.kind();
+            if (k !== 'function_definition' && k !== 'class_definition' && k !== 'lambda') {
+                return false;
+            }
+            const ar = anc.range();
+            // Same function as the scope we're collecting for → not nested.
+            if (ar.start.index === fnRange.start.index && ar.end.index === fnRange.end.index) {
+                return false;
+            }
+            return true;
+        });
+        if (nested) {
+            continue;
+        }
+
+        const kids = a.children();
+        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        if (!lhs) {
+            continue;
+        }
+        const name = lhs.text();
+        if (bindings.has(name)) {
+            // First-binding-wins: skip reassignment.
+            continue;
+        }
+
+        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        if (typeNode) {
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (typeName) {
+                bindings.set(name, typeName);
+            }
+            continue;
+        }
+
+        // No annotation → check for `= Foo(...)` uppercase constructor.
+        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        if (!rhs) {
+            continue;
+        }
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        if (!fnIdent) {
+            continue;
+        }
+        const ctor = fnIdent.text();
+        if (isLikelyClassName(ctor)) {
+            bindings.set(name, ctor);
+        }
+    }
+
+    return bindings;
+}
+
+function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+
+    // Collect (function node, bindings) pairs for all function scopes.
+    // Python's tree-sitter grammar uses `function_definition` for both sync
+    // and async (the `async` keyword is a leading child, not a distinct kind).
+    const fnScopes: { node: SgNode; bindings: Map<string, string> }[] = [];
+    for (const fn of root.findAll({ rule: { kind: 'function_definition' } })) {
+        fnScopes.push({ node: fn, bindings: collectPythonBindings(fn) });
+    }
+
+    // For each method call (`call` whose function is an `attribute` with an
+    // identifier receiver), find the innermost enclosing function scope and
+    // record the receiver type — if known.
+    for (const ce of root.findAll({ rule: { kind: 'call' } })) {
+        const kids = ce.children();
+        const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
+        if (!attr) {
+            continue;
+        }
+        const attrKids = attr.children();
+        const receiver = attrKids.find((c: SgNode) => c.kind() === 'identifier');
+        if (!receiver) {
+            continue;
+        }
+        const receiverName = receiver.text();
+
+        const callRange = ce.range();
+        let typeName: string | undefined;
+        let bestSize = Infinity;
+        for (const { node, bindings } of fnScopes) {
+            const nr = node.range();
+            if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
+                continue;
+            }
+            const size = nr.end.index - nr.start.index;
+            if (size < bestSize && bindings.has(receiverName)) {
+                typeName = bindings.get(receiverName);
+                bestSize = size;
+            }
+        }
+        if (!typeName) {
+            continue;
+        }
+        const r = callRange.start;
+        out.set(locationKey(fp, r.line, r.column), typeName);
+    }
+
+    return out;
 }
 
 registerExtractor('python', pythonExtractors);

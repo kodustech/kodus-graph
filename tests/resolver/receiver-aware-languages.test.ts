@@ -141,15 +141,32 @@ describe('receiver-type inference per language', () => {
         expect(upd?.receiverType).toBe('Foo');
     });
 
-    it('Python extractor returns an empty receiver-type map (no-op)', async () => {
-        // Python member-call extraction lands via the shared `$CALLEE($$$ARGS)`
-        // pattern (Phase 3.5 Task 3), but scope-local type inference for
-        // dynamically-typed Python was intentionally left out of Phase 3 Task 2.
-        // Member calls fall back to the name-based cascade (same-file 0.85 or
-        // ambiguous 0.30) rather than the 0.95 receiver tier.
-        const root = await parseAsync('python' as never, 'def r():\n    x = Foo()\n    x.update()');
-        const map = extractReceiverTypesFromEngine(root, 'src/a.py', 'python');
-        expect(map.size).toBe(0);
+    it('Python infers receiverType from `x = Foo()` (uppercase constructor)', async () => {
+        const calls = await extractWithReceiver('python', 'def r():\n    x = Foo()\n    x.doWork()\n', 'src/a.py');
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
+    it('Python infers receiverType from type-annotated variable `x: Foo = ...`', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'def r():\n    x: Foo = make()\n    x.doWork()\n',
+            'src/a.py',
+        );
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
+    it('Python infers receiverType from type-annotated parameter `svc: Foo`', async () => {
+        const calls = await extractWithReceiver('python', 'def r(svc: Foo):\n    svc.doWork()\n', 'src/a.py');
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
+    it('Python does NOT bind `x = helper()` when callee starts lowercase', async () => {
+        const calls = await extractWithReceiver('python', 'def r():\n    x = helper()\n    x.doWork()\n', 'src/a.py');
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBeUndefined();
     });
 });
 
@@ -194,26 +211,37 @@ describe('receiver-type resolver cascade (Java/Dart/Python)', () => {
         expect(stats.receiver).toBe(1);
     });
 
-    it('Python `x.doWork()` is captured by the extractor and flows through the name cascade (no 0.95)', async () => {
-        // Python has no registered receiver-type inference (see note in the
-        // previous describe block). The extractor still emits the call site
-        // so the name-based cascade can match same-file / import tiers. This
-        // test locks in that behavior; upgrading Python to the 0.95 tier is
-        // a future task.
+    it('Python `x.doWork()` resolves to Foo.doWork at 0.95 when receiverType is Foo', async () => {
         const src = 'def run():\n    x = Foo()\n    x.doWork()\n';
         const calls = await extractWithReceiver('python', src, 'src/a.py');
         const doWorkCall = calls.find((c) => c.callName === 'doWork');
-        expect(doWorkCall).toBeDefined();
-        expect(doWorkCall!.receiverType).toBeUndefined();
+        expect(doWorkCall?.receiverType).toBe('Foo');
 
         const table = createSymbolTable();
-        // Put the definition in the same file so the cascade can resolve via
-        // the 0.85 same-file tier. This is the best Python can do right now.
-        table.add('src/a.py', 'doWork', 'src/a.py::Foo.doWork');
+        table.add('src/foo.py', 'doWork', 'src/foo.py::Foo.doWork');
+        table.add('src/bar.py', 'doWork', 'src/bar.py::Bar.doWork');
         const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
         const resolved = callEdges.find((e) => e.callName === 'doWork');
         expect(resolved).toBeDefined();
-        expect(resolved!.confidence).not.toBe(0.95);
-        expect(stats.receiver).toBe(0);
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('src/foo.py::Foo.doWork');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('Python: type-annotated parameter carries receiver type to 0.95 tier', async () => {
+        const src = 'def persist(s: Storage):\n    s.save(42)\n';
+        const calls = await extractWithReceiver('python', src, 'src/a.py');
+        const saveCall = calls.find((c) => c.callName === 'save');
+        expect(saveCall?.receiverType).toBe('Storage');
+
+        const table = createSymbolTable();
+        table.add('src/storage.py', 'save', 'src/storage.py::Storage.save');
+        table.add('src/other.py', 'save', 'src/other.py::Other.save');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'save');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('src/storage.py::Storage.save');
+        expect(stats.receiver).toBe(1);
     });
 });
