@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
@@ -315,6 +316,16 @@ export const javaExtractors: LanguageExtractors = {
 };
 
 registerExtractor('java', javaExtractors);
+
+// Capabilities: CompletableFuture/async (framework-level), annotations,
+// checked+unchecked exceptions, static types, nominal interfaces.
+registerCapabilities('java', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});
 
 // DI heuristic: bare interface `UserService` → `UserServiceImpl` or
 // `DefaultUserService` (dominant Spring/JEE community conventions).

@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
@@ -438,6 +439,16 @@ export const kotlinExtractors: LanguageExtractors = {
 };
 
 registerExtractor('kotlin', kotlinExtractors);
+
+// Capabilities: suspend functions / coroutines (async), annotations, try/catch
+// (all unchecked), static types, nominal interfaces. Mirrors Java profile.
+registerCapabilities('kotlin', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});
 
 // DI heuristic: Kotlin reuses the Java/Spring convention.
 function kotlinDiHeuristics(typeName: string): string[] {

@@ -23,6 +23,17 @@ export function hasExtractor(lang: string): boolean {
     return registry.has(lang);
 }
 
+/**
+ * Return every language key with a registered extractor, in insertion order.
+ * Used by the capability parity test to iterate the canonical extractor
+ * registry instead of hardcoding a language list — if a new language is
+ * added via `registerExtractor` but the author forgets `registerCapabilities`,
+ * the parity test will now catch it automatically.
+ */
+export function listRegisteredLanguages(): string[] {
+    return [...registry.keys()];
+}
+
 // ---------------------------------------------------------------------------
 // DI heuristics registry
 // ---------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 import type { EnrichedFunction, ImpactCategory } from '../graph/types';
+import { getCapabilitiesFor } from '../languages/capabilities';
 import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
+import type { ContractDiff } from './diff';
 
 export interface PromptFormatterOptions {
     /** Max functions to include in CHANGED section (default: 30). */
@@ -13,11 +15,45 @@ const DEFAULT_MAX_FUNCTIONS = 30;
 const DEFAULT_MAX_PROMPT_CHARS = 20_000;
 
 /**
+ * Return the subset of contract diffs that are semantically meaningful for the
+ * function's language. Fields like `is_async` on Go, `throws` on Rust, or
+ * `decorators` on C are filtered out because those languages have no such
+ * concept — a spurious diff in those fields is noise, not a breaking change.
+ *
+ * Policy: when the language is unknown (no capabilities registered, e.g. a
+ * file extension we can't map), default to returning ALL diffs. Silently
+ * hiding info when we're unsure is worse than a bit of noise.
+ *
+ * This helper is the single source of truth for the capability gate —
+ * `computeFunctionRisk` (risk scoring / truncation sort) and the render loop
+ * (what shows in the CHANGED section) both consult it so they stay aligned.
+ * `enrich.ts::caller_impact` uses an inline equivalent for per-field narration.
+ */
+export function applicableContractDiffs(fn: EnrichedFunction): ContractDiff[] {
+    const caps = fn.language ? getCapabilitiesFor(fn.language) : null;
+    if (!caps) {
+        return fn.contract_diffs;
+    }
+    return fn.contract_diffs.filter((cd) => {
+        if (cd.field === 'is_async' && !caps.hasAsync) {
+            return false;
+        }
+        if (cd.field === 'throws' && !caps.hasExceptions) {
+            return false;
+        }
+        if (cd.field === 'decorators' && !caps.hasDecorators) {
+            return false;
+        }
+        return true;
+    });
+}
+
+/**
  * Compute a per-function risk score (0–1) for truncation sorting.
  * Higher = riskier = shown first.
  */
 export function computeFunctionRisk(fn: EnrichedFunction): number {
-    const hasContractDiff = fn.contract_diffs.length > 0 ? 1 : 0;
+    const hasContractDiff = applicableContractDiffs(fn).length > 0 ? 1 : 0;
     const callersNorm = Math.min(fn.callers.length / 10, 1);
     const isUntested = fn.has_test_coverage ? 0 : 1;
     const isModified = fn.is_new ? 0 : 1; // modified > new (can break existing callers)
@@ -87,8 +123,11 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                 `  ${displayName} [${fn.file_path}:${fn.line_start}-${fn.line_end}] ${status} | ${fn.callers.length} callers | ${tested}`,
             );
 
-            // Contract changes — high value for agent to spot breaking changes
-            for (const cd of fn.contract_diffs) {
+            // Contract changes — high value for agent to spot breaking changes.
+            // `applicableContractDiffs` drops fields the language doesn't semantically
+            // support (same gate used by `computeFunctionRisk` and `enrich.ts` so
+            // render, risk scoring, and caller_impact narration stay aligned).
+            for (const cd of applicableContractDiffs(fn)) {
                 lines.push(`    ⚠ ${cd.field}: ${cd.old_value} → ${cd.new_value}`);
             }
             if (fn.caller_impact) {

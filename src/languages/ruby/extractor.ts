@@ -3,6 +3,7 @@ import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { log } from '../../shared/logger';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash } from '../shared';
@@ -319,3 +320,15 @@ const rubyExtractors: LanguageExtractors = {
 };
 
 registerExtractor('ruby', rubyExtractors);
+
+// Capabilities: Ruby has no native async/await (concurrency via threads/fibers/
+// gems like async-rb), no first-class decorators (macros like `attr_accessor`
+// are method calls, not declaration-level metadata), begin/rescue for
+// exceptions, dynamic/duck-typed throughout.
+registerCapabilities('ruby', {
+    hasAsync: false,
+    hasDecorators: false,
+    hasExceptions: true,
+    hasStaticTypes: false,
+    interfaceKind: 'duck',
+});

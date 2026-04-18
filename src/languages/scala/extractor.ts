@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
@@ -442,6 +443,17 @@ export const scalaExtractors: LanguageExtractors = {
 };
 
 registerExtractor('scala', scalaExtractors);
+
+// Capabilities: async via Future/Akka + Scala 3 `async { }`, annotations,
+// try/catch exceptions, static types, structural refinements plus traits
+// (traits are closer to structural in idiomatic Scala mixins).
+registerCapabilities('scala', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'structural',
+});
 
 // DI heuristic: Scala/Play projects mirror the Java/Spring convention.
 function scalaDiHeuristics(typeName: string): string[] {

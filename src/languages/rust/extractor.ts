@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
@@ -254,3 +255,15 @@ export const rustExtractors: LanguageExtractors = {
 };
 
 registerExtractor('rust', rustExtractors);
+
+// Capabilities: Rust has async/await, attributes (`#[derive(...)]`) which we
+// model as decorators, Result<_, E>/? for recoverable errors (NOT exceptions —
+// `panic!` exists but is not the idiomatic error channel), static types, and
+// nominal traits.
+registerCapabilities('rust', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: false,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});

@@ -1,5 +1,7 @@
 import type { IndexedGraph } from '../graph/loader';
 import type { CalleeRef, CallerRef, EnrichedFunction } from '../graph/types';
+import { getCapabilitiesFor } from '../languages/capabilities';
+import { languageOfFile } from '../languages/language-of-file';
 import type { ContractDiff, DiffResult } from './diff';
 import type { Flow } from './flows';
 
@@ -152,9 +154,37 @@ export function enrichChangedFunctions(
             const diffChanges = isNew ? [] : modifiedNode?.changes || [];
             const contractDiffs: ContractDiff[] = isNew ? [] : (modifiedNode?.contract_diffs ?? []);
 
-            // Caller impact
+            // Resolve language first — the caller-impact narration below consults
+            // capability flags so we don't emit e.g. "must add await" for a Go
+            // function that got a spurious `is_async` diff.
+            const language = languageOfFile(node.file_path) ?? undefined;
+
+            // Caller impact.
+            // Per-field narration; skip fields the language semantically doesn't
+            // support. Matches the suppression policy in
+            // `prompt-formatter.ts::applicableContractDiffs` line-for-line:
+            // same 3 fields (is_async, throws, decorators), same "default to
+            // emit when caps is null" policy. If all narration-producing
+            // fields are suppressed, caller_impact stays undefined.
             let callerImpact: string | undefined;
             if (contractDiffs.length > 0 && callers.length > 0) {
+                const caps = language ? getCapabilitiesFor(language) : null;
+                const isSuppressed = (field: ContractDiff['field']): boolean => {
+                    if (!caps) {
+                        return false;
+                    }
+                    if (field === 'is_async' && !caps.hasAsync) {
+                        return true;
+                    }
+                    if (field === 'throws' && !caps.hasExceptions) {
+                        return true;
+                    }
+                    if (field === 'decorators' && !caps.hasDecorators) {
+                        return true;
+                    }
+                    return false;
+                };
+
                 const impacts: string[] = [];
                 const paramsDiff = contractDiffs.find((d) => d.field === 'params');
                 const returnDiff = contractDiffs.find((d) => d.field === 'return_type');
@@ -165,7 +195,7 @@ export function enrichChangedFunctions(
                     impacts.push(`${callers.length} callers may assume old return type`);
                 }
                 const asyncDiff = contractDiffs.find((d) => d.field === 'is_async');
-                if (asyncDiff) {
+                if (asyncDiff && !isSuppressed('is_async')) {
                     if (asyncDiff.new_value === 'true') {
                         impacts.push(`${callers.length} callers must add await (sync->async)`);
                     } else {
@@ -173,7 +203,7 @@ export function enrichChangedFunctions(
                     }
                 }
                 const throwsDiff = contractDiffs.find((d) => d.field === 'throws');
-                if (throwsDiff) {
+                if (throwsDiff && !isSuppressed('throws')) {
                     impacts.push(`${callers.length} callers may not handle new exception: ${throwsDiff.new_value}`);
                 }
                 callerImpact = impacts.length > 0 ? impacts.join('; ') : undefined;
@@ -188,6 +218,7 @@ export function enrichChangedFunctions(
                 file_path: node.file_path,
                 line_start: node.line_start,
                 line_end: node.line_end,
+                language,
                 callers,
                 callees,
                 has_test_coverage: testedFunctions.has(node.qualified_name) || testedFiles.has(node.file_path),

@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import {
@@ -319,6 +320,16 @@ export const csharpExtractors: LanguageExtractors = {
 };
 
 registerExtractor('csharp', csharpExtractors);
+
+// Capabilities: async/await + Task, attributes, try/catch exceptions,
+// static types, nominal interfaces.
+registerCapabilities('csharp', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});
 
 // DI heuristic: `IFoo` → `Foo` (canonical C# interface naming convention).
 function csharpDiHeuristics(typeName: string): string[] {

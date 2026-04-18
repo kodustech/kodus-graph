@@ -1145,3 +1145,218 @@ describe('computeFunctionRisk', () => {
         expect(computeFunctionRisk(modified)).toBeGreaterThan(computeFunctionRisk(newFn));
     });
 });
+
+// Import language side-effects so the capability registry is populated.
+import '../../src/languages/c';
+import '../../src/languages/elixir';
+import '../../src/languages/go';
+import '../../src/languages/rust';
+import '../../src/languages/typescript';
+
+describe('formatPrompt — capability-driven contract diff suppression', () => {
+    // Helper: build a graph where a single function has all three suppressible
+    // contract_diffs (is_async, throws, decorators) by changing those fields
+    // between oldGraph and mergedGraph. File extension drives language lookup.
+    function graphWithContractDiffs(filePath: string): {
+        merged: GraphData;
+        old: GraphData;
+    } {
+        const qn = `${filePath}::doWork`;
+        const newNode = {
+            kind: 'Function' as const,
+            name: 'doWork',
+            qualified_name: qn,
+            file_path: filePath,
+            line_start: 10,
+            line_end: 20,
+            language: 'lang-ignored',
+            params: '()',
+            return_type: 'void',
+            is_test: false,
+            content_hash: 'new_hash',
+            is_async: true,
+            throws: ['IOException'],
+            decorators: ['@Tracked'],
+        };
+        const oldNode = {
+            ...newNode,
+            line_end: 18,
+            content_hash: 'old_hash',
+            is_async: false,
+            throws: [],
+            decorators: [],
+        };
+        return {
+            merged: { nodes: [newNode], edges: [] },
+            old: { nodes: [oldNode], edges: [] },
+        };
+    }
+
+    it('TypeScript (baseline): renders is_async/throws/decorators diffs', () => {
+        const { merged, old } = graphWithContractDiffs('src/service.ts');
+        const output = buildContextV2({
+            mergedGraph: merged,
+            oldGraph: old,
+            changedFiles: ['src/service.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+        expect(text).toContain('is_async:');
+        expect(text).toContain('throws:');
+        expect(text).toContain('decorators:');
+    });
+
+    it('Go: suppresses is_async diff (Go has no async/await)', () => {
+        const { merged, old } = graphWithContractDiffs('src/service.go');
+        const output = buildContextV2({
+            mergedGraph: merged,
+            oldGraph: old,
+            changedFiles: ['src/service.go'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+        expect(text).not.toContain('is_async:');
+        // Go also has no exceptions / decorators — those should be hidden too.
+        expect(text).not.toContain('throws:');
+        expect(text).not.toContain('decorators:');
+    });
+
+    it('Rust: suppresses throws diff (Result-based, no exceptions)', () => {
+        const { merged, old } = graphWithContractDiffs('src/lib.rs');
+        const output = buildContextV2({
+            mergedGraph: merged,
+            oldGraph: old,
+            changedFiles: ['src/lib.rs'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+        expect(text).not.toContain('throws:');
+        // Rust still has async/await and attributes — those should render.
+        expect(text).toContain('is_async:');
+        expect(text).toContain('decorators:');
+    });
+
+    it('unknown language: renders all diffs (default-on when caps unknown)', () => {
+        // `.xyz` does not map to any known language → languageOfFile returns null
+        // → EnrichedFunction.language is undefined → caps null → render everything.
+        const { merged, old } = graphWithContractDiffs('src/script.xyz');
+        const output = buildContextV2({
+            mergedGraph: merged,
+            oldGraph: old,
+            changedFiles: ['src/script.xyz'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+        expect(text).toContain('is_async:');
+        expect(text).toContain('throws:');
+        expect(text).toContain('decorators:');
+    });
+
+    // ── Fix A: `caller_impact` narration is built in enrich.ts and must honor
+    // the same capability gate used by the render-site. Without this, a Go
+    // function with a spurious `is_async` diff would emit
+    // "N callers must add await (sync->async)" despite Go having no async.
+    it('Go: caller_impact suppresses is_async narration (no "must add await")', () => {
+        // doWork changed is_async, and one caller exists → caller_impact would
+        // normally narrate "1 callers must add await" on a language with async.
+        // On Go it must be suppressed entirely.
+        const target = {
+            kind: 'Function' as const,
+            name: 'doWork',
+            qualified_name: 'src/service.go::doWork',
+            file_path: 'src/service.go',
+            line_start: 10,
+            line_end: 20,
+            language: 'lang-ignored',
+            params: '()',
+            return_type: 'void',
+            is_test: false,
+            content_hash: 'new_hash',
+            is_async: true,
+        };
+        const caller = {
+            kind: 'Function' as const,
+            name: 'callerFn',
+            qualified_name: 'src/client.go::callerFn',
+            file_path: 'src/client.go',
+            line_start: 1,
+            line_end: 10,
+            language: 'lang-ignored',
+            is_test: false,
+        };
+        const output = buildContextV2({
+            mergedGraph: {
+                nodes: [target, caller],
+                edges: [
+                    {
+                        kind: 'CALLS',
+                        source_qualified: 'src/client.go::callerFn',
+                        target_qualified: 'src/service.go::doWork',
+                        file_path: 'src/client.go',
+                        line: 5,
+                        confidence: 0.9,
+                    },
+                ],
+            },
+            oldGraph: {
+                nodes: [{ ...target, line_end: 18, content_hash: 'old_hash', is_async: false }],
+                edges: [],
+            },
+            changedFiles: ['src/service.go'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+        // Neither the suppressed narration nor the inline is_async diff may appear.
+        expect(text).not.toContain('must add await');
+        expect(text).not.toContain('sync->async');
+        expect(text).not.toContain('is_async:');
+    });
+});
+
+describe('computeFunctionRisk — capability-aware contract diff counting', () => {
+    function makeFn(overrides: Partial<EnrichedFunction>): EnrichedFunction {
+        return {
+            qualified_name: 'src/a::fn',
+            name: 'fn',
+            kind: 'Function',
+            signature: 'fn()',
+            file_path: 'src/a',
+            line_start: 1,
+            line_end: 10,
+            callers: [],
+            callees: [],
+            has_test_coverage: true,
+            diff_changes: [],
+            contract_diffs: [],
+            is_new: true,
+            in_flows: [],
+            ...overrides,
+        };
+    }
+
+    // Fix B: risk score must only count contract_diffs that are semantically
+    // meaningful for the language. A Go function with only `is_async`/`throws`/
+    // `decorators` diffs has *no real* contract change, so its risk should
+    // match "no diffs" — and therefore rank below an equivalent TS function
+    // whose diffs all do matter.
+    it('Go function with only is_async/throws/decorators diffs ranks lower than TS equivalent', () => {
+        const diffs = [
+            { field: 'is_async' as const, old_value: 'false', new_value: 'true' },
+            { field: 'throws' as const, old_value: '', new_value: 'IOException' },
+            { field: 'decorators' as const, old_value: '', new_value: '@Tracked' },
+        ];
+        const goFn = makeFn({ language: 'go', file_path: 'src/a.go', contract_diffs: diffs });
+        const tsFn = makeFn({ language: 'TypeScript', file_path: 'src/a.ts', contract_diffs: diffs });
+
+        expect(computeFunctionRisk(tsFn)).toBeGreaterThan(computeFunctionRisk(goFn));
+        // And the Go function should score the same as one with zero diffs,
+        // since all diffs were suppressed.
+        const goNoDiff = makeFn({ language: 'go', file_path: 'src/a.go', contract_diffs: [] });
+        expect(computeFunctionRisk(goFn)).toBe(computeFunctionRisk(goNoDiff));
+    });
+});

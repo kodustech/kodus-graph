@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
@@ -596,3 +597,13 @@ export const dartExtractors: LanguageExtractors = {
 };
 
 registerExtractor('dart', dartExtractors);
+
+// Capabilities: async/await + Futures, metadata annotations (`@override`),
+// try/catch exceptions, static+sound null-safe types, nominal interfaces.
+registerCapabilities('dart', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});

@@ -34,6 +34,9 @@ export type {
     ParseOutput,
     RiskScoreResult,
 } from './graph/types';
+export type { LanguageCapabilities } from './languages/capabilities';
+// ── Language capability registry ──
+export { getCapabilitiesFor } from './languages/capabilities';
 
 // ── Schemas (for validation) ──
 export { graphDataSchema, graphEdgeSchema, graphNodeSchema } from './shared/schemas';

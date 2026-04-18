@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
@@ -520,3 +521,24 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 
 registerExtractor('c', createCExtractor('c'));
 registerExtractor('cpp', createCExtractor('cpp'));
+
+// Capabilities:
+//   C: no async/await, no decorators/attributes at the language level, no
+//      exceptions (errno + return codes), static types, nominal
+//      (struct+function-pointer tables, not structural subtyping).
+//   C++: same as C but adds try/catch exceptions. Static types, nominal
+//      classes/templates.
+registerCapabilities('c', {
+    hasAsync: false,
+    hasDecorators: false,
+    hasExceptions: false,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});
+registerCapabilities('cpp', {
+    hasAsync: false,
+    hasDecorators: false,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});

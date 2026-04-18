@@ -2,6 +2,7 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
@@ -221,3 +222,13 @@ const pythonExtractors: LanguageExtractors = {
 };
 
 registerExtractor('python', pythonExtractors);
+
+// Capabilities: async/await since 3.5, decorators, try/except, duck typing,
+// type hints are gradual and not enforced at runtime.
+registerCapabilities('python', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: false,
+    interfaceKind: 'duck',
+});

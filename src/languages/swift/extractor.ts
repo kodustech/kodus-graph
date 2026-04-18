@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor } from '../engine';
 import {
@@ -481,3 +482,13 @@ export const swiftExtractors: LanguageExtractors = {
 };
 
 registerExtractor('swift', swiftExtractors);
+
+// Capabilities: async/await, attributes (`@Published`, `@objc`), throws/do-catch
+// exceptions, static types, nominal protocols.
+registerCapabilities('swift', {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'nominal',
+});

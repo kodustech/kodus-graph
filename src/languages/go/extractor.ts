@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
@@ -305,6 +306,17 @@ export const goExtractors: LanguageExtractors = {
 };
 
 registerExtractor('go', goExtractors);
+
+// Capabilities: Go has no async/await (goroutines + channels drive concurrency),
+// no decorators, no try/catch (panic/recover is not idiomatic exception handling),
+// static types, and structural interfaces (implicit satisfaction).
+registerCapabilities('go', {
+    hasAsync: false,
+    hasDecorators: false,
+    hasExceptions: false,
+    hasStaticTypes: true,
+    interfaceKind: 'structural',
+});
 
 // DI heuristic: Go uses `-er` suffix for single-method interfaces
 // (`Reader` → `Read`) and `Default<Type>` for interface implementations

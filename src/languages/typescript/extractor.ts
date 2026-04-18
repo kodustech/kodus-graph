@@ -3,6 +3,7 @@ import type { RawCallSite } from '../../graph/types';
 import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
@@ -514,6 +515,19 @@ const jsExtractors = createTsExtractors(false);
 registerExtractor('TypeScript', tsExtractors);
 registerExtractor('Tsx', tsExtractors);
 registerExtractor('JavaScript', jsExtractors);
+
+// Capabilities: TS/Tsx share structural interfaces, decorators (stage-3), async/await,
+// try/catch. JavaScript shares all semantics except it is dynamically typed.
+const TS_CAPS = {
+    hasAsync: true,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: true,
+    interfaceKind: 'structural' as const,
+};
+registerCapabilities('TypeScript', TS_CAPS);
+registerCapabilities('Tsx', TS_CAPS);
+registerCapabilities('JavaScript', { ...TS_CAPS, hasStaticTypes: false });
 
 // DI heuristic: `IFoo` → `Foo` (TS/JS community convention; also applies to
 // idiomatic JSDoc-typed JS code). Second char must be uppercase to avoid

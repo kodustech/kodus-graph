@@ -1,6 +1,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
@@ -268,6 +269,18 @@ export const phpExtractors: LanguageExtractors = {
 };
 
 registerExtractor('php', phpExtractors);
+
+// Capabilities: no async/await in core PHP (Fibers exist but are not
+// async/await; concurrency libs like Amp/ReactPHP are opt-in). Attributes
+// since 8.0 are decorators. try/catch exceptions. Dynamic types (gradual
+// typing exists but not strictly enforced). Nominal interfaces.
+registerCapabilities('php', {
+    hasAsync: false,
+    hasDecorators: true,
+    hasExceptions: true,
+    hasStaticTypes: false,
+    interfaceKind: 'nominal',
+});
 
 // DI heuristic: Symfony/Laravel projects mirror the Java/Spring convention.
 function phpDiHeuristics(typeName: string): string[] {

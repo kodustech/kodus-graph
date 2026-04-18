@@ -18,6 +18,7 @@
 
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
+import { registerCapabilities } from '../capabilities';
 import { registerExtractor } from '../engine';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
@@ -509,3 +510,17 @@ const elixirExtractors: LanguageExtractors = {
 };
 
 registerExtractor('elixir', elixirExtractors);
+
+// Capabilities: Elixir runs on the BEAM — concurrency is via processes (Task,
+// GenServer, `spawn`), NOT language-level async/await. Attributes/module
+// directives (`@doc`, `@spec`, `use`) count as decorators. `try/rescue` exists
+// but idiomatic Elixir returns `{:ok, _} | {:error, _}` tagged tuples, so we
+// mark hasExceptions=false. Behaviours exist but protocol dispatch is
+// typically duck-style.
+registerCapabilities('elixir', {
+    hasAsync: false,
+    hasDecorators: true,
+    hasExceptions: false,
+    hasStaticTypes: false,
+    interfaceKind: 'duck',
+});
