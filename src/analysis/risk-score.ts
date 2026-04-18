@@ -1,18 +1,28 @@
-import type { BlastRadiusResult, GraphData, RiskScoreResult } from '../graph/types';
+import type { BlastRadiusResult, GraphData, GraphNode, RiskScoreResult } from '../graph/types';
+import { GraphIndex } from './graph-index';
 import { DEFAULT_RISK_CONFIG, type RiskConfig, validateRiskConfig } from './risk-config';
 
 export function computeRiskScore(
     graph: GraphData,
     changedFiles: string[],
     blastRadius: BlastRadiusResult,
-    options?: { skipTests?: boolean; riskConfig?: RiskConfig },
+    options?: { skipTests?: boolean; riskConfig?: RiskConfig; index?: GraphIndex },
 ): RiskScoreResult {
     const cfg = options?.riskConfig ?? DEFAULT_RISK_CONFIG;
     validateRiskConfig(cfg);
     const { weights, caps } = cfg;
 
+    const idx = options?.index ?? new GraphIndex(graph);
+
     const changedSet = new Set(changedFiles);
-    const changedNodes = graph.nodes.filter((n) => changedSet.has(n.file_path) && !n.is_test);
+    const changedNodes: GraphNode[] = [];
+    for (const file of changedSet) {
+        for (const node of idx.nodesByFile(file)) {
+            if (!node.is_test) {
+                changedNodes.push(node);
+            }
+        }
+    }
 
     // Factor 1: Blast radius
     const brValue = Math.min(blastRadius.total_functions / caps.blast_functions, 1);
@@ -22,7 +32,7 @@ export function computeRiskScore(
     let untestedCount = 0;
     const changedFunctions = changedNodes.filter((n) => n.kind === 'Function' || n.kind === 'Method');
     if (!options?.skipTests) {
-        const testedFiles = new Set(graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.file_path));
+        const testedFiles = idx.testedFiles;
         untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
@@ -45,9 +55,7 @@ export function computeRiskScore(
     }
 
     // Factor 4: Inheritance
-    const hasInheritance = graph.edges.some(
-        (e) => (e.kind === 'INHERITS' || e.kind === 'IMPLEMENTS') && changedSet.has(e.file_path),
-    );
+    const hasInheritance = idx.hasInheritanceInFiles(changedSet);
     const ihValue = hasInheritance ? 1 : 0;
 
     const score =

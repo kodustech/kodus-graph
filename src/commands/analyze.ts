@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { relative, resolve } from 'path';
 import { computeBlastRadius } from '../analysis/blast-radius';
+import { GraphIndex } from '../analysis/graph-index';
 import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { computeRiskScore } from '../analysis/risk-score';
 import { findTestGaps } from '../analysis/test-gaps';
@@ -137,10 +138,14 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     // Analyze
     // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
     const changedQN = mergedGraph.nodes.filter((n) => opts.files.includes(n.file_path)).map((n) => n.qualified_name);
-    const blastRadius = computeBlastRadius(mergedGraph, changedQN);
+    const graphIndex = new GraphIndex(mergedGraph);
+    const blastRadius = computeBlastRadius(mergedGraph, changedQN, undefined, undefined, undefined, {
+        index: graphIndex,
+    });
     const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, {
         skipTests: opts.skipTests,
         riskConfig: riskConfigResolved,
+        index: graphIndex,
     });
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files);
 

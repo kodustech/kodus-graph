@@ -1,4 +1,5 @@
 import type { BlastRadiusEntry, BlastRadiusResult, EdgeKind, GraphData, ImpactCategory } from '../graph/types';
+import { GraphIndex } from './graph-index';
 
 type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS'>;
 
@@ -43,12 +44,11 @@ export function computeBlastRadius(
     maxDepth: number = 2,
     minConfidence?: number,
     contractBreakingSeeds?: Set<string>,
+    options?: { index?: GraphIndex },
 ): BlastRadiusResult {
     const minConf = minConfidence ?? 0.5;
     const cbSeeds = contractBreakingSeeds ?? new Set<string>();
-
-    // Build node lookup for is_exported checks
-    const nodeByQN = new Map(graph.nodes.map((n) => [n.qualified_name, n]));
+    const idx = options?.index ?? new GraphIndex(graph);
 
     // Build adjacency list with metadata
     const adj = new Map<string, AdjEntry[]>();
@@ -72,23 +72,25 @@ export function computeBlastRadius(
         adj.get(from)!.push({ neighbor: to, confidence, edgeKind });
     };
 
-    for (const edge of graph.edges) {
-        if (edge.kind === 'IMPORTS') {
-            // IMPORTS: unidirectional — change in imported affects importer
-            addEdge(edge.target_qualified, edge.source_qualified, 1.0, 'IMPORTS');
-        } else if (edge.kind === 'CALLS' && (edge.confidence ?? 1.0) >= minConf) {
-            // Skip cross-file calls to non-exported functions (likely wrong resolution)
-            const targetNode = nodeByQN.get(edge.target_qualified);
-            if (targetNode && targetNode.is_exported === false) {
-                const sourceFile = edge.source_qualified.split('::')[0];
-                const targetFile = edge.target_qualified.split('::')[0];
-                if (sourceFile !== targetFile) {
-                    continue;
-                }
-            }
-            // CALLS: only edges with sufficient confidence, reverse direction
-            addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
+    for (const edge of idx.edgesByKind('IMPORTS')) {
+        // IMPORTS: unidirectional — change in imported affects importer
+        addEdge(edge.target_qualified, edge.source_qualified, 1.0, 'IMPORTS');
+    }
+    for (const edge of idx.edgesByKind('CALLS')) {
+        if ((edge.confidence ?? 1.0) < minConf) {
+            continue;
         }
+        // Skip cross-file calls to non-exported functions (likely wrong resolution)
+        const targetNode = idx.nodeByQualified(edge.target_qualified);
+        if (targetNode && targetNode.is_exported === false) {
+            const sourceFile = edge.source_qualified.split('::')[0];
+            const targetFile = edge.target_qualified.split('::')[0];
+            if (sourceFile !== targetFile) {
+                continue;
+            }
+        }
+        // CALLS: only edges with sufficient confidence, reverse direction
+        addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
     }
 
     // Consolidated state per node
@@ -271,10 +273,9 @@ export function computeBlastRadius(
     }
 
     // Count unique files
-    const nodeIndex = new Map(graph.nodes.map((n) => [n.qualified_name, n]));
     const impactedFiles = new Set<string>();
     for (const q of visited) {
-        const node = nodeIndex.get(q);
+        const node = idx.nodeByQualified(q);
         if (node) {
             impactedFiles.add(node.file_path);
         }

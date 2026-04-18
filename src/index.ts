@@ -5,6 +5,7 @@
 // stdout stays clean for piping.
 
 export type { ContractDiff, DiffResult, ModifiedNode } from './analysis/diff';
+export { GraphIndex } from './analysis/graph-index';
 export { executeAnalyze } from './commands/analyze';
 export { executeCommunities } from './commands/communities';
 export { executeContext } from './commands/context';

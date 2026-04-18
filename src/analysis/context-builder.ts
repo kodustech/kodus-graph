@@ -16,6 +16,7 @@ import { computeStructuralDiff, type DiffResult } from './diff';
 import { type DiffHunk, overlapsWithDiff } from './diff-lines';
 import { enrichChangedFunctions } from './enrich';
 import { detectFlows, type FlowsResult } from './flows';
+import { GraphIndex } from './graph-index';
 import { extractInheritance } from './inheritance';
 import type { RiskConfig } from './risk-config';
 import { computeRiskScore } from './risk-score';
@@ -112,12 +113,14 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const contractBreakingSeeds = new Set(
         structuralDiff.nodes.modified.filter((m) => m.contract_diffs.length > 0).map((m) => m.qualified_name),
     );
+    const graphIndex = new GraphIndex(mergedGraph);
     const blastRadius = computeBlastRadius(
         mergedGraph,
         [...trulyChangedQN],
         maxDepth,
         minConfidence,
         contractBreakingSeeds,
+        { index: graphIndex },
     );
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     enrichBlastRadiusWithFlows(blastRadius, allFlows);
@@ -125,6 +128,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, {
         skipTests: opts.skipTests,
         riskConfig: opts.riskConfig,
+        index: graphIndex,
     });
     const inheritance = extractInheritance(indexed, changedFiles);
 
