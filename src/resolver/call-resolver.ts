@@ -72,6 +72,11 @@ export function resolveAllCalls(
         receiver: 0,
     };
 
+    // `totalIndexedFiles` is stable across the entire resolve batch — compute
+    // once and thread into the ambiguous-tier check to avoid recomputing on
+    // every ambiguous-tier lookup.
+    const totalIndexedFiles = symbolTable.totalIndexedFiles();
+
     for (const call of rawCalls) {
         const fp = call.source;
 
@@ -156,7 +161,7 @@ export function resolveAllCalls(
         }
 
         // Name-based cascade fallback
-        const resolved = resolveByName(call.callName, fp, symbolTable, importMap);
+        const resolved = resolveByName(call.callName, fp, symbolTable, importMap, totalIndexedFiles);
         if (resolved === AMBIGUOUS_NOISE_DROP) {
             stats.ambiguousNoise++;
             continue;
@@ -270,6 +275,7 @@ function resolveByName(
     currentFile: string,
     symbolTable: SymbolTable,
     importMap: ImportMap,
+    totalIndexedFiles: number,
 ): ResolveByNameResult {
     // Strategy 1: Same file (0.85)
     const sameFile = symbolTable.lookupExact(currentFile, callName);
@@ -304,7 +310,7 @@ function resolveByName(
         // the graph with low-signal 0.30 edges across unrelated modules.
         const callerLang = languageOfFile(currentFile);
         const callerNoise = callerLang ? getNoiseFor(callerLang) : null;
-        if (callerNoise?.has(callName) || isCodebaseAmbiguous(callName, symbolTable)) {
+        if (callerNoise?.has(callName) || isCodebaseAmbiguous(callName, symbolTable, totalIndexedFiles)) {
             return AMBIGUOUS_NOISE_DROP;
         }
         const best = pickClosestCandidate(candidates, currentFile);
@@ -329,9 +335,8 @@ function resolveByName(
  * with natural duplication (e.g. 3 `save` methods) aren't over-filtered;
  * large monorepos with 50 `validate` methods still drop them.
  */
-function isCodebaseAmbiguous(name: string, symbolTable: SymbolTable): boolean {
+function isCodebaseAmbiguous(name: string, symbolTable: SymbolTable, totalFiles: number): boolean {
     const definingFiles = symbolTable.countDefinitions(name);
-    const totalFiles = symbolTable.totalIndexedFiles();
     const floor = 15;
     const fractional = Math.ceil(totalFiles * 0.02);
     const threshold = Math.max(floor, fractional);
@@ -397,8 +402,26 @@ function pickClosestCandidate(candidates: string[], callerFile: string): string 
     return best;
 }
 
-// ── Public wrapper for unit testing ──
+// ── Name-cascade wrapper (unit-test helper) ──
 
+/**
+ * Thin name-cascade wrapper used by resolver unit tests to exercise a single
+ * call resolution end-to-end without constructing a full `RawCallSite` batch.
+ *
+ * **Intentionally limited to the name-based cascade** (noise → same-file →
+ * import → unique → ambiguous). It does NOT handle:
+ *   - DI resolution (`call.diField`) — that requires a `diMap` argument.
+ *   - Class-aware resolution (`call.resolveInClass`) — that requires a class
+ *     name bound to the call site.
+ *   - Receiver-type resolution (`call.receiverType`) — that requires a
+ *     receiver-type map from the parser batch.
+ *
+ * If you need the full pipeline, use `resolveAllCalls([rawCallSite], ...)`
+ * with a complete `RawCallSite`. This wrapper exists ONLY for focused
+ * name-cascade tests and is not part of the public library API.
+ *
+ * @internal
+ */
 export function resolveCall(
     callName: string,
     currentFile: string,
@@ -411,7 +434,8 @@ export function resolveCall(
         return null;
     }
 
-    const result = resolveByName(callName, currentFile, symbolTable, importMap);
+    const totalIndexedFiles = symbolTable.totalIndexedFiles();
+    const result = resolveByName(callName, currentFile, symbolTable, importMap, totalIndexedFiles);
     if (!result || result === AMBIGUOUS_NOISE_DROP) {
         return null;
     }
