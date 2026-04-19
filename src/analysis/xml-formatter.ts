@@ -45,59 +45,63 @@ function classQualifiedName(qualifiedName: string, name: string, parentName?: st
 
 // ── ReviewFocus generation ──
 
-function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet: Set<string>): string[] {
+export function buildReviewFocusItems(functions: EnrichedFunction[], testedFunctionSet: Set<string>): string[] {
     const items: string[] = [];
-    const seen = new Set<string>();
 
     for (const fn of functions) {
-        // Exception propagation
         const throwsDiff = fn.contract_diffs.find((d) => d.field === 'throws');
-        if (throwsDiff && fn.callers.length > 0) {
-            const untestedCallers = fn.callers.filter((c) => !testedFunctionSet.has(c.qualified_name)).length;
-            const key = `throws:${fn.qualified_name}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                items.push(
-                    `Verify ${untestedCallers > 0 ? `${untestedCallers} untested ` : ''}callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} handle new exception: ${throwsDiff.new_value}`,
-                );
-            }
-        }
-
-        // Return type expansion
         const returnDiff = fn.contract_diffs.find((d) => d.field === 'return_type');
-        if (returnDiff && fn.callers.length > 0) {
-            const key = `return:${fn.qualified_name}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                items.push(
-                    `Check ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} handle return type change: ${returnDiff.old_value} → ${returnDiff.new_value}`,
-                );
-            }
-        }
-
-        // Param changes
         const paramDiff = fn.contract_diffs.find((d) => d.field === 'params');
-        if (paramDiff && fn.callers.length > 0) {
-            const key = `params:${fn.qualified_name}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                items.push(
-                    `Verify ${fn.callers.length} callers of ${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} pass correct params after signature change`,
-                );
-            }
+        const untested = !fn.has_test_coverage && fn.callers.length >= 3;
+
+        const hasConcern = Boolean(throwsDiff || returnDiff || paramDiff || untested);
+        if (!hasConcern) {
+            continue;
         }
 
-        // Untested high-risk functions (with or without contract diffs)
-        if (!fn.has_test_coverage && fn.callers.length >= 3) {
-            const key = `untested:${fn.qualified_name}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                const detail = fn.contract_diffs.length > 0 ? 'has contract changes, ' : 'has body changes, ';
-                items.push(
-                    `${classQualifiedName(fn.qualified_name, fn.name, fn.parent_name)} ${detail}${fn.callers.length} callers, and no test coverage`,
-                );
-            }
+        const qn = classQualifiedName(fn.qualified_name, fn.name, fn.parent_name);
+        const callerCount = fn.callers.length;
+
+        // Primary action phrase — priority order: throws > params > return > untested-only.
+        // When multiple concerns are present the primary picks the most severe;
+        // the rest become parenthetical secondary clauses.
+        let primary = '';
+        if (throwsDiff && callerCount > 0) {
+            const untestedCallers = fn.callers.filter((c) => !testedFunctionSet.has(c.qualified_name)).length;
+            const prefix = untestedCallers > 0 ? `${untestedCallers} untested ` : `${callerCount} `;
+            primary = `Verify ${prefix}callers of ${qn} handle new exception: ${throwsDiff.new_value}`;
+        } else if (paramDiff && callerCount > 0) {
+            primary = `Verify ${callerCount} callers of ${qn} pass correct params after signature change`;
+        } else if (returnDiff && callerCount > 0) {
+            primary = `Check ${callerCount} callers of ${qn} handle return type change: ${returnDiff.old_value} → ${returnDiff.new_value}`;
+        } else if (untested) {
+            // No caller-facing contract change — lead with untested status.
+            const detail = fn.contract_diffs.length > 0 ? 'has contract changes' : 'has body changes';
+            primary = `${qn} ${detail}, ${callerCount} callers, and no test coverage`;
         }
+
+        if (primary === '') {
+            // Contract change(s) present but no callers and not untested-high-risk — skip.
+            continue;
+        }
+
+        // Secondary concerns appended as additional clauses to the primary.
+        const secondary: string[] = [];
+        if (throwsDiff && !primary.includes('handle new exception')) {
+            secondary.push(`new exception: ${throwsDiff.new_value}`);
+        }
+        if (returnDiff && !primary.includes('return type change')) {
+            secondary.push(`return type change: ${returnDiff.old_value} → ${returnDiff.new_value}`);
+        }
+        if (paramDiff && !primary.includes('signature change')) {
+            secondary.push('signature change');
+        }
+        if (untested && !primary.includes('no test coverage')) {
+            secondary.push('no test coverage');
+        }
+
+        const sentence = secondary.length > 0 ? `${primary} (${secondary.join('; ')})` : primary;
+        items.push(sentence);
     }
 
     return items.slice(0, 5);
