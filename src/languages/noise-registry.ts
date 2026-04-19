@@ -7,10 +7,12 @@
  * isn't silenced by TS-centric heuristics and vice-versa.
  */
 
+import type { LanguageKey } from './language-of-file';
+
 const REGISTRY = new Map<string, ReadonlySet<string>>();
 const EMPTY: ReadonlySet<string> = new Set();
 
-export function registerNoise(language: string, names: ReadonlySet<string>): void {
+export function registerNoise(language: LanguageKey, names: ReadonlySet<string>): void {
     REGISTRY.set(language, names);
 }
 

@@ -4,6 +4,8 @@
  * assuming TS/Java semantics everywhere.
  */
 
+import type { LanguageKey } from './language-of-file';
+
 export interface LanguageCapabilities {
     /** Language has explicit async/await keyword semantics. */
     hasAsync: boolean;
@@ -19,7 +21,7 @@ export interface LanguageCapabilities {
 
 const REGISTRY = new Map<string, Readonly<LanguageCapabilities>>();
 
-export function registerCapabilities(language: string, caps: LanguageCapabilities): void {
+export function registerCapabilities(language: LanguageKey, caps: LanguageCapabilities): void {
     REGISTRY.set(language, Object.freeze({ ...caps }));
 }
 

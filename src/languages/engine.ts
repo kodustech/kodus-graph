@@ -1,5 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
+import type { LanguageKey } from './language-of-file';
 import type { ReceiverTypeMap } from './receiver-types';
 import type { LanguageExtractors } from './spec';
 
@@ -13,7 +14,7 @@ const registry = new Map<string, LanguageExtractors>();
  * Register a per-language extractor. Typically called at module-load time
  * by each language file (e.g. `registerExtractor('go', goExtractors)`).
  */
-export function registerExtractor(lang: string, extractor: LanguageExtractors): void {
+export function registerExtractor(lang: LanguageKey, extractor: LanguageExtractors): void {
     registry.set(lang, extractor);
 }
 
@@ -52,7 +53,7 @@ export function listRegisteredLanguages(): string[] {
  */
 const DI_REGISTRY = new Map<string, (typeName: string) => string[]>();
 
-export function registerDIHeuristics(language: string, fn: (typeName: string) => string[]): void {
+export function registerDIHeuristics(language: LanguageKey, fn: (typeName: string) => string[]): void {
     DI_REGISTRY.set(language, fn);
 }
 
@@ -77,7 +78,7 @@ type ReceiverTypesFn = (root: SgNode, fp: string) => ReceiverTypeMap;
 
 const RECEIVER_TYPES_REGISTRY = new Map<string, ReceiverTypesFn>();
 
-export function registerReceiverTypes(language: string, fn: ReceiverTypesFn): void {
+export function registerReceiverTypes(language: LanguageKey, fn: ReceiverTypesFn): void {
     RECEIVER_TYPES_REGISTRY.set(language, fn);
 }
 

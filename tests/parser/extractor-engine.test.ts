@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../../src/graph/types';
 import { extractAll, extractCallsFromEngine, hasExtractor, registerExtractor } from '../../src/languages/engine';
+import type { LanguageKey } from '../../src/languages/language-of-file';
 import { emptyResult } from '../../src/languages/shared';
 import type { ExtractionResult, LanguageExtractors } from '../../src/languages/spec';
 
@@ -42,7 +43,10 @@ describe('extractor engine — registry', () => {
     });
 
     it('registerExtractor makes hasExtractor return true', () => {
-        const lang = '__test_register__';
+        // Synthetic lang key — test-only escape hatch to avoid polluting the
+        // real LanguageKey union with dummy values. Real registrations in src/
+        // are typo-proof because they accept LanguageKey directly.
+        const lang = '__test_register__' as LanguageKey;
         const stub: LanguageExtractors = {
             extract: () => emptyResult(),
             extractCalls: () => {},
@@ -54,7 +58,7 @@ describe('extractor engine — registry', () => {
 
 describe('extractor engine — extractAll', () => {
     it('pushes classes to graph with correct qualified name and dedup key', () => {
-        const lang = '__test_classes__';
+        const lang = '__test_classes__' as LanguageKey;
         const result: ExtractionResult = {
             ...emptyResult(),
             classes: [
@@ -96,7 +100,7 @@ describe('extractor engine — extractAll', () => {
     });
 
     it('pushes functions to graph and marks tests', () => {
-        const lang = '__test_functions__';
+        const lang = '__test_functions__' as LanguageKey;
         const result: ExtractionResult = {
             ...emptyResult(),
             functions: [
@@ -165,7 +169,7 @@ describe('extractor engine — extractAll', () => {
     });
 
     it('pushes imports, re-exports, interfaces, enums, and DI entries', () => {
-        const lang = '__test_full__';
+        const lang = '__test_full__' as LanguageKey;
         const result: ExtractionResult = {
             classes: [],
             functions: [],
@@ -238,7 +242,7 @@ describe('extractor engine — extractAll', () => {
 
 describe('extractor engine — extractCallsFromEngine', () => {
     it('delegates call extraction to registered extractor', () => {
-        const lang = '__test_calls__';
+        const lang = '__test_calls__' as LanguageKey;
         const captured: RawCallSite[] = [];
 
         registerExtractor(lang, {
