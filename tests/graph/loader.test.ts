@@ -1,9 +1,11 @@
 // tests/graph/loader.test.ts
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { indexGraph, loadGraph } from '../../src/graph/loader';
 import type { GraphData, ParseOutput } from '../../src/graph/types';
+import { SCHEMA_VERSION } from '../../src/shared/constants';
 
 const tmpDir = '/tmp/kodus-graph-test-loader';
 
@@ -106,6 +108,68 @@ describe('loadGraph', () => {
 
     it('should throw on missing file', () => {
         expect(() => loadGraph('/tmp/nonexistent-graph-xyz.json')).toThrow();
+    });
+});
+
+describe('loadGraph schema_version enforcement', () => {
+    function writeGraph(path: string, schemaVersion: string | undefined): void {
+        const metadata: Record<string, unknown> = {
+            repo_dir: '.',
+            files_parsed: 0,
+            total_nodes: 0,
+            total_edges: 0,
+            duration_ms: 0,
+            parse_errors: 0,
+            extract_errors: 0,
+        };
+        if (schemaVersion !== undefined) {
+            metadata.schema_version = schemaVersion;
+        }
+        writeFileSync(path, JSON.stringify({ metadata, nodes: [], edges: [] }));
+    }
+
+    it('current schema_version loads without throwing', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kg-sv-'));
+        try {
+            const path = join(dir, 'graph.json');
+            writeGraph(path, SCHEMA_VERSION);
+            expect(() => loadGraph(path)).not.toThrow();
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('missing schema_version loads without throwing (legacy warn only)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kg-sv-'));
+        try {
+            const path = join(dir, 'graph.json');
+            writeGraph(path, undefined);
+            expect(() => loadGraph(path)).not.toThrow();
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('older major schema_version loads without throwing (warn only)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kg-sv-'));
+        try {
+            const path = join(dir, 'graph.json');
+            writeGraph(path, '1.0');
+            expect(() => loadGraph(path)).not.toThrow();
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('newer major schema_version throws with a clear message', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kg-sv-'));
+        try {
+            const path = join(dir, 'graph.json');
+            writeGraph(path, '99.0');
+            expect(() => loadGraph(path)).toThrow(/newer than this kodus-graph version/);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
 

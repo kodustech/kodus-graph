@@ -1,10 +1,14 @@
 // src/graph/loader.ts
 import { readFileSync } from 'fs';
 import { z } from 'zod';
+import { SCHEMA_VERSION } from '../shared/constants';
+import { log } from '../shared/logger';
+import { compareSchemaVersions } from './schema-version-check';
 import type { GraphData, GraphEdge, GraphNode, ParseMetadata } from './types';
 
 const ParseOutputSchema = z.object({
     metadata: z.object({
+        schema_version: z.string().optional(),
         repo_dir: z.string(),
         files_parsed: z.number(),
         total_nodes: z.number(),
@@ -118,6 +122,27 @@ export function loadGraph(path: string): IndexedGraph {
     }
 
     const parsed = ParseOutputSchema.parse(raw);
+
+    const loadedVersion = parsed.metadata.schema_version;
+    if (!loadedVersion) {
+        log.warn('graph has no schema_version; assuming legacy (pre-1.0). Some features may behave incorrectly.');
+    } else {
+        const rel = compareSchemaVersions(loadedVersion, SCHEMA_VERSION);
+        if (rel === 'newer-major') {
+            throw new Error(
+                `graph schema v${loadedVersion} is newer than this kodus-graph version (v${SCHEMA_VERSION}). ` +
+                    `Upgrade kodus-graph or regenerate the graph with a compatible version.`,
+            );
+        }
+        if (rel === 'older-major') {
+            log.warn(
+                `graph is v${loadedVersion}, code expects v${SCHEMA_VERSION} (breaking change). ` +
+                    `Consider re-running \`kodus-graph parse\` to regenerate.`,
+            );
+        }
+        // older-minor / newer-minor / same -> proceed silently (minor bumps are additive).
+    }
+
     return indexGraph(
         { nodes: parsed.nodes as GraphNode[], edges: parsed.edges as GraphEdge[] },
         parsed.metadata as ParseMetadata,
