@@ -10,3 +10,4 @@ baselines, notes) by the final task of the Fase D plan.
 
 | Language | Repo | Date | Verdict |
 |---|---|---|---|
+| kotlin | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 2026-04-19 | 🟡 GAP |
