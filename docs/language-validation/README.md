@@ -16,3 +16,4 @@ baselines, notes) by the final task of the Fase D plan.
 | c | [redis/redis](https://github.com/redis/redis) | 2026-04-20 | 🟡 GAP |
 | cpp | [google/flatbuffers](https://github.com/google/flatbuffers) | 2026-04-20 | 🟢 PASS |
 | php | [laravel/framework](https://github.com/laravel/framework) | 2026-04-20 | 🟡 GAP |
+| swift | [apple/swift-package-manager](https://github.com/apple/swift-package-manager) | 2026-04-20 | 🟢 PASS |
