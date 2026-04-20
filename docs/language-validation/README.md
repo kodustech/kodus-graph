@@ -14,3 +14,4 @@ baselines, notes) by the final task of the Fase D plan.
 | rust | [tokio-rs/tokio](https://github.com/tokio-rs/tokio) | 2026-04-19 | 🟢 PASS |
 | csharp | [serilog/serilog](https://github.com/serilog/serilog) | 2026-04-19 | 🟢 PASS |
 | c | [redis/redis](https://github.com/redis/redis) | 2026-04-20 | 🟡 GAP |
+| cpp | [google/flatbuffers](https://github.com/google/flatbuffers) | 2026-04-20 | 🟢 PASS |
