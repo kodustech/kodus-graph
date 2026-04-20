@@ -19,3 +19,4 @@ baselines, notes) by the final task of the Fase D plan.
 | swift | [apple/swift-package-manager](https://github.com/apple/swift-package-manager) | 2026-04-20 | 🟢 PASS |
 | dart | [google/quiver-dart](https://github.com/google/quiver-dart) | 2026-04-20 | 🟢 PASS |
 | scala | [com-lihaoyi/mill](https://github.com/com-lihaoyi/mill) | 2026-04-20 | 🟢 PASS |
+| elixir | [phoenixframework/phoenix](https://github.com/phoenixframework/phoenix) | 2026-04-20 | 🟢 PASS |
