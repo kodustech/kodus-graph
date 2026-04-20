@@ -52,8 +52,18 @@ Floor in batch reducer was 5 (progression stalled at 50→25→12→6→5). Lowe
 ### ~~B5 — `diff --base <ref>` compared HEAD against HEAD~~ ✅ fixed in `c4b7632`
 The command used to re-parse files from working tree (=HEAD) and compare against graph.json (also HEAD) → by construction, zero differences. Fixed by reading base-ref content via `git show <ref>:<path>`, parsing in-memory, and diffing that against head parse. Validated on sentry `HEAD~5`: `modified: 0 → 12`, `added: 0 → 6`, all with correct `[body]` / `[params]` classifications.
 
-### B4 (open): `tier_distribution.di === 0` on Python codebases
-Sentry uses Django (class-based views, DI via method attrs, `@inject` decorators). Our DI extraction catches TS constructor-injection and similar patterns but misses Python conventions. `di: 0` across 14k files. Extend DI patterns per-language (Django `APIView`, Flask, FastAPI `Depends()`) or document Python DI as out-of-scope. Feature addition rather than bugfix; medium scope.
+### ~~B4~~ reframed and partially shipped in `76e96fa`
+Python doesn't have DI-style containers (Django/Flask/FastAPI use different patterns). `tier_distribution.di === 0` is **honest** for Python — there's nothing to register. The underlying gap was `self.attr.method()` calls falling to the name-based cascade instead of a high-confidence tier.
+
+Shipped: Python receiver-type inference now covers (1) class-level type-hinted attributes (`repo: UserRepository`), (2) `__init__` typed params stored on self (`self.cache = cache` after `def __init__(self, cache: Cache)`), (3) annotated self-assignments (`self.cache: Cache = ...`).
+
+Sentry validation: `tier_distribution.receiver` 3202 → 3544 (+342, +10.7%). Gain modest because sentry inconsistently types its `__init__` params and class attrs.
+
+**Still not covered (future work):**
+- Generic/parameterized types (`List[Foo]`, `Optional[Foo]`) — only the outer name is extracted today.
+- Factory-method init (`setUp`, `__post_init__`, custom builders).
+- Flow analysis (reassignment, conditional bindings, `isinstance` narrowing).
+- FastAPI `Depends()` resolution (separate pattern, needs dedicated handling if we want it).
 
 ### B8 (open, observation): Context re-parse resolves differently from baseline
 `context` re-parses the single specified file to get a fresh extraction, then diffs against baseline. For an UNCHANGED file, result shows `edgesAdded: 24, edgesRemoved: 75` — the single-file parse has a smaller symbol table than the full-repo baseline, so import/unique tiers fall through to ambiguous differently. Results drift between `analyze` (full graph) and `context` (re-parsed slice). Worth either documenting or fixing by always resolving context against the full baseline graph. Architectural.
