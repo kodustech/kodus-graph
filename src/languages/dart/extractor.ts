@@ -6,7 +6,6 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { DART_NOISE } from './noise';
 
 // Branch kinds for Dart cyclomatic complexity.
 // Empirically verified: Dart uses `switch_label` (NOT `case_statement`) as
@@ -667,7 +666,9 @@ export const dartExtractors: LanguageExtractors = {
                 continue;
             }
 
-            if (!callName || DART_NOISE.has(callName)) {
+            // Noise is NOT filtered here — the resolver applies it after the
+            // receiver-type tier so user-domain calls survive to be resolved.
+            if (!callName) {
                 continue;
             }
 

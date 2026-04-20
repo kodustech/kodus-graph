@@ -4,6 +4,13 @@ import type { RawCallSite } from '../graph/types';
 /**
  * Language-specific configuration for call extraction.
  * Each language provides its self/super patterns and how to find class context in the AST.
+ *
+ * Note: noise filtering is intentionally NOT performed at extraction time.
+ * The resolver applies the per-language noise filter AFTER the receiver-type
+ * tier (`src/resolver/call-resolver.ts`) so user-domain calls like
+ * `user.update()` — where `update` is in a language noise list but
+ * `UserService.update` exists in the symbol table — aren't dropped before
+ * they can be resolved. Dropping noise at extraction would kill that tier.
  */
 export interface CallExtractionConfig {
     /** Prefixes indicating a self-reference (e.g., 'self.', 'this.') */
@@ -16,11 +23,6 @@ export interface CallExtractionConfig {
     getParentClass?: (classNode: SgNode) => string | undefined;
     /** Skip this callee entirely (e.g., TS skips this.field.method — handled by DI) */
     skipCallee?: (callee: string) => boolean;
-    /**
-     * Per-language noise set. Calls whose final name is in this set are
-     * dropped during extraction (stdlib/framework builtins).
-     */
-    noise: ReadonlySet<string>;
 }
 
 /**
@@ -41,9 +43,6 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
         }
 
         const callName = callee.includes('.') ? callee.split('.').pop()! : callee;
-        if (config.noise.has(callName)) {
-            continue;
-        }
 
         let resolveInClass: string | undefined;
 

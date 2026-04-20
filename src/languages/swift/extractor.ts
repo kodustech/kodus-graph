@@ -15,7 +15,6 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { SWIFT_NOISE } from './noise';
 
 // Branch kinds for Swift cyclomatic complexity.
 // Empirically verified against the Swift tree-sitter grammar:
@@ -476,7 +475,6 @@ export const swiftExtractors: LanguageExtractors = {
                 }
                 return undefined;
             },
-            noise: SWIFT_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

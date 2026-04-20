@@ -4,8 +4,6 @@ import { readFileSync } from 'fs';
 import { extname, relative } from 'path';
 import type { ParseBatchResult, RawCallSite, RawGraph } from '../graph/types';
 import { extractReceiverTypesFromEngine } from '../languages/engine';
-import { languageOfFile } from '../languages/language-of-file';
-import { getNoiseFor } from '../languages/noise-registry';
 import { locationKey } from '../languages/receiver-types';
 import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
@@ -73,8 +71,11 @@ export async function parseBatch(
             }
 
             try {
-                // Extract calls into a temporary buffer, then filter noise before pushing.
-                // Noise is routed per-language so Ruby `update()` isn't silenced by a TS-centric list.
+                // Extract calls, then attach receiver types before pushing.
+                // Noise is NOT filtered here — the resolver applies it AFTER
+                // the receiver-type tier so user-domain calls like
+                // `user.update()` can resolve to `UserService.update` even
+                // when `update` is in the language noise list.
                 const rawCalls: RawCallSite[] = [];
                 extractCallsFromFile(root, fp, lang, rawCalls);
 
@@ -88,12 +89,7 @@ export async function parseBatch(
                 const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
                 const receiverMap = extractReceiverTypesFromEngine(root, fp, langStr);
 
-                const noiseLang = languageOfFile(fp);
-                const noise = noiseLang ? getNoiseFor(noiseLang) : null;
                 for (const call of rawCalls) {
-                    if (noise?.has(call.callName)) {
-                        continue;
-                    }
                     if (receiverMap.size > 0) {
                         // Try column-qualified key first, then line-only fallback.
                         const keyed = locationKey(fp, call.line, call.column ?? -1);

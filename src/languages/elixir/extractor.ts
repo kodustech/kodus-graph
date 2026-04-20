@@ -23,7 +23,6 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { ELIXIR_NOISE } from './noise';
 
 // ---------------------------------------------------------------------------
 // Elixir-specific cyclomatic complexity
@@ -473,10 +472,9 @@ const elixirExtractors: LanguageExtractors = {
                     continue;
                 }
 
-                // Regular function call
-                if (ELIXIR_NOISE.has(targetText)) {
-                    continue;
-                }
+                // Regular function call. Noise is NOT filtered here — the
+                // resolver applies it after the receiver-type tier so
+                // user-domain calls survive to be resolved.
                 const line = node.range().start.line;
                 const key = `${targetText}:${line}`;
                 if (seenLines.has(key)) {
@@ -499,9 +497,6 @@ const elixirExtractors: LanguageExtractors = {
                 const methodNode = children[children.length - 1];
                 const callName = methodNode.text();
 
-                if (ELIXIR_NOISE.has(callName)) {
-                    continue;
-                }
                 const line = node.range().start.line;
                 const key = `${callName}:${line}`;
                 if (seenLines.has(key)) {

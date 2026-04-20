@@ -7,7 +7,6 @@ import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { GO_NOISE } from './noise';
 
 // Branch kinds for Go cyclomatic complexity.
 // Case-level kinds only: `expression_case`, `type_case`, `communication_case`
@@ -300,7 +299,6 @@ export const goExtractors: LanguageExtractors = {
             selfPrefixes: [],
             superPrefixes: [],
             findEnclosingClass,
-            noise: GO_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

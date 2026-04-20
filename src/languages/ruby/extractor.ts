@@ -9,7 +9,6 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
-import { RUBY_NOISE } from './noise';
 
 // Branch kinds for Ruby cyclomatic complexity.
 // Ruby's grammar reuses bare keywords (`if`, `when`, etc.) as BOTH named
@@ -226,11 +225,12 @@ function createRubyCallConfig(): CallExtractionConfig {
         findEnclosingClass: (node) =>
             node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module) ?? null,
         getParentClass: (classNode) => classNode.field('superclass')?.text(),
-        noise: RUBY_NOISE,
     };
 }
 
 function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+    // Noise is NOT filtered at extraction. The resolver applies it after the
+    // receiver-type tier so user-domain calls survive (see call-resolver.ts).
     const config = createRubyCallConfig();
 
     // Track lines already captured by the pattern-based extraction to avoid duplicates
@@ -247,7 +247,7 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
     for (const node of rootNode.findAll({ rule: { kind: 'call' } })) {
         const methodNode = node.field('method');
         const callName = methodNode?.text();
-        if (!callName || RUBY_NOISE.has(callName)) {
+        if (!callName) {
             continue;
         }
         const line = node.range().start.line;
@@ -278,9 +278,6 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
             continue;
         }
         const callName = node.text();
-        if (RUBY_NOISE.has(callName)) {
-            continue;
-        }
         const line = node.range().start.line;
         if (seenLines.has(`${callName}:${line}`)) {
             continue;

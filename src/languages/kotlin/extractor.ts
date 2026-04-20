@@ -16,7 +16,6 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { KOTLIN_NOISE } from './noise';
 
 // Branch kinds for Kotlin cyclomatic complexity.
 // `when_entry` is the case-arm kind (skip outer `when_expression`).
@@ -433,7 +432,6 @@ export const kotlinExtractors: LanguageExtractors = {
                 }
                 return undefined;
             },
-            noise: KOTLIN_NOISE,
         };
         extractCalls(root, fp, config, calls);
     },

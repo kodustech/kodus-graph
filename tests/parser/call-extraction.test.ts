@@ -45,7 +45,11 @@ describe('extractCallsFromTypeScript', () => {
         expect(diCall!.source).toBe('src/test.ts');
     });
 
-    it('should filter NOISE functions', async () => {
+    it('should retain NOISE-named calls (noise is filtered by the resolver, not extraction)', async () => {
+        // Noise filtering moved to the resolver (after the receiver-type tier)
+        // so user-domain calls like `x.forEach()` or `user.update()` — where
+        // the final method name is in the language noise list — aren't dropped
+        // before they can be resolved against the symbol table.
         const source = `
       console.log('hello');
       arr.push(item);
@@ -54,9 +58,9 @@ describe('extractCallsFromTypeScript', () => {
     `;
         const calls = await extractCalls(source);
         const names = calls.map((c) => c.callName);
-        expect(names).not.toContain('log');
-        expect(names).not.toContain('push');
-        expect(names).not.toContain('map');
+        expect(names).toContain('log');
+        expect(names).toContain('push');
+        expect(names).toContain('map');
         expect(names).toContain('realFunction');
     });
 
@@ -100,14 +104,16 @@ def main():
         expect(names).toContain('process_data');
     });
 
-    it('should filter NOISE functions', async () => {
+    it('should retain NOISE-named calls (noise is filtered by the resolver, not extraction)', async () => {
+        // See the TypeScript counterpart: noise filtering moved to the
+        // resolver after the receiver-type tier.
         const source = `
 print("hello")
 real_function(arg)
 `;
         const calls = await extractCalls(source);
         const names = calls.map((c) => c.callName);
-        expect(names).not.toContain('print');
+        expect(names).toContain('print');
         expect(names).toContain('real_function');
     });
 
@@ -141,14 +147,14 @@ end
         expect(names).toContain('process_data');
     });
 
-    it('should filter NOISE functions', async () => {
+    it('should retain NOISE-named calls (noise is filtered by the resolver, not extraction)', async () => {
         const source = `
 puts "hello"
 real_function(arg)
 `;
         const calls = await extractCalls(source);
         const names = calls.map((c) => c.callName);
-        expect(names).not.toContain('puts');
+        expect(names).toContain('puts');
         expect(names).toContain('real_function');
     });
 
@@ -189,7 +195,7 @@ end
         expect(validateCall!.resolveInClass).toBe('MyService');
     });
 
-    it('should filter Ruby NOISE in command style calls', async () => {
+    it('should retain Ruby NOISE-named command-style calls (filtered by resolver, not extraction)', async () => {
         const source = `
 def index
   puts "hello"
@@ -200,9 +206,9 @@ end
 `;
         const calls = await extractCalls(source);
         const names = calls.map((c) => c.callName);
-        expect(names).not.toContain('puts');
-        expect(names).not.toContain('render');
-        expect(names).not.toContain('redirect_to');
+        expect(names).toContain('puts');
+        expect(names).toContain('render');
+        expect(names).toContain('redirect_to');
         expect(names).toContain('real_method');
     });
 });
@@ -234,7 +240,7 @@ func main() {
         expect(names).toContain('processData');
     });
 
-    it('should filter NOISE functions', async () => {
+    it('should retain NOISE-named calls (noise is filtered by the resolver, not extraction)', async () => {
         const source = `
 package main
 
@@ -245,7 +251,7 @@ func main() {
 `;
         const calls = await extractCalls(source);
         const names = calls.map((c) => c.callName);
-        expect(names).not.toContain('Println');
+        expect(names).toContain('Println');
         expect(names).toContain('realFunction');
     });
 });

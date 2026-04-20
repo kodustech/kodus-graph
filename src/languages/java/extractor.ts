@@ -14,7 +14,6 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
-import { JAVA_NOISE } from './noise';
 
 // Branch kinds for Java cyclomatic complexity.
 // `else if` is a nested `if_statement` in the alternative — `if_statement`
@@ -311,13 +310,12 @@ export const javaExtractors: LanguageExtractors = {
         const findEnclosingClass = (node: SgNode): SgNode | null =>
             node.ancestors().find((a) => CLASS_DECL_KINDS.has(String(a.kind()))) ?? null;
 
+        // Noise is NOT filtered here — the resolver applies it after the
+        // receiver-type tier so user-domain calls survive to be resolved.
         for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {
             const nameNode = mi.field('name');
             const callName = nameNode?.text();
             if (!callName) {
-                continue;
-            }
-            if (JAVA_NOISE.has(callName)) {
                 continue;
             }
 

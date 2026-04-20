@@ -19,7 +19,6 @@ import type {
     ExtractionResult,
     LanguageExtractors,
 } from '../spec';
-import { TS_NOISE } from './noise';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -457,15 +456,16 @@ const TS_CALL_CONFIG: CallExtractionConfig = {
     },
     // Skip this.field.method — already handled by the DI pattern
     skipCallee: (callee) => callee.startsWith('this.') && callee.substring(5).includes('.'),
-    noise: TS_NOISE,
 };
 
 function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
     // DI pattern: this.$FIELD.$METHOD($$$ARGS)
+    // Noise is NOT filtered here — the resolver applies it after the
+    // receiver-type tier so user-domain calls survive to be resolved.
     for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
         const field = m.getMatch('FIELD')?.text();
         const method = m.getMatch('METHOD')?.text();
-        if (!method || TS_NOISE.has(method)) {
+        if (!method) {
             continue;
         }
         calls.push({
@@ -487,7 +487,8 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
 /**
  * Extract raw call sites from a TypeScript/JavaScript AST.
  * Finds DI calls (this.field.method) and direct calls ($CALLEE($$$ARGS)).
- * Filters NOISE. Does NOT resolve — just collects raw sites.
+ * Does NOT filter noise or resolve — noise is applied by the resolver after
+ * the receiver-type tier.
  */
 export function extractCallsFromTypeScript(root: SgRoot, fp: string, calls: RawCallSite[]): void {
     extractCallsTS(root.root(), fp, calls);
