@@ -7,6 +7,7 @@ import { computeRiskScore } from '../analysis/risk-score';
 import { findTestGaps } from '../analysis/test-gaps';
 import { buildGraphData } from '../graph/builder';
 import { mergeGraphs } from '../graph/merger';
+import { enforceSchemaVersion } from '../graph/schema-version-check';
 import type { AnalysisOutput, ImportEdge, MainGraphInput } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
@@ -43,6 +44,15 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
             raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
         } catch (_err) {
             log.error('failed to read --graph file', { path: opts.graph });
+            process.exit(1);
+        }
+        // Enforce schema version BEFORE the legacy-shape safeParse — a
+        // v99.0 graph would pass GraphInputSchema (which only requires
+        // nodes/edges) but consumers can't handle unknown fields correctly.
+        try {
+            enforceSchemaVersion(raw);
+        } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
             process.exit(1);
         }
         const validated = GraphInputSchema.safeParse(raw);

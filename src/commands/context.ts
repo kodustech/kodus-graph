@@ -7,6 +7,7 @@ import { formatPrompt, type PromptFormatterOptions } from '../analysis/prompt-fo
 import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { formatXml, type XmlFormatterOptions } from '../analysis/xml-formatter';
 import { mergeGraphs } from '../graph/merger';
+import { enforceSchemaVersion } from '../graph/schema-version-check';
 import type { GraphData, MainGraphInput } from '../graph/types';
 import { log } from '../shared/logger';
 import { GraphInputSchema } from '../shared/schemas';
@@ -71,6 +72,14 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
                 raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
             } catch (_err) {
                 log.error('failed to read --graph file', { path: opts.graph });
+                process.exit(1);
+            }
+            // Enforce schema version BEFORE the legacy-shape safeParse; see
+            // analyze.ts for the same guard rationale.
+            try {
+                enforceSchemaVersion(raw);
+            } catch (err) {
+                log.error(err instanceof Error ? err.message : String(err));
                 process.exit(1);
             }
             const validated = GraphInputSchema.safeParse(raw);
