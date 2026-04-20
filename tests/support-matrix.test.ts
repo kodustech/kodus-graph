@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'bun:test';
+import { listRegisteredLanguages } from '../src/languages/engine';
+import { LANGUAGE_SUPPORT } from '../src/languages/support-matrix';
 import { type LanguageSupportRecord, supportMatrixSchema } from '../src/languages/support-matrix-schema';
+// Side-effect imports: make sure every language registers itself.
+import '../src/languages/c';
+import '../src/languages/csharp';
+import '../src/languages/dart';
+import '../src/languages/elixir';
+import '../src/languages/go';
+import '../src/languages/java';
+import '../src/languages/kotlin';
+import '../src/languages/php';
+import '../src/languages/python';
+import '../src/languages/ruby';
+import '../src/languages/rust';
+import '../src/languages/scala';
+import '../src/languages/swift';
+import '../src/languages/typescript';
 
 describe('support-matrix-schema', () => {
     it('accepts a fully-populated record', () => {
@@ -126,5 +143,35 @@ describe('support-matrix-schema', () => {
             },
         ];
         expect(() => supportMatrixSchema.parse(bad)).toThrow();
+    });
+});
+
+describe('LANGUAGE_SUPPORT consistency', () => {
+    it('passes the Zod schema', () => {
+        expect(() => supportMatrixSchema.parse(LANGUAGE_SUPPORT)).not.toThrow();
+    });
+
+    it('covers every registered extractor (no missing languages)', () => {
+        const registered = new Set(listRegisteredLanguages());
+        const matrixKeys = new Set(LANGUAGE_SUPPORT.map((r) => r.key));
+        for (const key of registered) {
+            expect(matrixKeys.has(key)).toBe(true);
+        }
+    });
+
+    it('contains no ghost entries (every matrix key has a registered extractor)', () => {
+        const registered = new Set(listRegisteredLanguages());
+        for (const record of LANGUAGE_SUPPORT) {
+            expect(registered.has(record.key)).toBe(true);
+        }
+    });
+
+    it('all "full"-tier records have a canonical_fixture and baseline_tier_ratios', () => {
+        for (const r of LANGUAGE_SUPPORT) {
+            if (r.tier === 'full') {
+                expect(r.canonical_fixture).not.toBeNull();
+                expect(r.baseline_tier_ratios).not.toBeNull();
+            }
+        }
     });
 });
