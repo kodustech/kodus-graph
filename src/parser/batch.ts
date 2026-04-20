@@ -12,6 +12,28 @@ import { getLanguage, getLanguageName } from './languages';
 const INITIAL_BATCH = 50;
 const MEMORY_THRESHOLD_RATIO = 0.7;
 
+/**
+ * Pure helper: decide the next batch size given current RSS. Extracted so it
+ * can be unit-tested without having to drive real memory pressure.
+ *
+ * Under pressure we halve the batch size with a floor of 1 (not 5) so that
+ * severely constrained runs can fall all the way back to serial processing.
+ * Without the floor=1 change, the reducer stalls at 5 and RSS can run away.
+ */
+export function computeNextBatchSize(
+    current: number,
+    rssBytes: number,
+    maxBytes: number,
+    threshold: number,
+): { batchSize: number; underPressure: boolean } {
+    const underPressure = rssBytes > maxBytes * threshold;
+    if (!underPressure) {
+        return { batchSize: current, underPressure: false };
+    }
+    const next = Math.max(1, Math.floor(current / 2));
+    return { batchSize: next, underPressure: true };
+}
+
 export async function parseBatch(
     files: string[],
     repoRoot: string,
@@ -109,17 +131,32 @@ export async function parseBatch(
 
         await Promise.all(promises);
 
-        // Dynamic batch sizing: reduce if memory pressure detected
+        // Dynamic batch sizing: reduce if memory pressure detected. Only log
+        // on actual state changes (batchSize shrinking or pressure clearing)
+        // so we don't flood stderr with identical warnings each iteration.
         const rss = process.memoryUsage().rss;
-        if (rss > maxMemBytes * MEMORY_THRESHOLD_RATIO) {
+        const decision = computeNextBatchSize(batchSize, rss, maxMemBytes, MEMORY_THRESHOLD_RATIO);
+        if (decision.underPressure) {
             const oldBatch = batchSize;
-            batchSize = Math.max(5, Math.floor(batchSize / 2));
-            log.warn('Memory pressure detected, reducing batch size', {
-                rssMB: Math.round(rss / 1024 / 1024),
-                maxMB: Math.round(maxMemBytes / 1024 / 1024),
-                oldBatchSize: oldBatch,
-                newBatchSize: batchSize,
-            });
+            batchSize = decision.batchSize;
+            if (batchSize !== oldBatch) {
+                log.warn('Memory pressure detected, reducing batch size', {
+                    rssMB: Math.round(rss / 1024 / 1024),
+                    maxMB: Math.round(maxMemBytes / 1024 / 1024),
+                    oldBatchSize: oldBatch,
+                    newBatchSize: batchSize,
+                });
+            }
+            // Yield to the event loop so GC can reclaim freed references
+            // before we dispatch the next batch. Without this, the loop
+            // immediately schedules the next wave and GC never gets a
+            // chance to run between batches.
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            // Best-effort explicit GC when running with --expose-gc.
+            const g = (globalThis as { gc?: () => void }).gc;
+            if (typeof g === 'function') {
+                g();
+            }
         }
     }
 
