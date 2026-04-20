@@ -13,3 +13,4 @@ baselines, notes) by the final task of the Fase D plan.
 | kotlin | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 2026-04-19 | 🟡 GAP |
 | rust | [tokio-rs/tokio](https://github.com/tokio-rs/tokio) | 2026-04-19 | 🟢 PASS |
 | csharp | [serilog/serilog](https://github.com/serilog/serilog) | 2026-04-19 | 🟢 PASS |
+| c | [redis/redis](https://github.com/redis/redis) | 2026-04-20 | 🟡 GAP |
