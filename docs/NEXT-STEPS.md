@@ -1,15 +1,35 @@
 # Next Steps
 
-State snapshot: **29 commits ahead of `origin/main`**, 1023 tests passing, 0 warnings, schema v2.0 enforced.
+State snapshot: **38 commits ahead of `origin/main`**, 1037 tests passing, 0 warnings, schema v2.0 enforced.
 
-Work completed in this cycle closed every item from the original hardcode-elimination roadmap plus unplanned user-reported bugs (whitespace FPs, mini-diff rendering, ReviewFocus dedup), P0 resolver consistency, AND four bugs found during real-repo validation on sentry-greptile-test:
+This document tracks everything landed across 2+ sessions plus what's still open. Completed work covers the original hardcode-elimination roadmap, user-reported issues (whitespace FPs, mini-diff rendering, ReviewFocus dedup), P0 resolver consistency, two rounds of real-repo validation on sentry-greptile-test, AND a full CLI+library coverage audit.
 
-- **Noise filter ordering** (critical): extraction-time filter was dropping calls before `receiverType` could be assigned, making the Phase 2 receiver-before-noise fix inert. Validated on sentry: `tier_distribution.noise` went from 0 → 107,422; `receiver` from 3,130 → 3,202 (+72 user-domain edges recovered).
-- **`test_gaps` array empty** while detail said N/M untested — semantic mismatch in `GraphIndex.testedFiles`.
-- **XML format** emitted only `<Summary>` when no changes — now mirrors prompt format with `<Imports>` + `<Hierarchy>`.
-- **Duplicate imports** in prompt format — deduped via Set.
+### Validation-driven fixes (sentry real-repo)
 
-Still-open validation findings documented below.
+- **Noise filter ordering** (critical, `99e6012`): extraction-time filter dropped calls before `receiverType` could be assigned, making the Phase 2 receiver-before-noise fix inert. Sentry: `tier_distribution.noise` 0 → 107,422; `receiver` 3,130 → 3,202 (+72 user-domain edges).
+- **`test_gaps` array empty** (`84d757b`): semantic mismatch in `GraphIndex.testedFiles` — count and list disagreed.
+- **XML format empty without changes** (`84d757b`): now mirrors prompt with `<Imports>` + `<Hierarchy>`.
+- **Duplicate imports** (`84d757b`): deduped via Set in both prompt + xml formatters.
+- **`--max-memory` didn't throttle** (`3dc0a36`): floor was 5 (reducer stalled). Fixed to 1 with inter-batch yield and `globalThis.gc()` on shrink.
+- **Max-memory regression** (`84b884a`): yield+gc fired on every hold-at-floor iteration, making discourse 12min. Now only on `shrink`, with grow-back after 3 idle batches.
+- **`diff --base <ref>` compared HEAD↔HEAD** (`c4b7632`): fixed by reading base-ref content via `git show <ref>:<path>`. Sentry HEAD~5: `modified: 0 → 12, added: 0 → 6`.
+- **Python `self.attr` receiver-type** (`76e96fa`): class-level + `__init__`-injection bindings. Sentry receiver 3,202 → 3,544 (+342).
+
+### CLI+library coverage audit fixes (this session)
+
+- **`search --limit` ignored on `--callers-of` / `--callees-of`** (`13bf19c`): command layer fed full results to JSON without slicing. Also added `returned` field so consumers can detect truncation.
+- **Schema version not enforced on `analyze` / `context`** (`4757d8c`): they used their own `GraphInputSchema.safeParse` path that ignored `metadata.schema_version`. Extracted shared `enforceSchemaVersion` helper; both commands now refuse v99.0 with exit 1 and warn on v1.0.
+
+### Full coverage validated on sentry-greptile (14k files, 4 languages)
+
+- All 8 commands (`parse`, `analyze`, `context`, `diff`, `update`, `communities`, `flows`, `search`)
+- All CLI flags including `--files`, `--include`, `--skip-tests`, `--out -`, `--risk-config`, `--diff` hunk file, `--max-prompt-chars`, `--max-functions`, `--file` glob
+- Library API: `executeParse/Analyze/Context`, `loadGraph`, `mergeGraphs`, Zod schemas
+- 3 output formats (json/prompt/xml), `RiskConfig` as object AND as path string
+- 8 edge cases: malformed config (zod `.strict()` catches typos), missing graph, nonexistent repo, invalid search modes, schema version mismatch
+- 99.4% of ambiguous edges carry `alternatives[]`; 100% of functions have `complexity` field
+
+Remaining validation findings below (all non-blocking).
 
 ---
 
