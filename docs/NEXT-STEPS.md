@@ -1,8 +1,15 @@
 # Next Steps
 
-State snapshot: **26 commits ahead of `origin/main`**, 1016 tests passing, 0 warnings, schema v2.0 enforced.
+State snapshot: **29 commits ahead of `origin/main`**, 1023 tests passing, 0 warnings, schema v2.0 enforced.
 
-Work completed in this cycle closed every item from the original hardcode-elimination roadmap plus unplanned user-reported bugs (whitespace FPs, mini-diff rendering, ReviewFocus dedup) and P0 resolver consistency.
+Work completed in this cycle closed every item from the original hardcode-elimination roadmap plus unplanned user-reported bugs (whitespace FPs, mini-diff rendering, ReviewFocus dedup), P0 resolver consistency, AND four bugs found during real-repo validation on sentry-greptile-test:
+
+- **Noise filter ordering** (critical): extraction-time filter was dropping calls before `receiverType` could be assigned, making the Phase 2 receiver-before-noise fix inert. Validated on sentry: `tier_distribution.noise` went from 0 → 107,422; `receiver` from 3,130 → 3,202 (+72 user-domain edges recovered).
+- **`test_gaps` array empty** while detail said N/M untested — semantic mismatch in `GraphIndex.testedFiles`.
+- **XML format** emitted only `<Summary>` when no changes — now mirrors prompt format with `<Imports>` + `<Hierarchy>`.
+- **Duplicate imports** in prompt format — deduped via Set.
+
+Still-open validation findings documented below.
 
 ---
 
@@ -32,6 +39,24 @@ Run the full pipeline against `kodus-web` (or any production repo) and compare a
 | Mini-diff renders for long params | Find a PR with a large type change, confirm `+ field` vs blob |
 
 Document surprises. Real-world output reveals cases the test suite doesn't.
+
+---
+
+## Still-open bugs from sentry validation
+
+These were found in the 2026-04-19 run against `projects-trd/sentry-greptile-test` (779MB, TSX+Python, 14k files). Not fixed this session; noted for priority in next cycle.
+
+### B2: `--max-memory` flag doesn't actually throttle
+RSS hit 4GB+ during discourse parse with `--max-memory 1024`; 1872MB during sentry with default 768. Flag emits "Memory pressure detected" warnings hundreds of times but `oldBatchSize:5 newBatchSize:5` — the batch size never actually shrinks. Real concern for CI/sandbox under cgroup limits. Fix: when RSS > threshold, actually reduce batch size or await between batches.
+
+### B4: `tier_distribution.di === 0` on Python codebases
+Sentry uses Django (class-based views, DI via method attrs, `@inject` decorators). Our DI extraction catches TS constructor-injection and similar patterns but misses Python conventions. `di: 0` across 14k files. Either extend DI patterns per-language (Django `APIView`, Flask, FastAPI `Depends()`) or document Python DI as out-of-scope.
+
+### B5: `diff --base HEAD~5` reports `modified: 0` for 17 git-changed files
+Sentry has real commits touching 17 files between `HEAD~5..HEAD`. Structural diff returns 0 modified nodes but 57 edges removed. Either the structural diff is body-content-blind by design (contract-only), OR a real bug where content-hash changes don't register as modifications. Needs investigation. Consumer sees misleading data shape (edges disappearing without any "modified" entry).
+
+### B8 (observation): Context re-parse resolves differently from baseline
+`context` re-parses the single specified file to get a fresh extraction, then diffs against baseline. For an UNCHANGED file, result shows `edgesAdded: 24, edgesRemoved: 75` — the single-file parse has a smaller symbol table than the full-repo baseline, so import/unique tiers fall through to ambiguous differently. Results drift between `analyze` (full graph) and `context` (re-parsed slice). Worth either documenting or fixing by always resolving context against the full baseline graph.
 
 ---
 
