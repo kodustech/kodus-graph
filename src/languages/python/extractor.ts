@@ -353,6 +353,152 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
     return bindings;
 }
 
+/**
+ * Collect `self.attr → type` bindings for a single class body. This covers
+ * three idiomatic Python DI / attribute-declaration patterns:
+ *
+ *   1. Class-body annotation `repo: Repo` (bare or with default) — the tree
+ *      emits `expression_statement > assignment { identifier, ':', type }`
+ *      even though Python parses it as an annotated class-level name.
+ *   2. Class-body uppercase-constructor `logger = Logger()` — flow-insensitive
+ *      but matches how the function-local pass treats the same shape.
+ *   3. `__init__` typed parameter stored on self (`self.cache = cache` where
+ *      `cache: Cache`).
+ *   4. Inline annotated `self.X: Type = ...` inside `__init__`.
+ *
+ * Intentionally NOT handled (future work): conditional assignments,
+ * reassignments later in methods, walrus-style patterns, annotations inside
+ * non-`__init__` methods, TYPE_CHECKING guards. Flow analysis is out of scope.
+ */
+function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
+    const selfAttrs = new Map<string, string>();
+
+    const body = classNode.field('body');
+    if (!body) {
+        return selfAttrs;
+    }
+
+    // Pass 1a + 1b: class-body top-level expression_statement > assignment
+    for (const stmt of body.children()) {
+        if (stmt.kind() !== 'expression_statement') {
+            continue;
+        }
+        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+        if (!assign) {
+            continue;
+        }
+        const kids = assign.children();
+        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        if (!lhs) {
+            continue;
+        }
+        const name = lhs.text();
+        if (selfAttrs.has(name)) {
+            continue;
+        }
+
+        // Rule 1: typed annotation (`repo: UserRepository` or `name: str = "x"`).
+        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        if (typeNode) {
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (typeName) {
+                selfAttrs.set(name, typeName);
+            }
+            continue;
+        }
+
+        // Rule 2: uppercase-constructor assignment (`logger = Logger()`).
+        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        if (!rhs) {
+            continue;
+        }
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        if (!fnIdent) {
+            continue;
+        }
+        const ctor = fnIdent.text();
+        if (isLikelyClassName(ctor)) {
+            selfAttrs.set(name, ctor);
+        }
+    }
+
+    // Pass 1c + 1d: walk __init__ to recover DI patterns.
+    const init = body
+        .children()
+        .find((c: SgNode) => c.kind() === 'function_definition' && c.field('name')?.text() === '__init__');
+    if (!init) {
+        return selfAttrs;
+    }
+
+    // Record typed parameters of __init__ so we can recognize `self.X = paramName`.
+    const paramTypes = new Map<string, string>();
+    const initParams = init.field('parameters');
+    if (initParams) {
+        for (const p of initParams.findAll({ rule: { kind: 'typed_parameter' } })) {
+            const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
+            const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
+            if (!ident || !typeNode) {
+                continue;
+            }
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (typeName) {
+                paramTypes.set(ident.text(), typeName);
+            }
+        }
+    }
+
+    const initBody = init.field('body');
+    if (!initBody) {
+        return selfAttrs;
+    }
+    for (const stmt of initBody.children()) {
+        if (stmt.kind() !== 'expression_statement') {
+            continue;
+        }
+        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+        if (!assign) {
+            continue;
+        }
+        const kids = assign.children();
+        // LHS must be `self.X` (attribute { identifier[self], identifier[X] }).
+        const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
+        if (!attr) {
+            continue;
+        }
+        const attrKids = attr.children();
+        const recv = attrKids.find((c: SgNode) => c.kind() === 'identifier');
+        const attrName = attrKids.filter((c: SgNode) => c.kind() === 'identifier')[1];
+        if (!recv || !attrName || recv.text() !== 'self') {
+            continue;
+        }
+        const name = attrName.text();
+        if (selfAttrs.has(name)) {
+            continue;
+        }
+
+        // Rule 4: `self.X: Type = ...` inline annotation on self.
+        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        if (typeNode) {
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (typeName) {
+                selfAttrs.set(name, typeName);
+            }
+            continue;
+        }
+
+        // Rule 3: `self.X = paramName` where paramName is typed.
+        const rhsIdent = kids.find((c: SgNode) => c.kind() === 'identifier');
+        if (rhsIdent) {
+            const typeName = paramTypes.get(rhsIdent.text());
+            if (typeName) {
+                selfAttrs.set(name, typeName);
+            }
+        }
+    }
+
+    return selfAttrs;
+}
+
 function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
 
@@ -364,6 +510,12 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
         fnScopes.push({ node: fn, bindings: collectPythonBindings(fn) });
     }
 
+    // Collect per-class self.attr → type maps for `self.X.Y()` resolution.
+    const classScopes: { node: SgNode; selfAttrs: Map<string, string> }[] = [];
+    for (const cls of root.findAll({ rule: { kind: 'class_definition' } })) {
+        classScopes.push({ node: cls, selfAttrs: collectPythonSelfAttrs(cls) });
+    }
+
     // For each method call (`call` whose function is an `attribute` with an
     // identifier receiver), find the innermost enclosing function scope and
     // record the receiver type — if known.
@@ -373,27 +525,61 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
         if (!attr) {
             continue;
         }
-        const attrKids = attr.children();
-        const receiver = attrKids.find((c: SgNode) => c.kind() === 'identifier');
-        if (!receiver) {
-            continue;
-        }
-        const receiverName = receiver.text();
-
         const callRange = ce.range();
+        const attrKids = attr.children();
         let typeName: string | undefined;
-        let bestSize = Infinity;
-        for (const { node, bindings } of fnScopes) {
-            const nr = node.range();
-            if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
+
+        // Case A: `self.X.Y()` — outer attribute's receiver is `attribute[self.X]`,
+        // so we resolve X against the enclosing class's self-attr map.
+        const innerAttr = attrKids.find((c: SgNode) => c.kind() === 'attribute');
+        if (innerAttr) {
+            const innerKids = innerAttr.children();
+            const innerRecv = innerKids.find((c: SgNode) => c.kind() === 'identifier');
+            const innerAttrIds = innerKids.filter((c: SgNode) => c.kind() === 'identifier');
+            if (innerRecv && innerRecv.text() === 'self' && innerAttrIds.length >= 2) {
+                const attrName = innerAttrIds[1]!.text();
+                let bestSize = Infinity;
+                for (const { node, selfAttrs } of classScopes) {
+                    const nr = node.range();
+                    if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
+                        continue;
+                    }
+                    const size = nr.end.index - nr.start.index;
+                    if (size < bestSize && selfAttrs.has(attrName)) {
+                        typeName = selfAttrs.get(attrName);
+                        bestSize = size;
+                    }
+                }
+            }
+        }
+
+        // Case B: `x.Y()` — outer attribute's receiver is a simple identifier,
+        // resolve via the enclosing function's scope-local bindings.
+        if (!typeName) {
+            const receiver = attrKids.find((c: SgNode) => c.kind() === 'identifier');
+            if (!receiver) {
                 continue;
             }
-            const size = nr.end.index - nr.start.index;
-            if (size < bestSize && bindings.has(receiverName)) {
-                typeName = bindings.get(receiverName);
-                bestSize = size;
+            const receiverName = receiver.text();
+            // `self.Y()` is intentionally skipped — the resolver handles it via
+            // resolveInClass, not via receiver-type.
+            if (receiverName === 'self') {
+                continue;
+            }
+            let bestSize = Infinity;
+            for (const { node, bindings } of fnScopes) {
+                const nr = node.range();
+                if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
+                    continue;
+                }
+                const size = nr.end.index - nr.start.index;
+                if (size < bestSize && bindings.has(receiverName)) {
+                    typeName = bindings.get(receiverName);
+                    bestSize = size;
+                }
             }
         }
+
         if (!typeName) {
             continue;
         }

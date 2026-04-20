@@ -244,4 +244,72 @@ describe('receiver-type resolver cascade (Java/Dart/Python)', () => {
         expect(resolved!.target).toBe('src/storage.py::Storage.save');
         expect(stats.receiver).toBe(1);
     });
+
+    it('Python: self.repo.find_all() resolves at 0.95 when class attr has type hint', async () => {
+        const src = `class UserRepository:
+    def find_all(self):
+        return []
+
+class UserService:
+    repo: UserRepository
+
+    def handle(self):
+        return self.repo.find_all()
+`;
+        const calls = await extractWithReceiver('python', src, 'sample.py');
+        const findCall = calls.find((c) => c.callName === 'find_all');
+        expect(findCall?.receiverType).toBe('UserRepository');
+
+        const table = createSymbolTable();
+        table.add('sample.py', 'find_all', 'sample.py::UserRepository.find_all');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'find_all');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('sample.py::UserRepository.find_all');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('Python: self.cache.get() resolves at 0.95 when __init__ typed param stored on self', async () => {
+        const src = `class Cache:
+    def get(self, key):
+        return None
+
+class UserService:
+    def __init__(self, cache: Cache):
+        self.cache = cache
+
+    def handle(self):
+        return self.cache.get('k')
+`;
+        const calls = await extractWithReceiver('python', src, 'sample.py');
+        const getCall = calls.find((c) => c.callName === 'get');
+        expect(getCall?.receiverType).toBe('Cache');
+
+        const table = createSymbolTable();
+        table.add('sample.py', 'get', 'sample.py::Cache.get');
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap());
+        const resolved = callEdges.find((e) => e.callName === 'get');
+        expect(resolved).toBeDefined();
+        expect(resolved!.confidence).toBe(0.95);
+        expect(resolved!.target).toBe('sample.py::Cache.get');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('Python: self.X: Type = ... inline annotation in __init__ body binds receiver type', async () => {
+        const src = `class Other:
+    def work(self):
+        return 1
+
+class UserService:
+    def __init__(self):
+        self.other: Other = make_other()
+
+    def handle(self):
+        return self.other.work()
+`;
+        const calls = await extractWithReceiver('python', src, 'sample.py');
+        const workCall = calls.find((c) => c.callName === 'work');
+        expect(workCall?.receiverType).toBe('Other');
+    });
 });
