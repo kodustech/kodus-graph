@@ -1,28 +1,45 @@
-"""Sample Python fixture with various branching constructs."""
+"""Sample Python fixture for language-coverage CI gate."""
+
+
+class UserRepository:
+    def find_all(self) -> list:
+        return []
+
+    def save(self, user):
+        return user
+
+
+class Cache:
+    def get(self, key: str):
+        return None
+
+    def set(self, key: str, value):
+        pass
 
 
 class UserService:
-    def __init__(self, name):
-        self.name = name
+    repo: UserRepository
 
-    def classify(self, x):
-        if x > 0:
-            return 'positive'
-        elif x < 0:
-            return 'negative'
-        return 'zero'
+    def __init__(self, cache: Cache):
+        self.cache = cache
 
-    def process(self, items):
-        results = []
-        for item in items:
-            if item is None:
-                continue
-            try:
-                results.append(item.upper())
-            except AttributeError:
-                results.append(str(item))
-        return results
+    def list_users(self):
+        cached = self.cache.get('users')
+        if cached is not None:
+            return cached
+        users = self.repo.find_all()
+        self.cache.set('users', users)
+        return users
+
+    def persist(self, user):
+        saved = self.repo.save(user)
+        self.cache.set('user:' + str(saved.id), saved)
+        return saved
 
 
-def helper(value):
-    return value * 2 if value else 0
+def classify(score: int) -> str:
+    if score > 80:
+        return 'high'
+    elif score > 50:
+        return 'medium'
+    return 'low'
