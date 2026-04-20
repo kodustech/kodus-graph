@@ -175,3 +175,22 @@ describe('LANGUAGE_SUPPORT consistency', () => {
         }
     });
 });
+
+describe('markdown generator output', () => {
+    it('produces a file that contains every LANGUAGE_SUPPORT display_name', async () => {
+        const md = await Bun.file('docs/language-support-matrix.md').text();
+        for (const r of LANGUAGE_SUPPORT) {
+            expect(md).toContain(r.display_name);
+        }
+    });
+
+    it('contains the matrix row header', async () => {
+        const md = await Bun.file('docs/language-support-matrix.md').text();
+        expect(md).toContain('| Language | Tier | Parse |');
+    });
+
+    it('contains the auto-generation preamble', async () => {
+        const md = await Bun.file('docs/language-support-matrix.md').text();
+        expect(md).toContain('Auto-generated from `src/languages/support-matrix.ts`');
+    });
+});
