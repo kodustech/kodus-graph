@@ -11,27 +11,47 @@ import { getLanguage, getLanguageName } from './languages';
 
 const INITIAL_BATCH = 50;
 const MEMORY_THRESHOLD_RATIO = 0.7;
+const GROW_AFTER_IDLE_BATCHES = 3;
+
+export type BatchAction = 'shrink' | 'grow' | 'hold';
 
 /**
- * Pure helper: decide the next batch size given current RSS. Extracted so it
- * can be unit-tested without having to drive real memory pressure.
+ * Pure helper: decide the next batch size given current RSS and idle streak.
+ * Extracted so it can be unit-tested without driving real memory pressure.
  *
- * Under pressure we halve the batch size with a floor of 1 (not 5) so that
- * severely constrained runs can fall all the way back to serial processing.
- * Without the floor=1 change, the reducer stalls at 5 and RSS can run away.
+ * Three actions:
+ * - `shrink`: RSS over threshold AND batchSize > floor → halve (floor=1).
+ * - `grow`: RSS below threshold AND been idle >= GROW_AFTER_IDLE_BATCHES AND
+ *   batchSize < initial → double (capped at initial). Lets the reducer recover
+ *   from a transient spike instead of staying at floor forever.
+ * - `hold`: no change. Returned when we're at floor under sustained pressure,
+ *   at initial size, or within the idle-grace window.
+ *
+ * The caller uses the action to decide whether to log / yield / trigger GC.
+ * `hold` specifically means "don't pay the yield+gc cost" — that was the
+ * regression that turned a 5-min parse into 12-min on discourse.
  */
 export function computeNextBatchSize(
     current: number,
     rssBytes: number,
     maxBytes: number,
     threshold: number,
-): { batchSize: number; underPressure: boolean } {
+    idleBatches: number,
+    initial: number,
+): { batchSize: number; action: BatchAction } {
     const underPressure = rssBytes > maxBytes * threshold;
-    if (!underPressure) {
-        return { batchSize: current, underPressure: false };
+    if (underPressure) {
+        const next = Math.max(1, Math.floor(current / 2));
+        if (next < current) {
+            return { batchSize: next, action: 'shrink' };
+        }
+        return { batchSize: current, action: 'hold' };
     }
-    const next = Math.max(1, Math.floor(current / 2));
-    return { batchSize: next, underPressure: true };
+    if (current < initial && idleBatches >= GROW_AFTER_IDLE_BATCHES) {
+        const next = Math.min(initial, current * 2);
+        return { batchSize: next, action: 'grow' };
+    }
+    return { batchSize: current, action: 'hold' };
 }
 
 export async function parseBatch(
@@ -54,6 +74,7 @@ export async function parseBatch(
     let parseErrors = 0;
     let extractErrors = 0;
     let batchSize = INITIAL_BATCH;
+    let idleBatches = 0;
     const maxMemBytes = (options?.maxMemoryMB ?? 768) * 1024 * 1024;
 
     for (let i = 0; i < files.length; i += batchSize) {
@@ -131,31 +152,50 @@ export async function parseBatch(
 
         await Promise.all(promises);
 
-        // Dynamic batch sizing: reduce if memory pressure detected. Only log
-        // on actual state changes (batchSize shrinking or pressure clearing)
-        // so we don't flood stderr with identical warnings each iteration.
+        // Dynamic batch sizing. Only pay the yield + gc cost on `shrink` —
+        // when `hold` at the floor under sustained pressure, the yield/gc
+        // overhead was making a 5-min parse take 12 min on discourse.
         const rss = process.memoryUsage().rss;
-        const decision = computeNextBatchSize(batchSize, rss, maxMemBytes, MEMORY_THRESHOLD_RATIO);
-        if (decision.underPressure) {
+        const decision = computeNextBatchSize(
+            batchSize,
+            rss,
+            maxMemBytes,
+            MEMORY_THRESHOLD_RATIO,
+            idleBatches,
+            INITIAL_BATCH,
+        );
+
+        if (decision.action === 'shrink') {
             const oldBatch = batchSize;
             batchSize = decision.batchSize;
-            if (batchSize !== oldBatch) {
-                log.warn('Memory pressure detected, reducing batch size', {
-                    rssMB: Math.round(rss / 1024 / 1024),
-                    maxMB: Math.round(maxMemBytes / 1024 / 1024),
-                    oldBatchSize: oldBatch,
-                    newBatchSize: batchSize,
-                });
-            }
-            // Yield to the event loop so GC can reclaim freed references
-            // before we dispatch the next batch. Without this, the loop
-            // immediately schedules the next wave and GC never gets a
-            // chance to run between batches.
+            idleBatches = 0;
+            log.warn('Memory pressure detected, reducing batch size', {
+                rssMB: Math.round(rss / 1024 / 1024),
+                maxMB: Math.round(maxMemBytes / 1024 / 1024),
+                oldBatchSize: oldBatch,
+                newBatchSize: batchSize,
+            });
+            // Yield + optional GC only when we actually shrank. Lets the
+            // runtime reclaim freed references before the next (smaller) wave.
             await new Promise<void>((resolve) => setImmediate(resolve));
-            // Best-effort explicit GC when running with --expose-gc.
             const g = (globalThis as { gc?: () => void }).gc;
             if (typeof g === 'function') {
                 g();
+            }
+        } else if (decision.action === 'grow') {
+            const oldBatch = batchSize;
+            batchSize = decision.batchSize;
+            idleBatches = 0;
+            log.info('Memory pressure cleared, growing batch size', {
+                rssMB: Math.round(rss / 1024 / 1024),
+                oldBatchSize: oldBatch,
+                newBatchSize: batchSize,
+            });
+        } else {
+            // hold: track idle streak so we can grow back after recovery.
+            // Don't log and don't yield — this is the hot path.
+            if (rss <= maxMemBytes * MEMORY_THRESHOLD_RATIO) {
+                idleBatches++;
             }
         }
     }

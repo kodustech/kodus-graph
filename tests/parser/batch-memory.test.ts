@@ -5,49 +5,80 @@ import { computeNextBatchSize } from '../../src/parser/batch';
 const MB = 1024 * 1024;
 
 describe('computeNextBatchSize', () => {
-    it('keeps batch size stable when RSS is below threshold', () => {
+    it('holds when RSS is below threshold and batch is at initial', () => {
         const maxBytes = 1024 * MB;
         const rss = 500 * MB; // under 70% of 1024
-        const out = computeNextBatchSize(50, rss, maxBytes, 0.7);
-        expect(out.underPressure).toBe(false);
+        const out = computeNextBatchSize(50, rss, maxBytes, 0.7, 0, 50);
+        expect(out.action).toBe('hold');
         expect(out.batchSize).toBe(50);
     });
 
-    it('halves batch size when RSS crosses the threshold', () => {
+    it('shrinks (halves) when RSS crosses the threshold', () => {
         const maxBytes = 1024 * MB;
         const rss = 800 * MB; // >70% of 1024
-        const out = computeNextBatchSize(50, rss, maxBytes, 0.7);
-        expect(out.underPressure).toBe(true);
+        const out = computeNextBatchSize(50, rss, maxBytes, 0.7, 0, 50);
+        expect(out.action).toBe('shrink');
         expect(out.batchSize).toBe(25);
     });
 
-    it('can progressively reduce all the way to 1 under sustained pressure', () => {
-        // 50 -> 25 -> 12 -> 6 -> 3 -> 1 -> 1 (stays at 1).
+    it('progressively shrinks all the way to 1 under sustained pressure', () => {
+        // 50 -> 25 -> 12 -> 6 -> 3 -> 1, then holds
         const maxBytes = 1024 * MB;
         const rss = 900 * MB; // sustained pressure
-        const expected = [25, 12, 6, 3, 1, 1];
-
+        const steps: Array<{ size: number; action: string }> = [];
         let batch = 50;
-        const actual: number[] = [];
-        for (let i = 0; i < expected.length; i++) {
-            const out = computeNextBatchSize(batch, rss, maxBytes, 0.7);
-            actual.push(out.batchSize);
+        for (let i = 0; i < 6; i++) {
+            const out = computeNextBatchSize(batch, rss, maxBytes, 0.7, 0, 50);
+            steps.push({ size: out.batchSize, action: out.action });
             batch = out.batchSize;
         }
-        expect(actual).toEqual(expected);
+        expect(steps.map((s) => s.size)).toEqual([25, 12, 6, 3, 1, 1]);
+        // First five shrink, last one holds (already at floor).
+        expect(steps.map((s) => s.action)).toEqual(['shrink', 'shrink', 'shrink', 'shrink', 'shrink', 'hold']);
     });
 
-    it('never returns a batch size below 1', () => {
+    it('holds (no yield/gc overhead) when at floor under sustained pressure', () => {
         const maxBytes = 1024 * MB;
         const rss = 900 * MB;
-        const out = computeNextBatchSize(1, rss, maxBytes, 0.7);
+        const out = computeNextBatchSize(1, rss, maxBytes, 0.7, 0, 50);
+        expect(out.action).toBe('hold');
         expect(out.batchSize).toBe(1);
-        expect(out.underPressure).toBe(true);
+    });
+
+    it('grows back after sustained idle (regression guard)', () => {
+        // Shrunk to 6, then pressure clears. After 3 idle batches, grow.
+        const maxBytes = 1024 * MB;
+        const rssOk = 400 * MB;
+
+        // Idle=0,1,2 → still hold
+        for (let idle = 0; idle < 3; idle++) {
+            const out = computeNextBatchSize(6, rssOk, maxBytes, 0.7, idle, 50);
+            expect(out.action).toBe('hold');
+            expect(out.batchSize).toBe(6);
+        }
+        // Idle=3 → grow
+        const grown = computeNextBatchSize(6, rssOk, maxBytes, 0.7, 3, 50);
+        expect(grown.action).toBe('grow');
+        expect(grown.batchSize).toBe(12);
+    });
+
+    it('caps grow at initial batch size', () => {
+        const maxBytes = 1024 * MB;
+        const rssOk = 400 * MB;
+        const out = computeNextBatchSize(40, rssOk, maxBytes, 0.7, 3, 50);
+        expect(out.action).toBe('grow');
+        expect(out.batchSize).toBe(50); // min(50, 80)
+    });
+
+    it('holds at initial even after long idle streak', () => {
+        const maxBytes = 1024 * MB;
+        const rssOk = 400 * MB;
+        const out = computeNextBatchSize(50, rssOk, maxBytes, 0.7, 999, 50);
+        expect(out.action).toBe('hold');
+        expect(out.batchSize).toBe(50);
     });
 
     it('does not throw when globalThis.gc is undefined (the default)', async () => {
-        // No explicit assertion possible for the gc hook itself — just ensure
-        // that parseBatch still works in an environment without --expose-gc.
         expect(typeof globalThis.gc === 'function' || typeof globalThis.gc === 'undefined').toBe(true);
 
         const { parseBatch } = await import('../../src/parser/batch');
@@ -55,8 +86,8 @@ describe('computeNextBatchSize', () => {
         const fixtureDir = resolve('tests/fixtures/sample-repo');
         const files = [resolve(fixtureDir, 'src/auth.ts')];
         const result = await parseBatch(files, fixtureDir, { maxMemoryMB: 1 });
-        // maxMemoryMB:1 will always look like pressure; the reducer should run
-        // and the code must not crash when gc is absent.
+        // maxMemoryMB:1 will always look like pressure; the reducer must not
+        // crash when gc is absent.
         expect(result.functions.length).toBeGreaterThan(0);
     });
 });
