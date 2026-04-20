@@ -8,7 +8,7 @@ Code graph builder for Kodus code review. Parses source code into structural gra
 
 ## Features
 
-- **14 languages** — TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir
+- **Multi-language support.** kodus-graph covers TypeScript, Python, Go, Java, Ruby, and 9 more. Each language has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for the authoritative list and current capability depth per language.
 - **Structural graph** — Functions, classes, interfaces, enums as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS as edges
 - **Call resolution** — 5-tier confidence cascade with DI pattern detection
 - **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits)
