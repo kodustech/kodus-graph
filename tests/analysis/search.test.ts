@@ -124,6 +124,13 @@ describe('searchNodes', () => {
         const results = searchNodes(g, { query: '*', limit: 1 });
         expect(results).toHaveLength(1);
     });
+
+    it('returns ALL results when limit is undefined (command layer applies cap)', () => {
+        const results = searchNodes(g, { query: '*' });
+        // Regression guard: previously defaulted to 50 internally, which
+        // prevented the command layer from computing truthful `total` counts.
+        expect(results.length).toBeGreaterThan(1);
+    });
 });
 
 describe('findCallers', () => {

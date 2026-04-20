@@ -9,7 +9,9 @@ export interface SearchOptions {
 }
 
 export function searchNodes(graph: IndexedGraph, opts: SearchOptions): GraphNode[] {
-    const { query, kind, file, limit = 50 } = opts;
+    // `limit` is optional so the command layer can get the full result set and
+    // compute a truthful `total` before slicing. When undefined, don't truncate.
+    const { query, kind, file, limit } = opts;
     let results = graph.nodes;
 
     if (query) {
@@ -28,7 +30,7 @@ export function searchNodes(graph: IndexedGraph, opts: SearchOptions): GraphNode
 
     results.sort((a, b) => a.file_path.localeCompare(b.file_path) || a.line_start - b.line_start);
 
-    return results.slice(0, limit);
+    return limit !== undefined ? results.slice(0, limit) : results;
 }
 
 export function findCallers(graph: IndexedGraph, qualifiedName: string): GraphNode[] {
