@@ -502,8 +502,19 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
     }
 
     const lines: string[] = [];
+    // Dedup per `${source_file}→${target_qualified}` — a single changed file
+    // can import the same symbol/module twice (e.g. two `from X import …`
+    // statements). The underlying edges are distinct records (different
+    // `line`) but the agent-facing render shouldn't show the same pair twice.
+    const seen = new Set<string>();
     for (const [filePath, edges] of byFile) {
         for (const edge of edges) {
+            const dedupKey = `${filePath}→${edge.target_qualified}`;
+            if (seen.has(dedupKey)) {
+                continue;
+            }
+            seen.add(dedupKey);
+
             const key = `${edge.source_qualified}→${edge.target_qualified}`;
             const tags: string[] = [];
 

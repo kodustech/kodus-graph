@@ -124,7 +124,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     );
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     enrichBlastRadiusWithFlows(blastRadius, allFlows);
-    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles);
+    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles, graphIndex);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, {
         skipTests: opts.skipTests,
         riskConfig: opts.riskConfig,

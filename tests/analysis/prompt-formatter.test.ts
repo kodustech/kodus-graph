@@ -1530,4 +1530,54 @@ describe('formatPrompt — long contract diff rendering', () => {
         expect(text).toContain('before:');
         expect(text).toContain('after:');
     });
+
+    it('dedups duplicate IMPORTS edges so the same source→target renders once', () => {
+        // Two IMPORTS edges with identical file_path + target_qualified
+        // (same file imports the same symbol from two different statements).
+        // The renderer must emit a single line, not two.
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'handler',
+                    qualified_name: 'src/debug.py::handler',
+                    file_path: 'src/debug.py',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'python',
+                    is_test: false,
+                    file_hash: 'h',
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/debug.py',
+                    target_qualified: 'src/assemble.py',
+                    file_path: 'src/debug.py',
+                    line: 1,
+                },
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/debug.py',
+                    target_qualified: 'src/assemble.py',
+                    file_path: 'src/debug.py',
+                    line: 2,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: graphData,
+            changedFiles: ['src/debug.py'],
+            minConfidence: 0.3,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+        // The renderer emits `  src/debug.py → src/assemble.py (…)` per unique pair.
+        const matches = text.match(/src\/debug\.py → src\/assemble\.py/g) || [];
+        expect(matches.length).toBe(1);
+    });
 });

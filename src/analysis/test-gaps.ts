@@ -1,14 +1,19 @@
 import type { GraphData, TestGap } from '../graph/types';
+import { GraphIndex } from './graph-index';
 
-export function findTestGaps(graph: GraphData, changedFiles: string[]): TestGap[] {
+/**
+ * Enumerate each changed, untested function/method as a {@link TestGap}.
+ *
+ * "Untested" is determined by the same set of SOURCE files that
+ * `computeRiskScore` uses for its `test_gaps` factor (see
+ * `GraphIndex.testedFiles`). Keeping both in sync guarantees that the
+ * detail string ("N/M untested") matches `AnalysisOutput.test_gaps.length`
+ * — consumers can trust either one.
+ */
+export function findTestGaps(graph: GraphData, changedFiles: string[], index?: GraphIndex): TestGap[] {
     const changedSet = new Set(changedFiles);
-
-    // source_qualified on TESTED_BY edges is the tested function/file, e.g.
-    // 'src/auth.ts::authenticate' or just 'src/auth.ts'. Extract the file path
-    // prefix (before '::') to match against node.file_path.
-    const testedFiles = new Set(
-        graph.edges.filter((e) => e.kind === 'TESTED_BY').map((e) => e.source_qualified.split('::')[0]),
-    );
+    const idx = index ?? new GraphIndex(graph);
+    const testedFiles = idx.testedFiles;
 
     return graph.nodes
         .filter(

@@ -18,6 +18,16 @@ export class GraphIndex {
     private readonly byFile: Map<string, GraphNode[]>;
     private readonly byQualified: Map<string, GraphNode>;
     private readonly byEdgeKind: Map<EdgeKind, GraphEdge[]>;
+    /**
+     * Set of SOURCE file paths that have at least one TESTED_BY edge, i.e.
+     * files that contain a tested function/class. Derived from
+     * `edge.source_qualified` (the tested entity) rather than
+     * `edge.file_path` (which points at the test file). This matches the
+     * semantics used by `findTestGaps` — both risk-score's `test_gaps`
+     * factor and the analysis-level `test_gaps[]` array now consume the
+     * same set, so the detail string ("N/M untested") and the array
+     * length stay in sync.
+     */
     public readonly testedFiles: ReadonlySet<string>;
 
     constructor(public readonly graph: GraphData) {
@@ -44,7 +54,11 @@ export class GraphIndex {
                 this.byEdgeKind.set(edge.kind, [edge]);
             }
             if (edge.kind === 'TESTED_BY') {
-                tested.add(edge.file_path);
+                // `source_qualified` is the tested function/file (e.g.
+                // `src/auth.ts::authenticate` or `src/auth.ts`); extract the
+                // file prefix. `edge.file_path` would be wrong here — on
+                // TESTED_BY it points at the test file, not the tested file.
+                tested.add(edge.source_qualified.split('::')[0]);
             }
         }
         this.testedFiles = tested;

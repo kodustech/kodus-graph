@@ -312,6 +312,125 @@ describe('formatXml', () => {
         expect(xml).toContain('&lt;');
         expect(xml).toContain('&gt;');
     });
+
+    it('emits <Imports> and <Hierarchy> sections even when changedFunctions=0', () => {
+        // A file with a class and an import, but no function-level content
+        // change. Without the fix, XML is just a bare <Summary/> under
+        // <CallGraph> (~137 bytes) — the prompt format still shows IMPORTS
+        // and HIERARCHY sections. This test asserts parity.
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Class',
+                    name: 'Foo',
+                    qualified_name: 'src/foo.ts::Foo',
+                    file_path: 'src/foo.ts',
+                    line_start: 1,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Class',
+                    name: 'Base',
+                    qualified_name: 'src/base.ts::Base',
+                    file_path: 'src/base.ts',
+                    line_start: 1,
+                    line_end: 15,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/foo.ts',
+                    target_qualified: 'src/base.ts::Base',
+                    file_path: 'src/foo.ts',
+                    line: 1,
+                },
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'src/foo.ts::Foo',
+                    target_qualified: 'src/base.ts::Base',
+                    file_path: 'src/foo.ts',
+                    line: 3,
+                },
+            ],
+        };
+
+        // No changes — oldGraph === mergedGraph means the structural diff is empty.
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: graphData,
+            changedFiles: ['src/foo.ts'],
+            minConfidence: 0.3,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output);
+
+        // Sanity: no changed functions (the scenario we care about).
+        expect(xml).toContain('changedFunctions="0"');
+        // Imports section appears with the deduped source→target pair.
+        expect(xml).toContain('<Imports>');
+        expect(xml).toContain('<Import source="src/foo.ts"');
+        expect(xml).toContain('target="src/base.ts::Base"');
+        expect(xml).toContain('</Imports>');
+        // Hierarchy section lists the class (with its extends relationship).
+        expect(xml).toContain('<Hierarchy>');
+        expect(xml).toContain('<Class name="Foo" extends="Base"');
+        expect(xml).toContain('</Hierarchy>');
+    });
+
+    it('dedups duplicate IMPORTS edges (same source→target emitted once)', () => {
+        // Two `from assemble import …` in the same file would produce two
+        // IMPORTS edges with identical (file_path, target_qualified) but
+        // different lines. The renderer must show a single <Import> entry.
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'run',
+                    qualified_name: 'src/caller.py::run',
+                    file_path: 'src/caller.py',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'python',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/caller.py',
+                    target_qualified: 'src/assemble.py',
+                    file_path: 'src/caller.py',
+                    line: 1,
+                },
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/caller.py',
+                    target_qualified: 'src/assemble.py',
+                    file_path: 'src/caller.py',
+                    line: 2,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: graphData,
+            changedFiles: ['src/caller.py'],
+            minConfidence: 0.3,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output);
+
+        const importMatches = xml.match(/<Import source="src\/caller\.py"/g) || [];
+        expect(importMatches.length).toBe(1);
+    });
 });
 
 describe('ReviewFocus dedup', () => {

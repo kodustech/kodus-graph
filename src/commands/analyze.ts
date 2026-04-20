@@ -147,7 +147,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
         riskConfig: riskConfigResolved,
         index: graphIndex,
     });
-    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files);
+    const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, opts.files, graphIndex);
 
     const output: AnalysisOutput = {
         blast_radius: blastRadius,

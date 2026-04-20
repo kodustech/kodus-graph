@@ -5,6 +5,11 @@ import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
 import { computeFunctionRisk } from './prompt-formatter';
 
+/** Short name from qualified_name (`file::Class::method` → `method`). */
+function shortName(qualifiedName: string): string {
+    return qualifiedName.split('::').pop() || qualifiedName;
+}
+
 export interface XmlFormatterOptions {
     maxFunctions?: number;
     maxCallersPerFunction?: number;
@@ -514,7 +519,111 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
         lines.push(`  <!-- Showing top ${maxFunctions} of ${sorted.length} changed functions (sorted by risk) -->`);
     }
 
+    // ── Imports (mirrors the prompt format's IMPORTS section). Emitted
+    //    whenever the changed files have IMPORTS edges so the XML consumer
+    //    gets the same baseline signal as the prompt consumer — especially
+    //    important when changedFunctions=0 (XML would otherwise be near-empty
+    //    while the prompt shows real content).
+    const importsEntries = buildImportsEntries(output);
+    if (importsEntries.length > 0) {
+        lines.push('');
+        lines.push('  <Imports>');
+        for (const entry of importsEntries) {
+            const newAttr = entry.isNew ? ' new="true"' : '';
+            const unresolvedAttr = entry.unresolved ? ' unresolved="true"' : '';
+            lines.push(
+                `    <Import source="${escapeXml(entry.source)}" target="${escapeXml(entry.target)}"${newAttr}${unresolvedAttr} />`,
+            );
+        }
+        lines.push('  </Imports>');
+    }
+
+    // ── Hierarchy (mirrors the prompt format's HIERARCHY section).
+    if (analysis.inheritance.length > 0) {
+        lines.push('');
+        lines.push('  <Hierarchy>');
+        for (const entry of analysis.inheritance) {
+            const name = shortName(entry.qualified_name);
+            const extendsAttr = entry.extends ? ` extends="${escapeXml(shortName(entry.extends))}"` : '';
+            const implementsAttr =
+                entry.implements.length > 0
+                    ? ` implements="${escapeXml(entry.implements.map(shortName).join(', '))}"`
+                    : '';
+            if (entry.children.length > 0) {
+                lines.push(`    <Class name="${escapeXml(name)}"${extendsAttr}${implementsAttr}>`);
+                for (const child of entry.children) {
+                    lines.push(`      <Child>${escapeXml(shortName(child))}</Child>`);
+                }
+                lines.push('    </Class>');
+            } else {
+                lines.push(`    <Class name="${escapeXml(name)}"${extendsAttr}${implementsAttr} />`);
+            }
+        }
+        lines.push('  </Hierarchy>');
+    }
+
     lines.push('</CallGraph>');
 
     return lines.join('\n');
+}
+
+// ── Imports entry helper ──
+
+interface ImportEntry {
+    source: string;
+    target: string;
+    isNew: boolean;
+    unresolved: boolean;
+}
+
+/**
+ * Build the deduplicated `<Import>` entries for the XML format — same data
+ * as the prompt formatter's IMPORTS section (one line per unique
+ * `source_file → target`), but emitted as attributed XML.
+ */
+function buildImportsEntries(output: ContextV2Output): ImportEntry[] {
+    const { analysis } = output;
+    const changedFiles = new Set(analysis.structural_diff.changed_files);
+
+    const importEdges = output.graph.edges.filter((e) => e.kind === 'IMPORTS' && changedFiles.has(e.file_path));
+    if (importEdges.length === 0) {
+        return [];
+    }
+
+    const newImportKeys = new Set(
+        analysis.structural_diff.edges.added
+            .filter((e) => e.kind === 'IMPORTS')
+            .map((e) => `${e.source_qualified}→${e.target_qualified}`),
+    );
+    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
+
+    const seen = new Set<string>();
+    const entries: ImportEntry[] = [];
+    for (const edge of importEdges) {
+        const dedupKey = `${edge.file_path}→${edge.target_qualified}`;
+        if (seen.has(dedupKey)) {
+            continue;
+        }
+        seen.add(dedupKey);
+
+        let targetExists = allNodes.has(edge.target_qualified);
+        if (!targetExists) {
+            const prefix = `${edge.target_qualified}::`;
+            for (const qn of allNodes) {
+                if (qn.startsWith(prefix)) {
+                    targetExists = true;
+                    break;
+                }
+            }
+        }
+
+        const key = `${edge.source_qualified}→${edge.target_qualified}`;
+        entries.push({
+            source: edge.file_path,
+            target: edge.target_qualified,
+            isNew: newImportKeys.has(key),
+            unresolved: !targetExists,
+        });
+    }
+    return entries;
 }
