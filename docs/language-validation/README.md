@@ -15,3 +15,4 @@ baselines, notes) by the final task of the Fase D plan.
 | csharp | [serilog/serilog](https://github.com/serilog/serilog) | 2026-04-19 | 🟢 PASS |
 | c | [redis/redis](https://github.com/redis/redis) | 2026-04-20 | 🟡 GAP |
 | cpp | [google/flatbuffers](https://github.com/google/flatbuffers) | 2026-04-20 | 🟢 PASS |
+| php | [laravel/framework](https://github.com/laravel/framework) | 2026-04-20 | 🟡 GAP |
