@@ -20,16 +20,16 @@
  | Go | 🟢 full | ⚡ fast | ✓ | ✓ | ✓ | factory | ✓ | ✓ | `tests/fixtures/go` | 
  | Java | 🟡 basic | 🐢 slow | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/java` | 
  | Ruby | 🟡 basic | 🐢 slow | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/ruby` | 
+ | C# | 🟢 full | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/csharp` | 
+ | Swift | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/swift` | 
+ | Scala | 🟢 full | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/scala` | 
+ | Dart | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/dart` | 
+ | Elixir | 🟢 full | 🚶 moderate | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/elixir` | 
  | Kotlin | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/kotlin` | 
  | Rust | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
- | C# | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/csharp` | 
- | Scala | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/scala` | 
  | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | — | ✓ | ✓ | `tests/fixtures/php` | 
- | Swift | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/swift` | 
- | Dart | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/dart` | 
  | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/c` | 
  | C++ | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/cpp` | 
- | Elixir | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/elixir` | 
 
 ## Per-language notes
 
@@ -73,44 +73,58 @@
 - No DI heuristic registered
 - Known limitation: streaming output or worker parallelism needed for interactive use
 
-### Kotlin (`kotlin`)
-
-- Reuses Java DI heuristic
-- Not validated on real repo
-
-### Rust (`rust`)
-
-- No DI convention
-- capabilities: hasExceptions=false (Result/Option)
-
 ### C# (`csharp`)
 
+- Validated on serilog (214 files, bar cleared) — Fase D 2026-04-19
 - IFoo->Foo DI heuristic (same as TypeScript)
+
+### Swift (`swift`)
+
+- Validated on swift-package-manager (1683 files, 92.8% resolved, receiver 3750) — Fase D 2026-04-20
 
 ### Scala (`scala`)
 
+- Validated on mill (2368 files, 75.8% resolved, receiver 265) — Fase D 2026-04-20
 - Reuses Java DI heuristic
-
-### PHP (`php`)
-
-- Reuses Java DI heuristic; no receiver-type inference
 
 ### Dart (`dart`)
 
+- Validated on quiver-dart (104 files, 98.7% resolved, receiver 40) — Fase D 2026-04-20
 - Member-call extraction required custom sibling-walk (Dart grammar has no method_invocation kind)
+
+### Elixir (`elixir`)
+
+- Validated on phoenix (201 files, 79.9% resolved, receiver 75) — Fase D 2026-04-20
+- Complexity uses specialized computeElixirComplexity (grammar emits call nodes, not distinct kinds)
+- capabilities: hasAsync=false (BEAM concurrency, not async/await)
+
+### Kotlin (`kotlin`)
+
+- Validated on kotlinx.coroutines 2026-04-19: 🟡 GAP (ambigRatio 0.683 > 0.6) — same Kotlin method-name-reuse pattern as Java
+- Reuses Java DI heuristic
+
+### Rust (`rust`)
+
+- Real-repo PASS on tokio (776 files, bar cleared) — Fase D 2026-04-19
+- Kept at basic: canonical fixture is 1 file / 0 resolved calls — too thin for CI baseline. Beef up fixture to promote.
+- No DI convention
+- capabilities: hasExceptions=false (Result/Option)
+
+### PHP (`php`)
+
+- Validated on laravel/framework 2026-04-20: 🟡 GAP — only 10 edges extracted from 28508 functions (call-site extractor too thin)
+- Reuses Java DI heuristic; no receiver-type inference
 
 ### C (`c`)
 
+- Validated on redis 2026-04-20: 🟡 GAP (receiver+di both <1 per-1k — C extractor has receiver_type: none)
 - capabilities: hasExceptions=false
 
 ### C++ (`cpp`)
 
+- Real-repo PASS on flatbuffers (1322 files, 88.6% resolved) — Fase D 2026-04-20
+- Kept at basic: canonical fixture is 2 files / 0 call sites — too thin for CI baseline. Beef up fixture to promote.
 - Shares C extractor; capabilities.hasExceptions=true
-
-### Elixir (`elixir`)
-
-- Complexity uses specialized computeElixirComplexity (grammar emits call nodes, not distinct kinds)
-- capabilities: hasAsync=false (BEAM concurrency, not async/await)
 
 ## Baselines
 
@@ -122,3 +136,8 @@ Languages in the 🟢 full tier have recorded baseline `tier_distribution` ratio
 | Python | 0.4 | 0.6 | 1 | 0 | 0.1 |
 | Go | 0.4 | 0.6 | 1 | 0 | 0.1 |
 | Java | 0.3 | 0.8 | 0 | 0 | 0.05 |
+| C# | 0.8 | 0.1 | 50 | 0 | 0.8 |
+| Swift | 0.8 | 0.1 | 0 | 0 | 0.8 |
+| Scala | 0.8 | 1 | 0 | 0 | 0 |
+| Dart | 0.4 | 1 | 0 | 0 | 0 |
+| Elixir | 0.8 | 0.1 | 0 | 0 | 0.8 |
