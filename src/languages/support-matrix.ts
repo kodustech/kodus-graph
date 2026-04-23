@@ -373,8 +373,9 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         canonical_fixture: 'tests/fixtures/php',
         baseline_tier_ratios: null,
         notes: [
-            'Validated on laravel/framework 2026-04-20: 🟡 GAP — only 10 edges extracted from 28508 functions (call-site extractor too thin)',
-            'Reuses Java DI heuristic; no receiver-type inference',
+            'Validated on laravel/framework 2026-04-23: 93.8% resolved, 160k edges, 13344 high-confidence CALLS — up from 10 edges (fix: custom walk of function_call_expression / member_call_expression / scoped_call_expression)',
+            'Stays basic: receiver+di per-1k < 1 (PHP is dynamically typed; receiver-type inference via PHPDoc/constructor type hints is future work)',
+            'Reuses Java DI heuristic',
         ],
     },
     {

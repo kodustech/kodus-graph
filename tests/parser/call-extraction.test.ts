@@ -213,6 +213,126 @@ end
     });
 });
 
+import { extractCallsFromPHP } from '../../src/languages/php/extractor';
+
+describe('extractCallsFromPHP', () => {
+    async function extractCalls(source: string, fp: string = 'src/test.php'): Promise<RawCallSite[]> {
+        const root = await parseAsync('php' as any, source);
+        const calls: RawCallSite[] = [];
+        extractCallsFromPHP(root.root(), fp, calls);
+        return calls;
+    }
+
+    it('extracts bare function calls (function_call_expression)', async () => {
+        const source = `<?php
+function main() {
+    validate($token);
+    processData($input);
+}
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('validate');
+        expect(names).toContain('processData');
+    });
+
+    it('extracts member calls ($obj->method)', async () => {
+        const source = `<?php
+function run($svc) {
+    $svc->getName();
+    $svc->classify(5);
+}
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('getName');
+        expect(names).toContain('classify');
+    });
+
+    it('extracts static calls (Foo::bar())', async () => {
+        const source = `<?php
+function run() {
+    AuthService::validate($token);
+    Logger::info("ok");
+}
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('validate');
+        expect(names).toContain('info');
+    });
+
+    it('sets resolveInClass for $this->method() calls', async () => {
+        const source = `<?php
+class UserService {
+    public function greet() {
+        return $this->getName();
+    }
+    public function getName() {
+        return "x";
+    }
+}
+`;
+        const calls = await extractCalls(source);
+        const selfCall = calls.find((c) => c.callName === 'getName');
+        expect(selfCall).toBeDefined();
+        expect(selfCall!.resolveInClass).toBe('UserService');
+    });
+
+    it('sets diField for $this->field->method() DI-style calls', async () => {
+        const source = `<?php
+class Controller {
+    public function handle($token) {
+        $this->authService->validate($token);
+    }
+}
+`;
+        const calls = await extractCalls(source);
+        const diCall = calls.find((c) => c.callName === 'validate');
+        expect(diCall).toBeDefined();
+        expect(diCall!.diField).toBe('authService');
+    });
+
+    it('sets resolveInClass for parent::method() super calls', async () => {
+        const source = `<?php
+class UserService extends BaseService {
+    public function log($msg) {
+        parent::log($msg);
+    }
+}
+`;
+        const calls = await extractCalls(source);
+        const superCall = calls.find((c) => c.callName === 'log' && c.resolveInClass);
+        expect(superCall).toBeDefined();
+        expect(superCall!.resolveInClass).toBe('BaseService');
+    });
+
+    it('retains NOISE-named calls (noise is filtered by the resolver)', async () => {
+        const source = `<?php
+function main() {
+    array_push($arr, 1);
+    print_r($x);
+    realFunction($y);
+}
+`;
+        const calls = await extractCalls(source);
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('array_push');
+        expect(names).toContain('realFunction');
+    });
+
+    it('records correct line numbers', async () => {
+        const source = `<?php
+$a = 1;
+myFunc($a);
+`;
+        const calls = await extractCalls(source);
+        const call = calls.find((c) => c.callName === 'myFunc');
+        expect(call).toBeDefined();
+        expect(call!.line).toBe(2); // 0-indexed — line 3 in source
+    });
+});
+
 describe('extractCallsFromGeneric', () => {
     async function extractCalls(
         source: string,

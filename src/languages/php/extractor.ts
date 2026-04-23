@@ -1,6 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -249,23 +248,150 @@ export const phpExtractors: LanguageExtractors = {
     },
 
     extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void {
-        const findEnclosingClass = (node: SgNode): SgNode | null => {
-            return (
-                node.ancestors().find((a) => {
-                    const k = String(a.kind());
-                    return k.includes('class') || k.includes('struct') || k.includes('impl');
-                }) ?? null
-            );
-        };
-
-        const config: CallExtractionConfig = {
-            selfPrefixes: ['$this->'],
-            superPrefixes: ['parent::'],
-            findEnclosingClass,
-        };
-        extractCalls(root, fp, config, calls);
+        extractCallsFromPHP(root, fp, calls);
     },
 };
+
+// PHP grammar does not expose a single wrapper kind that the shared
+// `$CALLEE($$$ARGS)` pattern can match against — that pattern yields zero
+// hits on real code (validated on laravel/framework: 10 edges for 28k
+// functions pre-fix). PHP emits three distinct call kinds plus a
+// constructor kind:
+//   function_call_expression:  helperFunction()
+//   member_call_expression:    $obj->method()      / $this->method()
+//                              / $this->field->method()  (DI)
+//   scoped_call_expression:    Foo::bar()  / parent::log()  / self::x()
+//   object_creation_expression: new Foo()           (tracked elsewhere)
+// We walk each kind directly and populate diField / resolveInClass
+// matching the TypeScript/Python conventions.
+export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite[]): void {
+    const findEnclosingClass = (node: SgNode): SgNode | null =>
+        node.ancestors().find((a) => {
+            const k = String(a.kind());
+            return k === 'class_declaration' || k === 'interface_declaration' || k === 'trait_declaration';
+        }) ?? null;
+
+    // ── function_call_expression: helperFunction() ─────────────────────
+    for (const node of root.findAll({ rule: { kind: 'function_call_expression' } })) {
+        const nameNode = node.children().find((c) => c.kind() === 'name');
+        if (!nameNode) {
+            continue;
+        }
+        const r = node.range().start;
+        calls.push({ source: fp, callName: nameNode.text(), line: r.line, column: r.column });
+    }
+
+    // ── member_call_expression: $obj->method(), $this->m(), $this->f->m() ─
+    for (const node of root.findAll({ rule: { kind: 'member_call_expression' } })) {
+        // The PHP grammar emits `member_call_expression` children as:
+        //   [object, ->, name, arguments]
+        // where `object` is `variable_name` (simple) or `member_access_expression`
+        // (chained — DI pattern $this->field->method).
+        const methodNameNode = node.children().find((c) => c.kind() === 'name');
+        if (!methodNameNode) {
+            continue;
+        }
+        const callName = methodNameNode.text();
+
+        const objectNode = node.children()[0];
+        if (!objectNode) {
+            continue;
+        }
+
+        let resolveInClass: string | undefined;
+        let diField: string | undefined;
+
+        if (objectNode.kind() === 'variable_name') {
+            // `$this->method()` — resolve in enclosing class
+            if (objectNode.text() === '$this') {
+                const classNode = findEnclosingClass(node);
+                resolveInClass = classNode?.field('name')?.text();
+            }
+            // Other $var->method() — no receiver-type inference registered
+            // for PHP, so nothing more to add.
+        } else if (objectNode.kind() === 'member_access_expression') {
+            // `$this->field->method()` — DI pattern.
+            // member_access_expression children: [variable_name, ->, name]
+            const accessChildren = objectNode.children();
+            const base = accessChildren[0];
+            const fieldNameNode = accessChildren.find((c) => c.kind() === 'name');
+            if (base?.text() === '$this' && fieldNameNode) {
+                diField = fieldNameNode.text();
+            }
+        }
+
+        const r = node.range().start;
+        calls.push({
+            source: fp,
+            callName,
+            line: r.line,
+            column: r.column,
+            ...(resolveInClass ? { resolveInClass } : {}),
+            ...(diField ? { diField } : {}),
+        });
+    }
+
+    // ── scoped_call_expression: Foo::bar(), parent::log(), self::x() ────
+    for (const node of root.findAll({ rule: { kind: 'scoped_call_expression' } })) {
+        // Children: [scope, ::, method-name-or-variable, arguments]
+        // scope is either `name` (class like `Foo`) or `relative_scope`
+        // (`self`/`parent`/`static`). Method is `name` or `variable_name`.
+        const children = node.children();
+        const scopeNode = children[0];
+        if (!scopeNode) {
+            continue;
+        }
+
+        // Method-name node is the first `name` or `variable_name` after the `::`.
+        // Skip the scope `name` if it's the class side of `Foo::bar()`.
+        let methodNode: SgNode | undefined;
+        let seenDoubleColon = false;
+        for (const c of children) {
+            if (c.kind() === '::') {
+                seenDoubleColon = true;
+                continue;
+            }
+            if (seenDoubleColon && (c.kind() === 'name' || c.kind() === 'variable_name')) {
+                methodNode = c;
+                break;
+            }
+        }
+        if (!methodNode) {
+            continue;
+        }
+        // Strip a leading `$` from variable-name callees (`self::$helper()`).
+        const callName = methodNode.text().replace(/^\$/, '');
+        if (!callName) {
+            continue;
+        }
+
+        let resolveInClass: string | undefined;
+        if (scopeNode.kind() === 'relative_scope') {
+            const scope = scopeNode.text();
+            const classNode = findEnclosingClass(node);
+            if (classNode) {
+                if (scope === 'parent') {
+                    resolveInClass = phpExtends(classNode);
+                } else if (scope === 'self' || scope === 'static') {
+                    resolveInClass = classNode.field('name')?.text();
+                }
+            }
+        } else if (scopeNode.kind() === 'name') {
+            // `Foo::bar()` — scope is an explicit class name; resolver can
+            // use it as a hint to prefer methods in that class.
+            resolveInClass = scopeNode.text();
+        }
+
+        const r = node.range().start;
+        calls.push({
+            source: fp,
+            callName,
+            line: r.line,
+            column: r.column,
+            ...(resolveInClass ? { resolveInClass } : {}),
+        });
+    }
+}
 
 // Receiver-type inference: no-op.
 //
