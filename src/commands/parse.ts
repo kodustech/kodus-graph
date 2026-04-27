@@ -2,7 +2,7 @@ import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
 import { writeGraphJSON } from '../graph/json-writer';
-import type { ImportEdge, TierDistribution } from '../graph/types';
+import type { GraphNode, ImportEdge, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { resolveAllCalls } from '../resolver/call-resolver';
@@ -14,6 +14,11 @@ import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 
+// Symbol-bearing node kinds — what we feed into the symbol table when a
+// caller (currently `context`) passes a baseline graph to widen resolution.
+// `Test` is excluded since tests aren't callable targets.
+const SYMBOL_KINDS = new Set(['Function', 'Method', 'Constructor', 'Class', 'Interface', 'Enum']);
+
 export interface ParseOptions {
     repoDir: string;
     files?: string[];
@@ -23,6 +28,18 @@ export interface ParseOptions {
     exclude?: string[];
     skipTests?: boolean;
     maxMemoryMB?: number;
+    /**
+     * Baseline graph nodes to seed the symbol table with. Used by the
+     * `context` command so a slice re-parse resolves call sites against the
+     * full repository's symbol set instead of just the slice's. Nodes whose
+     * `file_path` matches a slice file are skipped — the slice's fresh
+     * extraction overrides the baseline for its own files.
+     *
+     * Off by default. `parse --all` and `parse --files` (without baseline)
+     * keep their original behavior — symbol table is built from extracted
+     * symbols only.
+     */
+    baselineNodes?: GraphNode[];
 }
 
 export async function executeParse(opts: ParseOptions): Promise<void> {
@@ -53,6 +70,40 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     }
     for (const i of rawGraph.interfaces) {
         symbolTable.add(i.file, i.name, i.qualified);
+    }
+
+    // B8 fix: when invoked with a baseline graph (currently from `context`),
+    // seed the symbol table with every callable symbol from baseline files
+    // OUTSIDE the slice. The slice's fresh extraction owns symbols for files
+    // it parsed; baseline fills in everything else. Without this, slice-only
+    // re-parse drops to ambiguous tier for any name defined in another file.
+    if (opts.baselineNodes && opts.baselineNodes.length > 0) {
+        const sliceFiles = new Set<string>();
+        for (const f of rawGraph.functions) {
+            sliceFiles.add(f.file);
+        }
+        for (const c of rawGraph.classes) {
+            sliceFiles.add(c.file);
+        }
+        for (const i of rawGraph.interfaces) {
+            sliceFiles.add(i.file);
+        }
+        let seeded = 0;
+        for (const node of opts.baselineNodes) {
+            if (sliceFiles.has(node.file_path)) {
+                continue;
+            }
+            if (!SYMBOL_KINDS.has(node.kind)) {
+                continue;
+            }
+            symbolTable.add(node.file_path, node.name, node.qualified_name);
+            seeded++;
+        }
+        log.debug('parse: seeded symbol table with baseline nodes', {
+            seeded,
+            baselineTotal: opts.baselineNodes.length,
+            sliceFiles: sliceFiles.size,
+        });
     }
 
     // Pre-resolve re-exports so barrel imports follow through to actual definitions
@@ -123,7 +174,20 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     const parseErrors = rawGraph.parseErrors;
     const extractErrors = rawGraph.extractErrors;
-    const graphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
+    // When a baseline is supplied, expose its file paths to the builder so
+    // CALLS edges that target outside-slice symbols aren't filtered out
+    // (the builder's external-target guard otherwise drops them).
+    const baselineFiles = opts.baselineNodes ? new Set(opts.baselineNodes.map((n) => n.file_path)) : undefined;
+    const graphData = buildGraphData(
+        rawGraph,
+        callEdges,
+        importEdges,
+        repoDir,
+        fileHashes,
+        symbolTable,
+        importMap,
+        baselineFiles,
+    );
     process.stderr.write(`[5/5] Built graph: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges\n`);
 
     // Release intermediaries — no longer needed after buildGraphData

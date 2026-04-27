@@ -49,6 +49,58 @@ describe('executeContext', () => {
         rmSync(outPath, { force: true });
     });
 
+    it('B8: slice CALLS edges resolve consistently with the full-graph baseline', async () => {
+        // auth.ts calls findUser() (defined in db.ts). Without the baseline
+        // seed, db.ts's symbols are invisible to the slice re-parse and the
+        // call falls to a lower tier. With the seed, the slice resolver sees
+        // db.ts and returns the same target as the full graph.
+        const slicePath = '/tmp/kodus-graph-test-ctx-b8.json';
+        await executeParse({
+            repoDir: fixtureDir,
+            all: true,
+            out: parsePath,
+        });
+        const baseline = JSON.parse(readFileSync(parsePath, 'utf-8'));
+
+        await executeContext({
+            repoDir: fixtureDir,
+            files: ['src/auth.ts'],
+            graph: parsePath,
+            out: slicePath,
+            minConfidence: 0.0,
+            maxDepth: 3,
+            format: 'json',
+        });
+
+        const ctx = JSON.parse(readFileSync(slicePath, 'utf-8'));
+
+        // Find the findUser CALLS edge from auth.ts in BOTH graphs and assert
+        // they target the same qualified symbol. The merged graph in the
+        // context output contains the slice's re-resolved edges.
+        const baselineEdge = baseline.edges.find(
+            (e: { kind: string; file_path: string; target_qualified?: string; source_qualified?: string }) =>
+                e.kind === 'CALLS' &&
+                e.file_path === 'src/auth.ts' &&
+                e.source_qualified?.includes('authenticate') &&
+                e.target_qualified?.includes('findUser'),
+        );
+        expect(baselineEdge).toBeDefined();
+
+        const sliceEdge = ctx.graph.edges.find(
+            (e: { kind: string; file_path: string; target_qualified?: string; source_qualified?: string }) =>
+                e.kind === 'CALLS' &&
+                e.file_path === 'src/auth.ts' &&
+                e.source_qualified?.includes('authenticate') &&
+                e.target_qualified?.includes('findUser'),
+        );
+        expect(sliceEdge).toBeDefined();
+        expect(sliceEdge.target_qualified).toBe(baselineEdge.target_qualified);
+        expect(sliceEdge.confidence).toBe(baselineEdge.confidence);
+
+        rmSync(parsePath, { force: true });
+        rmSync(slicePath, { force: true });
+    });
+
     it('should produce prompt text with --format prompt', async () => {
         const promptPath = '/tmp/kodus-graph-test-prompt.txt';
 

@@ -45,6 +45,38 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
         maxDepth: opts.maxDepth,
     });
 
+    // Load baseline graph FIRST (if provided) so we can seed the slice
+    // re-parse's symbol table with its symbols. Without that seed, the slice
+    // resolver only sees the slice's own files → import/unique tiers fall
+    // through to ambiguous, and tier distribution drifts away from the full
+    // analyze run (B8 in NEXT-STEPS).
+    let validatedBaseline: { nodes: GraphData['nodes']; edges: GraphData['edges']; sha: string } | null = null;
+    if (opts.graph) {
+        let raw: unknown;
+        try {
+            raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+        } catch (_err) {
+            log.error('failed to read --graph file', { path: opts.graph });
+            process.exit(1);
+        }
+        try {
+            enforceSchemaVersion(raw);
+        } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+            process.exit(1);
+        }
+        const validated = GraphInputSchema.safeParse(raw);
+        if (!validated.success) {
+            log.error('invalid graph JSON', { error: validated.error.message });
+            process.exit(1);
+        }
+        validatedBaseline = {
+            nodes: validated.data.nodes,
+            edges: validated.data.edges,
+            sha: ((raw as Record<string, unknown>)?.sha as string) || '',
+        };
+    }
+
     // Parse changed files using secure temp
     const tmp = createSecureTempFile('ctx');
     try {
@@ -54,6 +86,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             all: false,
             out: tmp.filePath,
             skipTests: opts.skipTests,
+            baselineNodes: validatedBaseline?.nodes,
         });
         const parseResult = JSON.parse(readFileSync(tmp.filePath, 'utf-8'));
 
@@ -62,35 +95,13 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             edges: parseResult.edges?.length ?? 0,
         });
 
-        // Load and merge with main graph if provided
+        // Merge slice with main graph if baseline is present
         let mergedGraph: GraphData;
         let oldGraph: GraphData | null = null;
 
-        if (opts.graph) {
-            let raw: unknown;
-            try {
-                raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
-            } catch (_err) {
-                log.error('failed to read --graph file', { path: opts.graph });
-                process.exit(1);
-            }
-            // Enforce schema version BEFORE the legacy-shape safeParse; see
-            // analyze.ts for the same guard rationale.
-            try {
-                enforceSchemaVersion(raw);
-            } catch (err) {
-                log.error(err instanceof Error ? err.message : String(err));
-                process.exit(1);
-            }
-            const validated = GraphInputSchema.safeParse(raw);
-            if (!validated.success) {
-                log.error('invalid graph JSON', { error: validated.error.message });
-                process.exit(1);
-            }
+        if (validatedBaseline) {
             const changedSet = new Set(opts.files);
-
-            // Detect same-branch via commit sha comparison
-            const graphSha = ((raw as Record<string, unknown>)?.sha as string) || '';
+            const graphSha = validatedBaseline.sha;
             let headSha = '';
             try {
                 headSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf-8' }).trim();
@@ -100,8 +111,8 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             const sameBranch = graphSha !== '' && graphSha === headSha;
 
             log.info('context: baseline graph loaded', {
-                graphNodes: validated.data.nodes.length,
-                graphEdges: validated.data.edges.length,
+                graphNodes: validatedBaseline.nodes.length,
+                graphEdges: validatedBaseline.edges.length,
                 sameBranch,
                 graphSha: graphSha ? graphSha.substring(0, 8) : 'none',
                 headSha: headSha ? headSha.substring(0, 8) : 'none',
@@ -112,21 +123,21 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
                 // Exclude changed files from oldGraph so diff detects their functions as "added"
                 // instead of falsely marking everything "unchanged".
                 oldGraph = {
-                    nodes: validated.data.nodes.filter((n: { file_path: string }) => !changedSet.has(n.file_path)),
-                    edges: validated.data.edges.filter((e: { file_path: string }) => !changedSet.has(e.file_path)),
+                    nodes: validatedBaseline.nodes.filter((n) => !changedSet.has(n.file_path)),
+                    edges: validatedBaseline.edges.filter((e) => !changedSet.has(e.file_path)),
                 };
                 log.debug('Same-branch detected: excluding changed files from baseline', {
                     changedFiles: opts.files.length,
                 });
             } else {
-                oldGraph = { nodes: validated.data.nodes, edges: validated.data.edges };
+                oldGraph = { nodes: validatedBaseline.nodes, edges: validatedBaseline.edges };
             }
 
             const mainGraph: MainGraphInput = {
                 repo_id: '',
                 sha: '',
-                nodes: validated.data.nodes,
-                edges: validated.data.edges,
+                nodes: validatedBaseline.nodes,
+                edges: validatedBaseline.edges,
             };
             mergedGraph = mergeGraphs(mainGraph, parseResult, opts.files);
         } else {

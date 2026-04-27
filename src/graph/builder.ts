@@ -10,6 +10,15 @@ export function buildGraphData(
     fileHashes: Map<string, string>,
     symbolTable?: { lookupGlobal(name: string): string[] },
     importMap?: { lookup(file: string, name: string): string | null },
+    /**
+     * Files known to the resolver but not in `raw` (e.g. baseline graph files
+     * passed to `parse` by `context`). The CALLS-edge filter at line ~157
+     * drops edges whose target file isn't in `parsedFiles`; without this hook
+     * a slice re-parse with baseline-seeded resolution would emit valid
+     * 0.95-tier edges that get filtered out because the target file lives
+     * outside the slice.
+     */
+    additionalKnownFiles?: ReadonlySet<string>,
 ): GraphData {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
@@ -129,6 +138,11 @@ export function buildGraphData(
     }
     for (const t of raw.tests) {
         parsedFiles.add(t.file);
+    }
+    if (additionalKnownFiles) {
+        for (const f of additionalKnownFiles) {
+            parsedFiles.add(f);
+        }
     }
 
     // Build file→functions index to resolve caller from line number
