@@ -456,7 +456,10 @@ export const javaExtractors: LanguageExtractors = {
                 // by file/line/column to surface `receiverType`.
             }
 
-            const r = mi.range().start;
+            // Column = end of method name (≈ col of `(`). Matches receiver-
+            // type extractor and the shared call extractor convention so
+            // chained calls don't collide on receiver-type lookup.
+            const r = (nameNode ?? mi).range().end;
             calls.push({
                 source: fp,
                 callName,
@@ -506,7 +509,9 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             continue;
         }
-        const r = mi.range().start;
+        // Column = end of method name (≈ col of `(` of args).
+        const nameNode = mi.field('name');
+        const r = (nameNode ?? mi).range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
     return out;

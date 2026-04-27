@@ -376,7 +376,9 @@ function extractReceiverTypesGo(root: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             continue;
         }
-        const r = ce.range().start;
+        // Column = end of selector_expression (≈ col of `(`). Matches the call
+        // extractor convention so chained calls have distinct columns.
+        const r = fn.range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
     return out;

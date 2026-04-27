@@ -464,14 +464,19 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
     // receiver-type tier so user-domain calls survive to be resolved.
     for (const m of rootNode.findAll('this.$FIELD.$METHOD($$$ARGS)')) {
         const field = m.getMatch('FIELD')?.text();
-        const method = m.getMatch('METHOD')?.text();
-        if (!method) {
+        const methodNode = m.getMatch('METHOD');
+        const method = methodNode?.text();
+        if (!method || !methodNode) {
             continue;
         }
+        // Column = end of method name (≈ col of `(`). Same convention as
+        // shared/extract-calls.ts so chained calls have distinct columns.
+        const r = methodNode.range().end;
         calls.push({
             source: fp,
             callName: method,
-            line: m.range().start.line,
+            line: r.line,
+            column: r.column,
             diField: field,
         });
     }
@@ -637,7 +642,10 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             continue;
         }
-        const r = ce.range().start;
+        // Column convention: end-of-function (≈ col of `(` of args). Matches
+        // the call extractor so chained calls don't collide on receiver-type
+        // lookup. See src/shared/extract-calls.ts.
+        const r = (ce.field('function') ?? ce).range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
     return out;

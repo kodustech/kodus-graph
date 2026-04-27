@@ -277,7 +277,9 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
         if (!nameNode) {
             continue;
         }
-        const r = node.range().start;
+        // Column = end of name (≈ col of `(`). See shared/extract-calls.ts
+        // for why end-of-callee is the right convention for chained calls.
+        const r = nameNode.range().end;
         calls.push({ source: fp, callName: nameNode.text(), line: r.line, column: r.column });
     }
 
@@ -320,7 +322,7 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
             }
         }
 
-        const r = node.range().start;
+        const r = methodNameNode.range().end;
         calls.push({
             source: fp,
             callName,
@@ -382,7 +384,7 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
             resolveInClass = scopeNode.text();
         }
 
-        const r = node.range().start;
+        const r = methodNode.range().end;
         calls.push({
             source: fp,
             callName,

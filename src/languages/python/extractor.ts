@@ -583,7 +583,9 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             continue;
         }
-        const r = callRange.start;
+        // Column = end of attribute (≈ col of `(` of args). Matches the call
+        // extractor convention so chained calls don't collide.
+        const r = attr.range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
 

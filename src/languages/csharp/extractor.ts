@@ -369,7 +369,7 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             continue;
         }
-        const r = inv.range().start;
+        const r = fn.range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
     return out;

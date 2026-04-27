@@ -42,7 +42,8 @@ export interface CallExtractionConfig {
  */
 export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractionConfig, calls: RawCallSite[]): void {
     for (const m of rootNode.findAll('$CALLEE($$$ARGS)')) {
-        const callee = m.getMatch('CALLEE')?.text();
+        const calleeNode = m.getMatch('CALLEE');
+        const callee = calleeNode?.text();
         if (!callee) {
             continue;
         }
@@ -86,14 +87,20 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
 
         const diField = resolveInClass ? undefined : config.extractDiField?.(callee);
 
+        // Column convention: end-of-callee text (≈ position of `(` in args).
+        // For `repo.find(1)` it's the col after `find`. For `repo.find(1).greet()`
+        // (the OUTER chained call) it's the col after `greet` — distinct from
+        // the inner `find` call. Without this, both calls share the receiver-
+        // start column and chained calls collide on receiver-type lookup.
+        const calleeEnd = calleeNode?.range().end;
+        const line = calleeEnd?.line ?? m.range().start.line;
+        const column = calleeEnd?.column ?? m.range().start.column;
+
         calls.push({
             source: fp,
             callName,
-            line: m.range().start.line,
-            // Thread column through so the receiver-type inference pass can
-            // cross-reference each call site precisely (multiple method
-            // calls on the same line share a line but not a column).
-            column: m.range().start.column,
+            line,
+            column,
             ...(resolveInClass ? { resolveInClass } : {}),
             ...(diField ? { diField } : {}),
         });
