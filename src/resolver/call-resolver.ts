@@ -416,7 +416,7 @@ function getDir(file: string): string {
  * Both share the `src/` prefix (depth 1), but `services/user.ts` is a
  * direct sibling of the caller and is preferred.
  */
-function pickClosestCandidate(candidates: string[], callerFile: string): string {
+export function pickClosestCandidate(candidates: string[], callerFile: string): string {
     const callerDir = getDir(callerFile);
 
     // Tier A: prefer a sibling in the exact same directory
