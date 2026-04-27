@@ -46,10 +46,140 @@ interface ResolveAllResult {
     stats: CallResolverStats;
 }
 
+// ── Tier pipeline ──
+
+/**
+ * Per-call resolution context — recomputed for each call but stable across
+ * tiers. Threading it through tiers keeps each tier focused on its tier
+ * decision and avoids re-deriving file/lang lookups per tier.
+ */
+interface ResolverContext {
+    fp: string;
+    diMap: Map<string, string> | undefined;
+    symbolTable: SymbolTable;
+    importMap: ImportMap;
+    totalIndexedFiles: number;
+}
+
+type StatsKey = keyof CallResolverStats;
+
+/**
+ * One tier's decision for a call. `edge` pushes a CALLS edge with the tier's
+ * confidence; `drop` consumes the call without an edge (noise / ambiguous-
+ * noise). Returning `null` lets the next tier try.
+ */
+type TierOutcome =
+    | { kind: 'edge'; target: string; confidence: number; statsKey: StatsKey; alternatives?: string[] }
+    | { kind: 'drop'; statsKey: StatsKey }
+    | null;
+
+type Tier = (call: RawCallSite, ctx: ResolverContext) => TierOutcome;
+
+/**
+ * Receiver-type tier (0.95 single match / 0.90 multi-match).
+ *
+ * Runs FIRST — before the noise filter — so user-domain calls like
+ * `user.update()` aren't dropped when `update` happens to be in a language
+ * noise list but `UserService.update` exists in the symbol table. Falls
+ * through silently when receiverType is absent or no symbol matches.
+ */
+const receiverTier: Tier = (call, ctx) => {
+    if (!call.receiverType) {
+        return null;
+    }
+    const needle = `::${call.receiverType}.${call.callName}`;
+    const all = ctx.symbolTable.lookupGlobal(call.callName);
+    const matches = all.filter((q) => q.includes(needle));
+    if (matches.length === 1) {
+        return { kind: 'edge', target: matches[0], confidence: 0.95, statsKey: 'receiver' };
+    }
+    if (matches.length > 1) {
+        const best = pickClosestCandidate(matches, ctx.fp);
+        const alternatives = matches.filter((q) => q !== best).sort();
+        return {
+            kind: 'edge',
+            target: best,
+            confidence: 0.9,
+            statsKey: 'receiver',
+            ...(alternatives.length > 0 ? { alternatives } : {}),
+        };
+    }
+    return null;
+};
+
+/** Drop calls whose name is in the language's noise list. */
+const noiseTier: Tier = (call, ctx) => {
+    const lang = languageOfFile(ctx.fp);
+    const noise = lang ? getNoiseFor(lang) : null;
+    if (noise?.has(call.callName)) {
+        return { kind: 'drop', statsKey: 'noise' };
+    }
+    return null;
+};
+
+/** DI tier — routes `this.field.method()` through diMap when field is bound. */
+const diTier: Tier = (call, ctx) => {
+    if (!call.diField) {
+        return null;
+    }
+    const resolved = resolveDICall(call.diField, call.callName, ctx.fp, ctx.diMap, ctx.symbolTable);
+    if (!resolved) {
+        return null;
+    }
+    return { kind: 'edge', target: resolved.target, confidence: resolved.confidence, statsKey: 'di' };
+};
+
+/** Class-aware tier — `self.X()` / `super.X()` routed against enclosing class. */
+const classTier: Tier = (call, ctx) => {
+    if (!call.resolveInClass) {
+        return null;
+    }
+    const resolved = resolveInClass(call.callName, ctx.fp, call.resolveInClass, ctx.symbolTable);
+    if (!resolved) {
+        return null;
+    }
+    return {
+        kind: 'edge',
+        target: resolved.target,
+        confidence: resolved.confidence,
+        statsKey: resolved.strategy as StatsKey,
+    };
+};
+
+/** Final tier — name-based cascade (same → import → unique → ambiguous). */
+const cascadeTier: Tier = (call, ctx) => {
+    const resolved = resolveByName(call.callName, ctx.fp, ctx.symbolTable, ctx.importMap, ctx.totalIndexedFiles);
+    if (resolved === AMBIGUOUS_NOISE_DROP) {
+        return { kind: 'drop', statsKey: 'ambiguousNoise' };
+    }
+    if (!resolved) {
+        return null;
+    }
+    return {
+        kind: 'edge',
+        target: resolved.target,
+        confidence: resolved.confidence,
+        statsKey: resolved.strategy as StatsKey,
+        ...(resolved.alternatives && resolved.alternatives.length > 0 ? { alternatives: resolved.alternatives } : {}),
+    };
+};
+
+/**
+ * Tier order — top is highest priority. Adding a new tier means adding one
+ * function above and inserting it here; no surgery on the main loop.
+ */
+const TIERS: ReadonlyArray<{ name: string; tier: Tier }> = [
+    { name: 'receiver', tier: receiverTier },
+    { name: 'noise', tier: noiseTier },
+    { name: 'di', tier: diTier },
+    { name: 'class', tier: classTier },
+    { name: 'cascade', tier: cascadeTier },
+];
+
 // ── Batch resolution (pure, no I/O) ──
 
 /**
- * Resolve all raw call sites via the 5-tier cascade.
+ * Resolve all raw call sites via the tier pipeline (`TIERS`).
  *
  * Accepts pre-extracted RawCallSite[] from the batch parser.
  * No file reads, no parseAsync — pure iteration + lookup.
@@ -73,111 +203,34 @@ export function resolveAllCalls(
     };
 
     // `totalIndexedFiles` is stable across the entire resolve batch — compute
-    // once and thread into the ambiguous-tier check to avoid recomputing on
-    // every ambiguous-tier lookup.
+    // once and thread into the cascade tier to avoid recomputing per call.
     const totalIndexedFiles = symbolTable.totalIndexedFiles();
 
     for (const call of rawCalls) {
-        const fp = call.source;
-
-        // Receiver-type-aware resolution (runs BEFORE the noise filter so
-        // user-domain calls like `user.update()` — where `update` is in a
-        // language noise list but `UserService.update` exists in the symbol
-        // table — aren't dropped. Only commits to the 0.95 / 0.90 tier when
-        // the symbol table has a concrete `::Type.method` match; otherwise
-        // falls through silently to the existing noise → DI → cascade order.
-        if (call.receiverType) {
-            const needle = `::${call.receiverType}.${call.callName}`;
-            const all = symbolTable.lookupGlobal(call.callName);
-            const matches = all.filter((q) => q.includes(needle));
-            if (matches.length === 1) {
-                callEdges.push({
-                    source: fp,
-                    target: matches[0],
-                    callName: call.callName,
-                    line: call.line,
-                    confidence: 0.95,
-                });
-                stats.receiver++;
+        const ctx: ResolverContext = {
+            fp: call.source,
+            diMap: diMaps.get(call.source),
+            symbolTable,
+            importMap,
+            totalIndexedFiles,
+        };
+        for (const { tier } of TIERS) {
+            const outcome = tier(call, ctx);
+            if (!outcome) {
                 continue;
             }
-            if (matches.length > 1) {
-                const best = pickClosestCandidate(matches, fp);
-                const alternatives = matches.filter((q) => q !== best).sort();
+            if (outcome.kind === 'edge') {
                 callEdges.push({
-                    source: fp,
-                    target: best,
+                    source: ctx.fp,
+                    target: outcome.target,
                     callName: call.callName,
                     line: call.line,
-                    confidence: 0.9,
-                    ...(alternatives.length > 0 ? { alternatives } : {}),
+                    confidence: outcome.confidence,
+                    ...(outcome.alternatives ? { alternatives: outcome.alternatives } : {}),
                 });
-                stats.receiver++;
-                continue;
             }
-            // No symbol-table match — fall through. Stdlib / external types
-            // are correctly handled by the noise filter and name cascade below.
-        }
-
-        const lang = languageOfFile(call.source);
-        const noise = lang ? getNoiseFor(lang) : null;
-        if (noise?.has(call.callName)) {
-            stats.noise++;
-            continue;
-        }
-
-        const diMap = diMaps.get(fp);
-
-        // Try DI resolution first if diField is present
-        if (call.diField) {
-            const resolved = resolveDICall(call.diField, call.callName, fp, diMap, symbolTable);
-            if (resolved) {
-                callEdges.push({
-                    source: fp,
-                    target: resolved.target,
-                    callName: call.callName,
-                    line: call.line,
-                    confidence: resolved.confidence,
-                });
-                stats.di++;
-                continue;
-            }
-        }
-
-        // Class-aware resolution for self.X() and super().X()
-        if (call.resolveInClass) {
-            const classResolved = resolveInClass(call.callName, fp, call.resolveInClass, symbolTable);
-            if (classResolved) {
-                callEdges.push({
-                    source: fp,
-                    target: classResolved.target,
-                    callName: call.callName,
-                    line: call.line,
-                    confidence: classResolved.confidence,
-                });
-                stats[classResolved.strategy]++;
-                continue;
-            }
-        }
-
-        // Name-based cascade fallback
-        const resolved = resolveByName(call.callName, fp, symbolTable, importMap, totalIndexedFiles);
-        if (resolved === AMBIGUOUS_NOISE_DROP) {
-            stats.ambiguousNoise++;
-            continue;
-        }
-        if (resolved) {
-            callEdges.push({
-                source: fp,
-                target: resolved.target,
-                callName: call.callName,
-                line: call.line,
-                confidence: resolved.confidence,
-                ...(resolved.alternatives && resolved.alternatives.length > 0
-                    ? { alternatives: resolved.alternatives }
-                    : {}),
-            });
-            stats[resolved.strategy]++;
+            stats[outcome.statsKey]++;
+            break;
         }
     }
 
