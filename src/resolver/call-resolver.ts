@@ -176,6 +176,40 @@ const TIERS: ReadonlyArray<{ name: string; tier: Tier }> = [
     { name: 'cascade', tier: cascadeTier },
 ];
 
+/**
+ * Run the tier pipeline against one call. Extracted from the main loop so the
+ * chain pass can re-resolve a single call after its receiverType is filled in.
+ */
+function runTiers(call: RawCallSite, ctx: ResolverContext): TierOutcome {
+    for (const { tier } of TIERS) {
+        const outcome = tier(call, ctx);
+        if (outcome) {
+            return outcome;
+        }
+    }
+    return null;
+}
+
+// ── Method-chain receiver inference ──
+
+/**
+ * Strip generic / collection wrappers from a return-type string for the
+ * chain receiver-type tier. Best-effort — covers the common cases
+ * (`Promise<User>` → `User`, `User[]` → `User`, `List<User>` → `User`,
+ * `Optional[User]` → `User`). Multi-arg generics keep the first parameter.
+ */
+function stripGenerics(returnType: string): string {
+    let t = returnType.trim();
+    // Array brackets (TS / Java / C# / Rust slices in some forms).
+    t = t.replace(/\[\]$/, '');
+    // Outer wrapper `Wrapper<Inner, ...>` or `Wrapper[Inner, ...]` (Python).
+    const m = t.match(/^[A-Za-z_][\w.]*\s*[<[]\s*([^,>\]]+)/);
+    if (m) {
+        return stripGenerics(m[1].trim());
+    }
+    return t;
+}
+
 // ── Batch resolution (pure, no I/O) ──
 
 /**
@@ -183,14 +217,22 @@ const TIERS: ReadonlyArray<{ name: string; tier: Tier }> = [
  *
  * Accepts pre-extracted RawCallSite[] from the batch parser.
  * No file reads, no parseAsync — pure iteration + lookup.
+ *
+ * When `returnTypes` is provided (qualified-name → returnType map built
+ * from the raw graph's functions), runs a second pass for chained calls:
+ * `x.a().b()`. The outer call's `chainedFromLine`/`chainedFromColumn`
+ * pinpoint the inner call; the resolver looks up the inner's resolved
+ * target's return type, strips generics, and re-runs TIERS for the outer
+ * with `receiverType` set — typically promoting the outer from
+ * ambiguous/unique to the receiver tier (0.95 / 0.90).
  */
 export function resolveAllCalls(
     rawCalls: RawCallSite[],
     diMaps: Map<string, Map<string, string>>,
     symbolTable: SymbolTable,
     importMap: ImportMap,
+    returnTypes?: Map<string, string>,
 ): ResolveAllResult {
-    const callEdges: RawCallEdge[] = [];
     const stats: CallResolverStats = {
         di: 0,
         same: 0,
@@ -206,7 +248,11 @@ export function resolveAllCalls(
     // once and thread into the cascade tier to avoid recomputing per call.
     const totalIndexedFiles = symbolTable.totalIndexedFiles();
 
-    for (const call of rawCalls) {
+    // Resolve every call once, keeping outcomes parallel-arrayed with
+    // rawCalls so the chain pass can reach back into them.
+    const outcomes: (TierOutcome | null)[] = new Array(rawCalls.length);
+    for (let i = 0; i < rawCalls.length; i++) {
+        const call = rawCalls[i];
         const ctx: ResolverContext = {
             fp: call.source,
             diMap: diMaps.get(call.source),
@@ -214,24 +260,81 @@ export function resolveAllCalls(
             importMap,
             totalIndexedFiles,
         };
-        for (const { tier } of TIERS) {
-            const outcome = tier(call, ctx);
-            if (!outcome) {
+        outcomes[i] = runTiers(call, ctx);
+    }
+
+    // Chain pass: for each outer call with a known inner, propagate the
+    // inner's resolved-target return type as the outer's receiverType, then
+    // re-run TIERS. Skip when the outer is already receiver-tier resolved
+    // (no upgrade possible) or when there's no return-type info.
+    if (returnTypes && returnTypes.size > 0) {
+        const callIndexByLoc = new Map<string, number>();
+        for (let i = 0; i < rawCalls.length; i++) {
+            const c = rawCalls[i];
+            callIndexByLoc.set(`${c.source}:${c.line}:${c.column ?? -1}`, i);
+        }
+        for (let i = 0; i < rawCalls.length; i++) {
+            const call = rawCalls[i];
+            if (call.chainedFromLine === undefined) {
                 continue;
             }
-            if (outcome.kind === 'edge') {
-                callEdges.push({
-                    source: ctx.fp,
-                    target: outcome.target,
-                    callName: call.callName,
-                    line: call.line,
-                    confidence: outcome.confidence,
-                    ...(outcome.alternatives ? { alternatives: outcome.alternatives } : {}),
-                });
+            const current = outcomes[i];
+            if (current?.kind === 'edge' && current.statsKey === 'receiver') {
+                continue;
             }
-            stats[outcome.statsKey]++;
-            break;
+            const innerKey = `${call.source}:${call.chainedFromLine}:${call.chainedFromColumn ?? -1}`;
+            const innerIdx = callIndexByLoc.get(innerKey);
+            if (innerIdx === undefined) {
+                continue;
+            }
+            const innerOutcome = outcomes[innerIdx];
+            if (!innerOutcome || innerOutcome.kind !== 'edge') {
+                continue;
+            }
+            const returnType = returnTypes.get(innerOutcome.target);
+            if (!returnType) {
+                continue;
+            }
+            const stripped = stripGenerics(returnType);
+            if (!stripped) {
+                continue;
+            }
+            // Mutate the call to carry the inferred receiverType and re-run
+            // tiers. The receiver tier matches `::Type.method` qualified names.
+            call.receiverType = stripped;
+            const ctx: ResolverContext = {
+                fp: call.source,
+                diMap: diMaps.get(call.source),
+                symbolTable,
+                importMap,
+                totalIndexedFiles,
+            };
+            const upgraded = runTiers(call, ctx);
+            if (upgraded?.kind === 'edge' && upgraded.statsKey === 'receiver') {
+                outcomes[i] = upgraded;
+            }
         }
+    }
+
+    // Materialize edges + stats from the final outcomes.
+    const callEdges: RawCallEdge[] = [];
+    for (let i = 0; i < rawCalls.length; i++) {
+        const outcome = outcomes[i];
+        if (!outcome) {
+            continue;
+        }
+        if (outcome.kind === 'edge') {
+            const call = rawCalls[i];
+            callEdges.push({
+                source: call.source,
+                target: outcome.target,
+                callName: call.callName,
+                line: call.line,
+                confidence: outcome.confidence,
+                ...(outcome.alternatives ? { alternatives: outcome.alternatives } : {}),
+            });
+        }
+        stats[outcome.statsKey]++;
     }
 
     return { callEdges, stats };

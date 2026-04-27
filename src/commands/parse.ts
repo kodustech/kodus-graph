@@ -143,9 +143,18 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     );
 
     // Phase 4: Resolve calls
-    let { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+    // Build a returnType map keyed by each function's qualified name so the
+    // chain receiver-type pass can propagate `Foo.method() → ReturnType` to
+    // the outer call in `x.method().chained()` patterns.
+    const returnTypes = new Map<string, string>();
+    for (const f of rawGraph.functions) {
+        if (f.returnType) {
+            returnTypes.set(f.qualified, f.returnType);
+        }
+    }
+    let { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap, returnTypes);
     process.stderr.write(
-        `[4/5] Resolved ${callEdges.length} calls (DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
+        `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
     );
 
     // Snapshot resolver stats into a plain TierDistribution for the metadata.
