@@ -29,7 +29,7 @@
  | Rust | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
  | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | — | ✓ | ✓ | `tests/fixtures/php` | 
  | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/c` | 
- | C++ | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/cpp` | 
+ | C++ | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/cpp` | 
 
 ## Per-language notes
 
@@ -124,7 +124,7 @@
 ### C++ (`cpp`)
 
 - Real-repo PASS on flatbuffers (1322 files, 88.6% resolved) — Fase D 2026-04-20
-- Kept at basic: canonical fixture is 2 files / 0 call sites — too thin for CI baseline. Beef up fixture to promote.
+- Promoted to full 2026-04-27 after fix(cpp): out-of-class method definitions (`Foo::bar() {...}`) now register className via qualified_identifier. Fixture (UserService/UserRepository/main): receiver=7, 100% resolved, highConf=7
 - Shares C extractor; capabilities.hasExceptions=true
 
 ## Baselines
@@ -143,3 +143,4 @@ Languages in the 🟢 full tier have recorded baseline `tier_distribution` ratio
 | Dart | 0.4 | 1 | 0 | 0 | 0 |
 | Elixir | 0.8 | 0.1 | 0 | 0 | 0.8 |
 | Rust | 0.62 | 0.18 | 72 | 0 | 0.26 |
+| C++ | 0.9 | 0.17 | 230 | 0 | 0.66 |
