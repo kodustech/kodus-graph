@@ -7,7 +7,7 @@ import { extractReceiverTypesFromEngine } from '../languages/engine';
 import { locationKey } from '../languages/receiver-types';
 import { log } from '../shared/logger';
 import { extractCallsFromFile, extractFromFile } from './extractor';
-import { getLanguage, getLanguageName } from './languages';
+import { getLanguage } from './languages';
 
 const INITIAL_BATCH = 50;
 const MEMORY_THRESHOLD_RATIO = 0.7;
@@ -129,8 +129,7 @@ export async function parseBatch(
                 // column when the extractor provides it; otherwise fall back
                 // to line-only matching (documented as a known limitation for
                 // extractors that don't yet thread column through calls).
-                const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
-                const receiverMap = extractReceiverTypesFromEngine(root, fp, langStr);
+                const receiverMap = extractReceiverTypesFromEngine(root, fp, lang as string);
 
                 for (const call of rawCalls) {
                     if (receiverMap.size > 0) {

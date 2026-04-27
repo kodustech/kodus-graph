@@ -1,7 +1,6 @@
 import type { Lang, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
 import { extractAll as engineExtractAll, extractCallsFromEngine } from '../languages/engine';
-import { getLanguageName } from './languages';
 
 // Import language barrel files to trigger extractor registration.
 import '../languages/go';
@@ -19,6 +18,10 @@ import '../languages/scala';
 import '../languages/elixir';
 import '../languages/c';
 
+// `Lang` from ast-grep is a string enum (`Lang.TypeScript === 'TypeScript'`),
+// so any `Lang | string` value is already a string at runtime — registry keys
+// match the Lang literals for built-ins, no name remap needed.
+
 export function extractFromFile(
     root: SgRoot,
     filePath: string,
@@ -26,11 +29,9 @@ export function extractFromFile(
     seen: Set<string>,
     graph: RawGraph,
 ): void {
-    const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
-    engineExtractAll(root, filePath, langStr, seen, graph);
+    engineExtractAll(root, filePath, lang as string, seen, graph);
 }
 
 export function extractCallsFromFile(root: SgRoot, filePath: string, lang: Lang | string, calls: RawCallSite[]): void {
-    const langStr = typeof lang === 'string' ? lang : getLanguageName(lang);
-    extractCallsFromEngine(root, filePath, langStr, calls);
+    extractCallsFromEngine(root, filePath, lang as string, calls);
 }

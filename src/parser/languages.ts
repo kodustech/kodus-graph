@@ -13,67 +13,23 @@ import rust from '@ast-grep/lang-rust';
 import scala from '@ast-grep/lang-scala';
 import swift from '@ast-grep/lang-swift';
 import { Lang, registerDynamicLanguage } from '@ast-grep/napi';
+import { languageOfExt, supportedExtensions } from '../languages/language-of-file';
 
 // Register dynamic languages at import time (side effect).
 // This must happen before parseAsync can parse these languages.
 registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp, kotlin, swift, dart, scala, c, cpp, elixir });
 
-// ---------------------------------------------------------------------------
-// Extension -> language identifier
-// Built-in langs use Lang enum, dynamic langs use lowercase string
-// ---------------------------------------------------------------------------
-
-const EXT_TO_LANG: Record<string, Lang | string> = {
-    '.ts': Lang.TypeScript,
-    '.tsx': Lang.Tsx,
-    '.js': Lang.JavaScript,
-    '.jsx': Lang.JavaScript,
-    '.mjs': Lang.JavaScript,
-    '.cjs': Lang.JavaScript,
-    '.es6': Lang.JavaScript,
-    '.py': 'python',
-    '.rb': 'ruby',
-    '.go': 'go',
-    '.java': 'java',
-    '.rs': 'rust',
-    '.cs': 'csharp',
-    '.php': 'php',
-    '.kt': 'kotlin',
-    '.kts': 'kotlin',
-    '.swift': 'swift',
-    '.dart': 'dart',
-    '.scala': 'scala',
-    '.sc': 'scala',
-    '.c': 'c',
-    '.h': 'c',
-    '.cpp': 'cpp',
-    '.hpp': 'cpp',
-    '.cc': 'cpp',
-    '.hh': 'cpp',
-    '.cxx': 'cpp',
-    '.ex': 'elixir',
-    '.exs': 'elixir',
-};
-
+// Extension -> language. Delegates to the canonical map in
+// `src/languages/language-of-file.ts` so this module and the resolver agree
+// on every key. Returned values are usable directly with `parseAsync`:
+// `Lang.TypeScript === 'TypeScript'` (string enum), so the union of literal
+// strings the canonical map produces satisfies `parseAsync(Lang | string)`.
 export function getLanguage(ext: string): Lang | string | null {
-    return EXT_TO_LANG[ext] ?? null;
+    return languageOfExt(ext);
 }
 
 export function getSupportedExtensions(): string[] {
-    return Object.keys(EXT_TO_LANG);
-}
-
-export function getLanguageName(lang: Lang | string): string {
-    if (typeof lang === 'string') {
-        return lang;
-    }
-    if (lang === Lang.TypeScript || lang === Lang.Tsx) {
-        return 'typescript';
-    }
-    if (lang === Lang.JavaScript) {
-        return 'javascript';
-    }
-    return 'unknown';
+    return supportedExtensions();
 }
 
 export function isCLike(lang: Lang | string): boolean {
