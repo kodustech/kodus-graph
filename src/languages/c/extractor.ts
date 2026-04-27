@@ -38,21 +38,49 @@ function isHeaderFile(fp: string): boolean {
 /**
  * Extract the function name from a function_definition node.
  * For C: function_declarator > identifier
- * For C++: function_declarator > identifier or field_identifier
+ * For C++: function_declarator > identifier | field_identifier | qualified_identifier
  * Also handles pointer return types where declarator is nested in pointer_declarator.
+ *
+ * For out-of-class C++ definitions like `UserService::greet() {...}`, the declarator
+ * holds a qualified_identifier whose last identifier is the method name.
  */
 function extractFuncName(node: SgNode): string | undefined {
-    // Direct: function_declarator child
     const declarator = findFunctionDeclarator(node);
     if (!declarator) {
         return undefined;
     }
 
-    // C uses identifier, C++ methods use field_identifier
-    const id =
+    const direct =
         declarator.children().find((c) => c.kind() === 'identifier') ||
         declarator.children().find((c) => c.kind() === 'field_identifier');
-    return id?.text();
+    if (direct) {
+        return direct.text();
+    }
+
+    const qualified = declarator.children().find((c) => c.kind() === 'qualified_identifier');
+    if (qualified) {
+        const subs = qualified.children();
+        const last = [...subs].reverse().find((c) => c.kind() === 'identifier' || c.kind() === 'field_identifier');
+        return last?.text();
+    }
+    return undefined;
+}
+
+/**
+ * For out-of-class C++ definitions (`Foo::bar() {...}`), pull the class name
+ * from the qualified_identifier's namespace_identifier. Returns '' otherwise.
+ */
+function extractQualifiedClassName(node: SgNode): string {
+    const declarator = findFunctionDeclarator(node);
+    if (!declarator) {
+        return '';
+    }
+    const qualified = declarator.children().find((c) => c.kind() === 'qualified_identifier');
+    if (!qualified) {
+        return '';
+    }
+    const ns = qualified.children().find((c) => c.kind() === 'namespace_identifier' || c.kind() === 'type_identifier');
+    return ns?.text() || '';
 }
 
 /**
@@ -422,12 +450,19 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 
                 // C++ method detection: check for enclosing class
                 let className = '';
+                let isOutOfClassDef = false;
                 let kind: 'Function' | 'Method' | 'Constructor' = 'Function';
 
                 if (isCpp) {
                     className = findEnclosingClassName(node);
+                    if (!className) {
+                        const qualified = extractQualifiedClassName(node);
+                        if (qualified) {
+                            className = qualified;
+                            isOutOfClassDef = true;
+                        }
+                    }
                     if (className) {
-                        // Check if this is a constructor (name matches class name)
                         if (name === className) {
                             kind = 'Constructor';
                         } else {
@@ -441,14 +476,17 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 // - extern functions are exported
                 // - functions in header files are exported
                 // - C++ methods with public access are exported (if the class is in a header)
+                // - Out-of-class C++ definitions (`Foo::bar() {...}`) — visibility lives
+                //   in the header; treat as exported here.
                 let exported = false;
                 if (isStatic) {
                     exported = false;
                 } else if (isExtern) {
                     exported = true;
+                } else if (isOutOfClassDef) {
+                    exported = true;
                 } else if (isHeader) {
                     if (isCpp && className) {
-                        // C++ method: check access specifier
                         const access = getAccessSpecifier(node, isEnclosingStruct(node));
                         exported = access === 'public';
                     } else {

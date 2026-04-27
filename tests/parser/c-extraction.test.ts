@@ -250,6 +250,53 @@ describe('C++ extractor – sample.cpp', () => {
         expect(ctor!.className).toBe('UserService');
     });
 
+    test('out-of-class method definitions register className from qualified_identifier', async () => {
+        const code = [
+            'class Foo {',
+            'public:',
+            '    Foo();',
+            '    int bar() const;',
+            '    void* ptrMethod();',
+            '};',
+            '',
+            'Foo::Foo() {}',
+            '',
+            'int Foo::bar() const {',
+            '    return 42;',
+            '}',
+            '',
+            'void* Foo::ptrMethod() {',
+            '    return nullptr;',
+            '}',
+            '',
+            'int free_func() { return 1; }',
+        ].join('\n');
+        const root = await parseAsync('cpp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, '/virt/foo.cpp', 'cpp', new Set(), graph);
+
+        const ctor = graph.functions.find((f) => f.name === 'Foo' && f.kind === 'Constructor');
+        expect(ctor).toBeDefined();
+        expect(ctor!.className).toBe('Foo');
+        expect(ctor!.is_exported).toBe(true);
+
+        const bar = graph.functions.find((f) => f.name === 'bar');
+        expect(bar).toBeDefined();
+        expect(bar!.kind).toBe('Method');
+        expect(bar!.className).toBe('Foo');
+        expect(bar!.is_exported).toBe(true);
+
+        const ptrMethod = graph.functions.find((f) => f.name === 'ptrMethod');
+        expect(ptrMethod).toBeDefined();
+        expect(ptrMethod!.kind).toBe('Method');
+        expect(ptrMethod!.className).toBe('Foo');
+
+        const freeFunc = graph.functions.find((f) => f.name === 'free_func');
+        expect(freeFunc).toBeDefined();
+        expect(freeFunc!.kind).toBe('Function');
+        expect(freeFunc!.className).toBe('');
+    });
+
     test('public methods are exported, private methods are not', async () => {
         const fp = join(FIXTURES, 'cpp/sample.cpp');
         const code = readFileSync(fp, 'utf-8');
