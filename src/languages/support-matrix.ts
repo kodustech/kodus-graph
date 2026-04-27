@@ -338,7 +338,7 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
     {
         key: 'rust',
         display_name: 'Rust',
-        tier: 'basic',
+        tier: 'full',
         parse_speed: 'moderate',
         features: {
             noise: true,
@@ -349,10 +349,16 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
             imports: true,
         },
         canonical_fixture: 'tests/fixtures/rust',
-        baseline_tier_ratios: null,
+        baseline_tier_ratios: {
+            resolved_min: 0.62,
+            ambiguous_max: 0.18,
+            receiver_min_per_1k_nodes: 72,
+            di_min_per_1k_nodes: 0,
+            high_conf_min_ratio: 0.26,
+        },
         notes: [
             'Real-repo PASS on tokio (776 files, bar cleared) — Fase D 2026-04-19',
-            'Kept at basic: canonical fixture is 1 file / 0 resolved calls — too thin for CI baseline. Beef up fixture to promote.',
+            'Promoted to full 2026-04-27: 3-file fixture (UserService/UserRepository/main) clears bar — receiver=2, 72.2% resolved, highConf=2',
             'No DI convention',
             'capabilities: hasExceptions=false (Result/Option)',
         ],

@@ -26,7 +26,7 @@
  | Dart | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/dart` | 
  | Elixir | 🟢 full | 🚶 moderate | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/elixir` | 
  | Kotlin | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/kotlin` | 
- | Rust | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
+ | Rust | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
  | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | — | ✓ | ✓ | `tests/fixtures/php` | 
  | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/c` | 
  | C++ | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/cpp` | 
@@ -106,7 +106,7 @@
 ### Rust (`rust`)
 
 - Real-repo PASS on tokio (776 files, bar cleared) — Fase D 2026-04-19
-- Kept at basic: canonical fixture is 1 file / 0 resolved calls — too thin for CI baseline. Beef up fixture to promote.
+- Promoted to full 2026-04-27: 3-file fixture (UserService/UserRepository/main) clears bar — receiver=2, 72.2% resolved, highConf=2
 - No DI convention
 - capabilities: hasExceptions=false (Result/Option)
 
@@ -142,3 +142,4 @@ Languages in the 🟢 full tier have recorded baseline `tier_distribution` ratio
 | Scala | 0.8 | 1 | 0 | 0 | 0 |
 | Dart | 0.4 | 1 | 0 | 0 | 0 |
 | Elixir | 0.8 | 0.1 | 0 | 0 | 0.8 |
+| Rust | 0.62 | 0.18 | 72 | 0 | 0.26 |
