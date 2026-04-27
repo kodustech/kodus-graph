@@ -5,6 +5,7 @@
  */
 
 import type { LanguageKey } from './language-of-file';
+import { createLanguageRegistry } from './registry';
 
 export interface LanguageCapabilities {
     /** Language has explicit async/await keyword semantics. */
@@ -19,10 +20,12 @@ export interface LanguageCapabilities {
     interfaceKind: 'nominal' | 'structural' | 'duck';
 }
 
-const REGISTRY = new Map<string, Readonly<LanguageCapabilities>>();
+const REGISTRY = createLanguageRegistry<Readonly<LanguageCapabilities>>({
+    onRegister: (caps) => Object.freeze({ ...caps }),
+});
 
 export function registerCapabilities(language: LanguageKey, caps: LanguageCapabilities): void {
-    REGISTRY.set(language, Object.freeze({ ...caps }));
+    REGISTRY.register(language, caps);
 }
 
 export function getCapabilitiesFor(language: string): Readonly<LanguageCapabilities> | null {

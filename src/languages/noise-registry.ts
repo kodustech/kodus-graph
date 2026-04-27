@@ -8,12 +8,13 @@
  */
 
 import type { LanguageKey } from './language-of-file';
+import { createLanguageRegistry } from './registry';
 
-const REGISTRY = new Map<string, ReadonlySet<string>>();
+const REGISTRY = createLanguageRegistry<ReadonlySet<string>>();
 const EMPTY: ReadonlySet<string> = new Set();
 
 export function registerNoise(language: LanguageKey, names: ReadonlySet<string>): void {
-    REGISTRY.set(language, names);
+    REGISTRY.register(language, names);
 }
 
 export function getNoiseFor(language: string): ReadonlySet<string> {
@@ -22,5 +23,5 @@ export function getNoiseFor(language: string): ReadonlySet<string> {
 
 /** Reset used by tests that seed their own entries. Not for production code. */
 export function __clearNoiseRegistryForTests(): void {
-    REGISTRY.clear();
+    REGISTRY.__clearForTests();
 }

@@ -2,20 +2,21 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
 import type { LanguageKey } from './language-of-file';
 import type { ReceiverTypeMap } from './receiver-types';
+import { createLanguageRegistry } from './registry';
 import type { LanguageExtractors } from './spec';
 
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
-const registry = new Map<string, LanguageExtractors>();
+const registry = createLanguageRegistry<LanguageExtractors>();
 
 /**
  * Register a per-language extractor. Typically called at module-load time
  * by each language file (e.g. `registerExtractor('go', goExtractors)`).
  */
 export function registerExtractor(lang: LanguageKey, extractor: LanguageExtractors): void {
-    registry.set(lang, extractor);
+    registry.register(lang, extractor);
 }
 
 /**
@@ -33,7 +34,7 @@ export function hasExtractor(lang: string): boolean {
  * the parity test will now catch it automatically.
  */
 export function listRegisteredLanguages(): string[] {
-    return [...registry.keys()];
+    return registry.keys();
 }
 
 // ---------------------------------------------------------------------------
@@ -51,13 +52,15 @@ export function listRegisteredLanguages(): string[] {
  * `getDIHeuristicsFor` returns `null` for unregistered languages so callers
  * can distinguish "no convention" from "convention exists but no match".
  */
-const DI_REGISTRY = new Map<string, (typeName: string) => string[]>();
+type DIHeuristicsFn = (typeName: string) => string[];
 
-export function registerDIHeuristics(language: LanguageKey, fn: (typeName: string) => string[]): void {
-    DI_REGISTRY.set(language, fn);
+const DI_REGISTRY = createLanguageRegistry<DIHeuristicsFn>();
+
+export function registerDIHeuristics(language: LanguageKey, fn: DIHeuristicsFn): void {
+    DI_REGISTRY.register(language, fn);
 }
 
-export function getDIHeuristicsFor(language: string): ((typeName: string) => string[]) | null {
+export function getDIHeuristicsFor(language: string): DIHeuristicsFn | null {
     return DI_REGISTRY.get(language) ?? null;
 }
 
@@ -76,10 +79,10 @@ export function getDIHeuristicsFor(language: string): ((typeName: string) => str
  */
 type ReceiverTypesFn = (root: SgNode, fp: string) => ReceiverTypeMap;
 
-const RECEIVER_TYPES_REGISTRY = new Map<string, ReceiverTypesFn>();
+const RECEIVER_TYPES_REGISTRY = createLanguageRegistry<ReceiverTypesFn>();
 
 export function registerReceiverTypes(language: LanguageKey, fn: ReceiverTypesFn): void {
-    RECEIVER_TYPES_REGISTRY.set(language, fn);
+    RECEIVER_TYPES_REGISTRY.register(language, fn);
 }
 
 export function getReceiverTypesFor(language: string): ReceiverTypesFn | null {
