@@ -170,6 +170,57 @@ describe('receiver-type inference per language', () => {
         expect(upd?.receiverType).toBe('Foo');
     });
 
+    it('Python unwraps List[Foo] to Foo for receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'from typing import List\ndef r(items: List[Foo]):\n    items[0].doWork()\n    items.doWork()\n',
+            'src/a.py',
+        );
+        // The bare `items.doWork()` should pick up Foo via the unwrap path.
+        const upd = calls.find((c) => c.callName === 'doWork' && c.receiverType === 'Foo');
+        expect(upd).toBeDefined();
+    });
+
+    it('Python unwraps Dict[str, Foo] to Foo (value type wins)', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'from typing import Dict\ndef r(reg: Dict[str, Foo]):\n    reg.doWork()\n',
+            'src/a.py',
+        );
+        const upd = calls.find((c) => c.callName === 'doWork');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
+    it('Python factory method __post_init__ binds self.attr', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'from dataclasses import dataclass\n@dataclass\nclass Svc:\n    def __post_init__(self):\n        self.repo = Repo()\n    def run(self):\n        self.repo.find()\n',
+            'src/svc.py',
+        );
+        const upd = calls.find((c) => c.callName === 'find');
+        expect(upd?.receiverType).toBe('Repo');
+    });
+
+    it('Python factory method setUp binds self.attr (unittest)', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'class Test:\n    def setUp(self):\n        self.svc = Service()\n    def test_x(self):\n        self.svc.run()\n',
+            'src/t.py',
+        );
+        const upd = calls.find((c) => c.callName === 'run');
+        expect(upd?.receiverType).toBe('Service');
+    });
+
+    it('Python FastAPI Depends() — typed param works regardless of default', async () => {
+        const calls = await extractWithReceiver(
+            'python',
+            'from fastapi import Depends\ndef get_svc():\n    return None\ndef handler(svc: SomeService = Depends(get_svc)):\n    svc.do_work()\n',
+            'src/api.py',
+        );
+        const upd = calls.find((c) => c.callName === 'do_work');
+        expect(upd?.receiverType).toBe('SomeService');
+    });
+
     it('Python infers receiverType from type-annotated parameter `svc: Foo`', async () => {
         const calls = await extractWithReceiver('python', 'def r(svc: Foo):\n    svc.doWork()\n', 'src/a.py');
         const upd = calls.find((c) => c.callName === 'doWork');

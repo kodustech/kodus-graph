@@ -50,8 +50,9 @@
 ### Python (`python`)
 
 - Validated on sentry (779M, 6613 .py files)
-- di=0 is honest: Python has no Spring/Angular-style container. FastAPI Depends() is a future addition.
-- self.attr receiver-type via class attrs + __init__ typed params (commit 76e96fa); no flow analysis
+- self.attr receiver-type via class attrs + __init__/setUp/__post_init__ typed params; no flow analysis
+- Generic unwrap (added 2026-04-27): List[Foo]/Optional[Foo]/Dict[K,V] resolve to inner type (last arg wins for Dict; first for Annotated)
+- FastAPI Depends() resolves through `typed_default_parameter` — `svc: Service = Depends(...)` binds svc to Service
 
 ### Go (`go`)
 

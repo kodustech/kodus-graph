@@ -257,9 +257,43 @@ function isLikelyClassName(name: string): boolean {
  * wrapper whose first `identifier` child is the simple name; generic /
  * subscript forms like `List[Foo]` are skipped (no confident bind).
  */
+/**
+ * Extract a usable type name from a Python `type` annotation node:
+ *   - `Foo`                   → 'Foo'
+ *   - `List[Foo]`, `Set[Foo]` → 'Foo'  (collection wrapper)
+ *   - `Optional[Foo]`         → 'Foo'  (None-safety wrapper)
+ *   - `Dict[str, Foo]`        → 'Foo'  (last type wins — value type for Dict/Mapping)
+ *   - `Annotated[Foo, ...]`   → 'Foo'  (PEP 593 — first type, others are metadata)
+ * For unrecognized shapes the bare identifier is returned. Returns
+ * undefined when no usable type identifier is reachable.
+ */
 function typeNameFromTypeNode(typeNode: SgNode): string | undefined {
-    const first = typeNode.children().find((c: SgNode) => c.kind() === 'identifier');
-    return first?.text();
+    // Bare type: type > identifier
+    const direct = typeNode.children().find((c: SgNode) => c.kind() === 'identifier');
+    if (direct) {
+        return direct.text();
+    }
+    // Generic: type > generic_type > [identifier(wrapper), type_parameter[type, type, ...]]
+    const generic = typeNode.children().find((c: SgNode) => c.kind() === 'generic_type');
+    if (!generic) {
+        return undefined;
+    }
+    const wrapper = generic
+        .children()
+        .find((c: SgNode) => c.kind() === 'identifier')
+        ?.text();
+    const params = generic.children().find((c: SgNode) => c.kind() === 'type_parameter');
+    if (!params) {
+        return wrapper; // No parameters — return the wrapper itself
+    }
+    const innerTypes = params.children().filter((c: SgNode) => c.kind() === 'type');
+    if (innerTypes.length === 0) {
+        return wrapper;
+    }
+    // Annotated[Foo, ...] keeps the first; everything else picks the last
+    // (works for Dict[K,V] → V and falls through to T for List/Set/Optional).
+    const pick = wrapper === 'Annotated' ? innerTypes[0] : innerTypes[innerTypes.length - 1];
+    return typeNameFromTypeNode(pick);
 }
 
 /**
@@ -270,10 +304,17 @@ function typeNameFromTypeNode(typeNode: SgNode): string | undefined {
 function collectPythonBindings(fnNode: SgNode): Map<string, string> {
     const bindings = new Map<string, string>();
 
-    // 1. Typed parameters on the function itself.
+    // 1. Typed parameters on the function itself. Two AST shapes both
+    // count: `typed_parameter` (no default) and `typed_default_parameter`
+    // (`x: T = default`) — the latter covers FastAPI's
+    // `svc: Service = Depends(get_service)` pattern.
     const params = fnNode.field('parameters');
     if (params) {
-        for (const p of params.findAll({ rule: { kind: 'typed_parameter' } })) {
+        for (const p of params.children()) {
+            const k = p.kind();
+            if (k !== 'typed_parameter' && k !== 'typed_default_parameter') {
+                continue;
+            }
             const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
             const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
             if (!ident || !typeNode) {
@@ -422,76 +463,91 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
         }
     }
 
-    // Pass 1c + 1d: walk __init__ to recover DI patterns.
-    const init = body
+    // Pass 1c + 1d: walk __init__ AND common factory methods (setUp,
+    // __post_init__, async setup) to recover DI patterns. Tests put their
+    // setup in setUp / asyncSetUp; dataclasses use __post_init__; pytest
+    // fixtures often run as classmethod factories. All of them assign
+    // `self.field = ...` the same way __init__ does.
+    const factoryNames = new Set(['__init__', '__post_init__', 'setUp', 'setup', 'asyncSetUp']);
+    const factories = body
         .children()
-        .find((c: SgNode) => c.kind() === 'function_definition' && c.field('name')?.text() === '__init__');
-    if (!init) {
-        return selfAttrs;
-    }
+        .filter((c: SgNode) => c.kind() === 'function_definition' && factoryNames.has(c.field('name')?.text() ?? ''));
+    for (const fn of factories) {
+        const paramTypes = new Map<string, string>();
+        const fnParams = fn.field('parameters');
+        if (fnParams) {
+            for (const p of fnParams.children()) {
+                const k = p.kind();
+                if (k !== 'typed_parameter' && k !== 'typed_default_parameter') {
+                    continue;
+                }
+                const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
+                const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
+                if (!ident || !typeNode) {
+                    continue;
+                }
+                const typeName = typeNameFromTypeNode(typeNode);
+                if (typeName) {
+                    paramTypes.set(ident.text(), typeName);
+                }
+            }
+        }
 
-    // Record typed parameters of __init__ so we can recognize `self.X = paramName`.
-    const paramTypes = new Map<string, string>();
-    const initParams = init.field('parameters');
-    if (initParams) {
-        for (const p of initParams.findAll({ rule: { kind: 'typed_parameter' } })) {
-            const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
-            const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
-            if (!ident || !typeNode) {
+        const fnBody = fn.field('body');
+        if (!fnBody) {
+            continue;
+        }
+        for (const stmt of fnBody.children()) {
+            if (stmt.kind() !== 'expression_statement') {
                 continue;
             }
-            const typeName = typeNameFromTypeNode(typeNode);
-            if (typeName) {
-                paramTypes.set(ident.text(), typeName);
+            const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+            if (!assign) {
+                continue;
             }
-        }
-    }
-
-    const initBody = init.field('body');
-    if (!initBody) {
-        return selfAttrs;
-    }
-    for (const stmt of initBody.children()) {
-        if (stmt.kind() !== 'expression_statement') {
-            continue;
-        }
-        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
-        if (!assign) {
-            continue;
-        }
-        const kids = assign.children();
-        // LHS must be `self.X` (attribute { identifier[self], identifier[X] }).
-        const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
-        if (!attr) {
-            continue;
-        }
-        const attrKids = attr.children();
-        const recv = attrKids.find((c: SgNode) => c.kind() === 'identifier');
-        const attrName = attrKids.filter((c: SgNode) => c.kind() === 'identifier')[1];
-        if (!recv || !attrName || recv.text() !== 'self') {
-            continue;
-        }
-        const name = attrName.text();
-        if (selfAttrs.has(name)) {
-            continue;
-        }
-
-        // Rule 4: `self.X: Type = ...` inline annotation on self.
-        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
-        if (typeNode) {
-            const typeName = typeNameFromTypeNode(typeNode);
-            if (typeName) {
-                selfAttrs.set(name, typeName);
+            const kids = assign.children();
+            const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
+            if (!attr) {
+                continue;
             }
-            continue;
-        }
+            const attrKids = attr.children();
+            const recv = attrKids.find((c: SgNode) => c.kind() === 'identifier');
+            const attrName = attrKids.filter((c: SgNode) => c.kind() === 'identifier')[1];
+            if (!recv || !attrName || recv.text() !== 'self') {
+                continue;
+            }
+            const name = attrName.text();
+            if (selfAttrs.has(name)) {
+                continue;
+            }
 
-        // Rule 3: `self.X = paramName` where paramName is typed.
-        const rhsIdent = kids.find((c: SgNode) => c.kind() === 'identifier');
-        if (rhsIdent) {
-            const typeName = paramTypes.get(rhsIdent.text());
-            if (typeName) {
-                selfAttrs.set(name, typeName);
+            // `self.X: Type = ...`
+            const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+            if (typeNode) {
+                const typeName = typeNameFromTypeNode(typeNode);
+                if (typeName) {
+                    selfAttrs.set(name, typeName);
+                }
+                continue;
+            }
+
+            // `self.X = typedParam`
+            const rhsIdent = kids.find((c: SgNode) => c.kind() === 'identifier');
+            if (rhsIdent) {
+                const typeName = paramTypes.get(rhsIdent.text());
+                if (typeName) {
+                    selfAttrs.set(name, typeName);
+                    continue;
+                }
+            }
+
+            // `self.X = Foo(...)` uppercase-call factory inside a setup method.
+            const rhsCall = kids.find((c: SgNode) => c.kind() === 'call');
+            if (rhsCall) {
+                const fnIdent = rhsCall.children().find((c: SgNode) => c.kind() === 'identifier');
+                if (fnIdent && isLikelyClassName(fnIdent.text())) {
+                    selfAttrs.set(name, fnIdent.text());
+                }
             }
         }
     }
