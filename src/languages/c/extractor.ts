@@ -1,6 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
@@ -537,21 +536,81 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
         },
 
         extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void {
-            const findEnclosingClass = (node: SgNode): SgNode | null => {
-                return (
-                    node.ancestors().find((a) => {
-                        const k = String(a.kind());
-                        return k === 'class_specifier' || k === 'struct_specifier';
-                    }) ?? null
-                );
-            };
+            // Bespoke walker — the shared `$CALLEE($$$ARGS)` ast-grep pattern
+            // produces zero matches against tree-sitter-c (and -cpp), the same
+            // gap that prompted custom walkers for PHP and Java. We iterate
+            // call_expression nodes directly and dispatch on the function
+            // field's kind: identifier (`myFunc()`), field_expression
+            // (`x.method()` / `x->method()`), or qualified_identifier
+            // (`Foo::bar()` in C++).
+            const findEnclosingClass = (node: SgNode): SgNode | null =>
+                node.ancestors().find((a) => {
+                    const k = String(a.kind());
+                    return k === 'class_specifier' || k === 'struct_specifier';
+                }) ?? null;
 
-            const config: CallExtractionConfig = {
-                selfPrefixes: langKey === 'cpp' ? ['this->'] : [],
-                superPrefixes: [],
-                findEnclosingClass,
-            };
-            extractCalls(root, fp, config, calls);
+            for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
+                const fn = ce.field('function');
+                if (!fn) {
+                    continue;
+                }
+                const fnKind = fn.kind();
+                let callName: string | undefined;
+                let resolveInClass: string | undefined;
+                let chainedFromLine: number | undefined;
+                let chainedFromColumn: number | undefined;
+
+                if (fnKind === 'identifier') {
+                    callName = fn.text();
+                } else if (fnKind === 'field_expression') {
+                    const fid = fn.children().find((c) => c.kind() === 'field_identifier');
+                    if (!fid) {
+                        continue;
+                    }
+                    callName = fid.text();
+                    if (langKey === 'cpp') {
+                        // `this->method()` / `this.method()` resolves in current class.
+                        const baseChild = fn.children()[0];
+                        if (baseChild?.kind() === 'this' || baseChild?.text() === 'this') {
+                            const classNode = findEnclosingClass(ce);
+                            const nameNode = classNode?.children().find((c) => c.kind() === 'type_identifier');
+                            resolveInClass = nameNode?.text();
+                        }
+                    }
+                    // Chain detection: receiver (first child) is itself a call.
+                    const baseChild = fn.children()[0];
+                    if (baseChild?.kind() === 'call_expression') {
+                        const innerFn = baseChild.field('function');
+                        const innerR = (innerFn ?? baseChild).range().end;
+                        chainedFromLine = innerR.line;
+                        chainedFromColumn = innerR.column;
+                    }
+                } else if (fnKind === 'qualified_identifier' && langKey === 'cpp') {
+                    // `Foo::bar()` — qualified static / namespaced call.
+                    const subs = fn.children();
+                    const ns = subs.find((c) => c.kind() === 'namespace_identifier' || c.kind() === 'type_identifier');
+                    const last = [...subs].reverse().find((c) => c.kind() === 'identifier');
+                    if (!last) {
+                        continue;
+                    }
+                    callName = last.text();
+                    if (ns) {
+                        resolveInClass = ns.text();
+                    }
+                } else {
+                    continue;
+                }
+
+                const r = fn.range().end;
+                calls.push({
+                    source: fp,
+                    callName,
+                    line: r.line,
+                    column: r.column,
+                    ...(resolveInClass ? { resolveInClass } : {}),
+                    ...(chainedFromLine !== undefined ? { chainedFromLine, chainedFromColumn } : {}),
+                });
+            }
         },
     };
 }
@@ -562,6 +621,32 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 // (init_declarator) and `Type x = Type(...);`. We intentionally skip
 // `auto x = ...;` because the type lives in the RHS expression and
 // resolving it reliably requires more than a surface walk.
+/**
+ * Walk through pointer/reference/array declarators to find the identifier
+ * a declaration binds. Handles `Foo x`, `Foo *x`, `Foo &x` (C++),
+ * `Foo *x = ...`, and nested combinations like `Foo *const x`.
+ * Returns null when no identifier is reachable through the declarator chain.
+ */
+function findDeclaredName(node: SgNode): string | null {
+    if (node.kind() === 'identifier') {
+        return node.text();
+    }
+    if (
+        node.kind() === 'pointer_declarator' ||
+        node.kind() === 'reference_declarator' ||
+        node.kind() === 'init_declarator' ||
+        node.kind() === 'array_declarator'
+    ) {
+        for (const c of node.children()) {
+            const name = findDeclaredName(c);
+            if (name) {
+                return name;
+            }
+        }
+    }
+    return null;
+}
+
 function extractReceiverTypesC(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
@@ -572,16 +657,9 @@ function extractReceiverTypesC(root: SgNode, fp: string): ReceiverTypeMap {
             continue;
         }
         for (const c of decl.children()) {
-            if (c.kind() === 'identifier') {
-                bindings.set(c.text(), typeName);
-            } else if (c.kind() === 'init_declarator') {
-                const name = c
-                    .children()
-                    .find((x: SgNode) => x.kind() === 'identifier')
-                    ?.text();
-                if (name) {
-                    bindings.set(name, typeName);
-                }
+            const name = findDeclaredName(c);
+            if (name) {
+                bindings.set(name, typeName);
             }
         }
     }

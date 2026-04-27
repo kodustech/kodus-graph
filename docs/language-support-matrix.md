@@ -28,7 +28,7 @@
  | Kotlin | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/kotlin` | 
  | Rust | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
  | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/php` | 
- | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/c` | 
+ | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/c` | 
  | C++ | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/cpp` | 
 
 ## Per-language notes
@@ -119,7 +119,9 @@
 
 ### C (`c`)
 
-- Validated on redis 2026-04-20: 🟡 GAP (receiver+di both <1 per-1k — C extractor has receiver_type: none)
+- Validated on redis 2026-04-20: 🟡 GAP (receiver+di both <1 per-1k)
+- Call extraction (added 2026-04-27): bespoke walker over call_expression — the shared `$CALLEE($$$ARGS)` ast-grep pattern returns zero matches in C/C++, same gap that prompted PHP/Java custom walkers
+- Receiver-type (added 2026-04-27): scope-local from `Foo *x = ...` (pointer), `Foo &x = ...` (C++ reference), `Foo x;` and `Foo y = init();`
 - capabilities: hasExceptions=false
 
 ### C++ (`cpp`)

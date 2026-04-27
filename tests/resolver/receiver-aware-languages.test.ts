@@ -132,6 +132,18 @@ describe('receiver-type inference per language', () => {
         expect(map.size).toBe(0);
     });
 
+    it('C infers receiverType through pointer declarator `Foo *x = ...; x->method()`', async () => {
+        const calls = await extractWithReceiver('c', 'void r() { Foo *x = make_foo(); x->update(); }', 'src/a.c');
+        const upd = calls.find((c) => c.callName === 'update');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
+    it('C++ infers receiverType through reference declarator `Foo &x = ...; x.method()`', async () => {
+        const calls = await extractWithReceiver('cpp', 'void r(Foo& src) { Foo &x = src; x.update(); }', 'src/a.cpp');
+        const upd = calls.find((c) => c.callName === 'update');
+        expect(upd?.receiverType).toBe('Foo');
+    });
+
     it('Dart infers receiverType from `Foo x = Foo()`', async () => {
         const calls = await extractWithReceiver(
             'dart',
