@@ -159,9 +159,10 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         },
         notes: [
             'Validated on keycloak (801M, 6665 .java files)',
-            'Foo->FooImpl heuristic matches 1.7% of interfaces; real Java uses @Inject/@Autowired (not parsed)',
+            'DI: parses @Inject/@Autowired/@Resource on fields and constructors (last-segment match, FQ-prefixed forms supported). Combines with Foo->FooImpl name heuristic.',
+            'Call sites: this.field.method() threads field through diMap (added 2026-04-27)',
             'Multi-module Maven import resolution ~2% (weak)',
-            'Known gap: enterprise Java requires annotation-based DI. Tracked in separate plan.',
+            'Note: implicit constructor injection (Spring 4.3+ single-constructor auto-wire) not detected — requires @Autowired or @Inject on the constructor',
         ],
     },
     {
@@ -332,7 +333,7 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         baseline_tier_ratios: null,
         notes: [
             'Validated on kotlinx.coroutines 2026-04-19: 🟡 GAP (ambigRatio 0.683 > 0.6) — same Kotlin method-name-reuse pattern as Java',
-            'Reuses Java DI heuristic',
+            'DI (added 2026-04-27): parses @Inject/@Autowired/@Resource on properties and primary constructors; bare `repo.method()` and `this.repo.method()` thread `repo` as diField. Reuses Java FooImpl name heuristic.',
         ],
     },
     {

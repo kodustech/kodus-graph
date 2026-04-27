@@ -23,6 +23,14 @@ export interface CallExtractionConfig {
     getParentClass?: (classNode: SgNode) => string | undefined;
     /** Skip this callee entirely (e.g., TS skips this.field.method — handled by DI) */
     skipCallee?: (callee: string) => boolean;
+    /**
+     * Optional: derive a diField from the callee text. When set, every call
+     * with a single-segment receiver (e.g., `repo.find` or `this.repo.find`)
+     * threads that segment as `diField`. The resolver only routes through DI
+     * if the field is in the file's diMap, so non-DI identifiers fall through
+     * harmlessly to receiver/import/unique tiers.
+     */
+    extractDiField?: (callee: string) => string | undefined;
 }
 
 /**
@@ -76,6 +84,8 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
             }
         }
 
+        const diField = resolveInClass ? undefined : config.extractDiField?.(callee);
+
         calls.push({
             source: fp,
             callName,
@@ -85,6 +95,7 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
             // calls on the same line share a line but not a column).
             column: m.range().start.column,
             ...(resolveInClass ? { resolveInClass } : {}),
+            ...(diField ? { diField } : {}),
         });
     }
 }

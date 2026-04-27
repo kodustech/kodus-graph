@@ -122,6 +122,33 @@ const ANNOTATION_KIND = 'marker_annotation';
 const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 
 // ---------------------------------------------------------------------------
+// DI annotation helpers
+// ---------------------------------------------------------------------------
+
+// Last-segment names of recognized DI annotations (covers `@Inject`,
+// `@javax.inject.Inject`, `@jakarta.inject.Inject`, `@Autowired`,
+// `@org.springframework.beans.factory.annotation.Autowired`, `@Resource`).
+const DI_ANNOTATION_NAMES = new Set(['Inject', 'Autowired', 'Resource']);
+
+function hasJavaDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+    if (!modifiersNode) {
+        return false;
+    }
+    for (const c of modifiersNode.children()) {
+        const k = c.kind();
+        if (k !== 'marker_annotation' && k !== 'annotation') {
+            continue;
+        }
+        const head = c.text().split('(')[0].trim().replace(/^@/, '');
+        const last = head.split('.').pop() ?? '';
+        if (DI_ANNOTATION_NAMES.has(last)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // Java extractor
 // ---------------------------------------------------------------------------
 
@@ -270,6 +297,84 @@ export const javaExtractors: LanguageExtractors = {
             }
         }
 
+        // ── DI: annotated fields and constructors ────────────────────────
+        // Field injection: `@Inject T field;` → diMap[field] = T
+        for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
+            const mods = fd.children().find((c) => c.kind() === 'modifiers');
+            if (!hasJavaDIAnnotation(mods)) {
+                continue;
+            }
+            const typeNode = fd.children().find((c) => {
+                const k = c.kind();
+                return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+            });
+            if (!typeNode) {
+                continue;
+            }
+            const typeName =
+                typeNode.kind() === 'generic_type'
+                    ? typeNode
+                          .children()
+                          .find((c) => c.kind() === 'type_identifier')
+                          ?.text() || typeNode.text()
+                    : typeNode.text();
+            for (const vd of fd.children()) {
+                if (vd.kind() !== 'variable_declarator') {
+                    continue;
+                }
+                const ident =
+                    vd.field('name')?.text() ??
+                    vd
+                        .children()
+                        .find((c) => c.kind() === 'identifier')
+                        ?.text();
+                if (ident) {
+                    result.diEntries.push({ fieldName: ident, typeName });
+                }
+            }
+        }
+
+        // Constructor injection: `@Inject` (or `@Autowired`) on the constructor
+        // marks each parameter as a DI binding (param name → param type).
+        // Spring 4.3+ also auto-injects when there is a single constructor;
+        // we leave that implicit case to a future heuristic.
+        for (const cd of root.findAll({ rule: { kind: 'constructor_declaration' } })) {
+            const mods = cd.children().find((c) => c.kind() === 'modifiers');
+            if (!hasJavaDIAnnotation(mods)) {
+                continue;
+            }
+            const params = cd.field('parameters');
+            if (!params) {
+                continue;
+            }
+            for (const p of params.children()) {
+                if (p.kind() !== 'formal_parameter') {
+                    continue;
+                }
+                const typeNode = p.children().find((c) => {
+                    const k = c.kind();
+                    return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+                });
+                const ident =
+                    p.field('name')?.text() ??
+                    p
+                        .children()
+                        .find((c) => c.kind() === 'identifier')
+                        ?.text();
+                if (!typeNode || !ident) {
+                    continue;
+                }
+                const typeName =
+                    typeNode.kind() === 'generic_type'
+                        ? typeNode
+                              .children()
+                              .find((c) => c.kind() === 'type_identifier')
+                              ?.text() || typeNode.text()
+                        : typeNode.text();
+                result.diEntries.push({ fieldName: ident, typeName });
+            }
+        }
+
         // ── Imports ─────────────────────────────────────────────────────
         for (const node of root.findAll({ rule: { kind: 'import_declaration' } })) {
             const module = extractImportModule(node);
@@ -321,6 +426,7 @@ export const javaExtractors: LanguageExtractors = {
 
             const obj = mi.field('object');
             let resolveInClass: string | undefined;
+            let diField: string | undefined;
 
             if (obj) {
                 const objText = obj.text();
@@ -335,6 +441,15 @@ export const javaExtractors: LanguageExtractors = {
                     if (classNode) {
                         resolveInClass = getParentClass(classNode);
                     }
+                } else if (objKind === 'field_access') {
+                    // `this.field.method()` — pick up `field` so the resolver
+                    // can route through diMap to the injected concrete type.
+                    const accessChildren = obj.children();
+                    const base = accessChildren[0];
+                    const fieldName = obj.field('field')?.text();
+                    if (base && fieldName && (base.kind() === 'this' || base.text() === 'this')) {
+                        diField = fieldName;
+                    }
                 }
                 // For other `x.method()` member calls, `callName` alone is
                 // enough — the receiver-type inference pass cross-references
@@ -348,6 +463,7 @@ export const javaExtractors: LanguageExtractors = {
                 line: r.line,
                 column: r.column,
                 ...(resolveInClass ? { resolveInClass } : {}),
+                ...(diField ? { diField } : {}),
             });
         }
     },

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { Lang, parseAsync } from '@ast-grep/napi';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import type { RawGraph } from '../../src/graph/types';
-import { extractFromFile } from '../../src/parser/extractor';
+import type { RawCallSite, RawGraph } from '../../src/graph/types';
+import { extractCallsFromFile, extractFromFile } from '../../src/parser/extractor';
 import '../../src/parser/languages'; // trigger registration
 
 const FIXTURES = join(import.meta.dir, '../fixtures');
@@ -293,6 +293,76 @@ describe('extractGeneric – Java', () => {
         const ctor = graph.functions.find((f) => f.kind === 'Constructor');
         expect(ctor).toBeDefined();
         expect(ctor!.modifiers).toContain('@Autowired');
+    });
+
+    test('@Inject / @Autowired fields populate diMap with field → type', async () => {
+        const code = [
+            'public class UserService {',
+            '    @Inject',
+            '    private UserRepository repo;',
+            '    @Autowired',
+            '    private final Logger logger;',
+            '    @jakarta.inject.Inject',
+            '    private NotifierService notifier;',
+            '    private final NotInjected other;',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+        expect(diMap!.get('notifier')).toBe('NotifierService');
+        expect(diMap!.has('other')).toBe(false);
+    });
+
+    test('@Inject on constructor adds every parameter to diMap', async () => {
+        const code = [
+            'public class UserService {',
+            '    private final UserRepository repo;',
+            '    private final Logger logger;',
+            '    @Autowired',
+            '    public UserService(UserRepository repo, Logger logger) {',
+            '        this.repo = repo;',
+            '        this.logger = logger;',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+    });
+
+    test('this.field.method() call sets diField for resolver routing', async () => {
+        const code = [
+            'public class Svc {',
+            '    @Inject',
+            '    private Repo repo;',
+            '    public void run() {',
+            '        this.repo.find();',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/Svc.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+        const calls: RawCallSite[] = [];
+        extractCallsFromFile(root, fp, 'java', calls);
+
+        const findCall = calls.find((c) => c.callName === 'find');
+        expect(findCall).toBeDefined();
+        expect(findCall!.diField).toBe('repo');
     });
 });
 
@@ -1036,6 +1106,77 @@ describe('new fields – Kotlin', () => {
         const fn = graph.functions.find((f) => f.name === 'getUser');
         expect(fn).toBeDefined();
         expect(fn!.is_exported).toBe(true);
+    });
+
+    test('@Inject on property populates diMap', async () => {
+        const code = [
+            'class UserService {',
+            '    @Inject',
+            '    lateinit var repo: UserRepository',
+            '    @javax.inject.Inject',
+            '    lateinit var logger: Logger',
+            '    var notInjected: NotInjected? = null',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+        expect(diMap!.has('notInjected')).toBe(false);
+    });
+
+    test('@Inject on primary constructor adds every class_parameter to diMap', async () => {
+        const code = [
+            'class UserService @Inject constructor(',
+            '    private val repo: UserRepository,',
+            '    private val logger: Logger,',
+            ') { }',
+        ].join('\n');
+        const fp = '/virt/UserService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+    });
+
+    test('primary constructor without @Inject does NOT populate diMap', async () => {
+        const code = ['class OtherService(private val plain: NotInjected) { }'].join('\n');
+        const fp = '/virt/OtherService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        expect(graph.diMaps.get(fp)).toBeUndefined();
+    });
+
+    test('field.method() and this.field.method() set diField', async () => {
+        const code = [
+            'class Svc @Inject constructor(private val repo: Repo) {',
+            '    fun a() { repo.find() }',
+            '    fun b() { this.repo.find() }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/Svc.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+        const calls: RawCallSite[] = [];
+        extractCallsFromFile(root, fp, 'kotlin', calls);
+
+        const findCalls = calls.filter((c) => c.callName === 'find');
+        expect(findCalls.length).toBe(2);
+        for (const c of findCalls) {
+            expect(c.diField).toBe('repo');
+        }
     });
 });
 

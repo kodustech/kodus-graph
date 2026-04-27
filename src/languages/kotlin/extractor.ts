@@ -31,6 +31,47 @@ const KOTLIN_BRANCH_KINDS = [
 ] as const;
 
 // ---------------------------------------------------------------------------
+// DI annotation helpers
+// ---------------------------------------------------------------------------
+
+const DI_ANNOTATION_NAMES = new Set(['Inject', 'Autowired', 'Resource']);
+
+function hasKotlinDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+    if (!modifiersNode) {
+        return false;
+    }
+    for (const c of modifiersNode.children()) {
+        if (c.kind() !== 'annotation') {
+            continue;
+        }
+        const head = c.text().split('(')[0].trim().replace(/^@/, '');
+        const last = head.split('.').pop() ?? '';
+        if (DI_ANNOTATION_NAMES.has(last)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * From a callee like `repo.find` or `this.repo.find`, return the receiver
+ * field name (`repo`). Returns undefined for chains deeper than two hops
+ * (e.g., `a.b.c.d`) or bare identifiers (`foo`). The resolver only routes
+ * through DI when the field is actually in the diMap, so non-DI receivers
+ * fall through to other tiers.
+ */
+function kotlinDiFieldFromCallee(callee: string): string | undefined {
+    const parts = callee.split('.');
+    if (parts.length === 2 && parts[0]) {
+        return parts[0];
+    }
+    if (parts.length === 3 && parts[0] === 'this' && parts[1]) {
+        return parts[1];
+    }
+    return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Kotlin disambiguation helpers
 // ---------------------------------------------------------------------------
 
@@ -387,6 +428,57 @@ export const kotlinExtractors: LanguageExtractors = {
             });
         }
 
+        // ── DI: @Inject on properties and primary constructor ────────────
+        // Property injection: `@Inject lateinit var foo: T` → diMap[foo] = T
+        for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+            const mods = pd.children().find((c) => c.kind() === 'modifiers');
+            if (!hasKotlinDIAnnotation(mods)) {
+                continue;
+            }
+            const varDecl = pd.children().find((c) => c.kind() === 'variable_declaration');
+            if (!varDecl) {
+                continue;
+            }
+            const name = varDecl
+                .children()
+                .find((c) => c.kind() === 'simple_identifier')
+                ?.text();
+            const type = varDecl
+                .children()
+                .find((c) => c.kind() === 'user_type')
+                ?.text();
+            if (name && type) {
+                result.diEntries.push({ fieldName: name, typeName: type });
+            }
+        }
+
+        // Constructor injection: `class Foo @Inject constructor(val a: A, val b: B)` —
+        // every `class_parameter` becomes a DI binding. In Kotlin a class parameter
+        // with `val`/`var` doubles as a property, so referencing `a.x()` from a
+        // method threads through diMap.
+        for (const pc of root.findAll({ rule: { kind: 'primary_constructor' } })) {
+            const mods = pc.children().find((c) => c.kind() === 'modifiers');
+            if (!hasKotlinDIAnnotation(mods)) {
+                continue;
+            }
+            for (const cp of pc.children()) {
+                if (cp.kind() !== 'class_parameter') {
+                    continue;
+                }
+                const name = cp
+                    .children()
+                    .find((c) => c.kind() === 'simple_identifier')
+                    ?.text();
+                const type = cp
+                    .children()
+                    .find((c) => c.kind() === 'user_type')
+                    ?.text();
+                if (name && type) {
+                    result.diEntries.push({ fieldName: name, typeName: type });
+                }
+            }
+        }
+
         // ── Imports ─────────────────────────────────────────────────────
         for (const node of root.findAll({ rule: { kind: 'import_header' } })) {
             const module = extractImportModule(node);
@@ -432,6 +524,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 }
                 return undefined;
             },
+            extractDiField: kotlinDiFieldFromCallee,
         };
         extractCalls(root, fp, config, calls);
     },
