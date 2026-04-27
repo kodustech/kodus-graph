@@ -3,7 +3,7 @@ import type { RawCallSite } from '../../graph/types';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
-import type { ReceiverTypeMap } from '../receiver-types';
+import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 
@@ -230,6 +230,58 @@ export const phpExtractors: LanguageExtractors = {
             }
         }
 
+        // ── DI: typed properties + PHP 8 promoted constructor properties ──
+        // For `private UserRepository $repo;` (PHP 7.4+) or
+        // `public function __construct(private UserRepository $repo) {}`
+        // (PHP 8.0+ promotion), record `repo → UserRepository` so
+        // `$this->repo->method()` routes through the DI tier.
+        for (const cls of root.findAll({ rule: { kind: 'class_declaration' } })) {
+            for (const pd of cls.findAll({ rule: { kind: 'property_declaration' } })) {
+                const typeNode = pd.children().find((c) => c.kind() === 'named_type');
+                const propEl = pd.children().find((c) => c.kind() === 'property_element');
+                if (!typeNode || !propEl) {
+                    continue;
+                }
+                const propName =
+                    propEl
+                        .children()
+                        .find((c) => c.kind() === 'variable_name')
+                        ?.text() ?? propEl.text();
+                const fieldName = propName.replace(/^\$/, '');
+                if (fieldName) {
+                    result.diEntries.push({ fieldName, typeName: typeNode.text() });
+                }
+            }
+            // Promoted constructor properties (PHP 8.0+).
+            for (const ctor of cls.findAll({ rule: { kind: 'method_declaration' } })) {
+                if (ctor.field('name')?.text() !== '__construct') {
+                    continue;
+                }
+                const params = ctor.field('parameters');
+                if (!params) {
+                    continue;
+                }
+                for (const p of params.children()) {
+                    if (p.kind() !== 'simple_parameter' && p.kind() !== 'property_promotion_parameter') {
+                        continue;
+                    }
+                    const hasVisibility = p.children().some((c) => c.kind() === 'visibility_modifier');
+                    if (!hasVisibility) {
+                        continue;
+                    }
+                    const typeNode = p.children().find((c) => c.kind() === 'named_type');
+                    const varNode = p.children().find((c) => c.kind() === 'variable_name');
+                    if (!typeNode || !varNode) {
+                        continue;
+                    }
+                    result.diEntries.push({
+                        fieldName: varNode.text().replace(/^\$/, ''),
+                        typeName: typeNode.text(),
+                    });
+                }
+            }
+        }
+
         // ── Imports ─────────────────────────────────────────────────────
         for (const node of root.findAll({ rule: { kind: 'namespace_use_declaration' } })) {
             const module = extractImportModule(node);
@@ -395,16 +447,86 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
     }
 }
 
-// Receiver-type inference: no-op.
-//
-// PHP variables don't require type declarations and are frequently
-// reassigned. While explicit parameter/property types and `/** @var */`
-// PHPDoc hints exist, tracking them reliably in scope requires parsing
-// PHPDoc and cross-referencing assignments — more than a surface walk
-// can justify. Registering an empty map so the cascade falls back to
-// name-based resolution with no regression.
-function extractReceiverTypesPHP(_root: SgNode, _fp: string): ReceiverTypeMap {
-    return new Map();
+/**
+ * Collect scope-local PHP bindings inside a function/method:
+ *   $x = new Foo()                         → '$x' → 'Foo'
+ *   public function f(Foo $x) {...}        → '$x' → 'Foo' (param type hint)
+ * Bindings are tied to a single function — the resolver consults them only
+ * for member calls inside that same function body. Reassignments to a
+ * differently typed expression aren't tracked (latest write wins, but
+ * scope-local guarantees mean cross-method bleed doesn't happen).
+ */
+function collectPhpBindings(fn: SgNode): Map<string, string> {
+    const bindings = new Map<string, string>();
+    const params = fn.field('parameters');
+    if (params) {
+        for (const p of params.children()) {
+            if (p.kind() !== 'simple_parameter' && p.kind() !== 'property_promotion_parameter') {
+                continue;
+            }
+            const typeNode = p.children().find((c) => c.kind() === 'named_type');
+            const varNode = p.children().find((c) => c.kind() === 'variable_name');
+            if (typeNode && varNode) {
+                bindings.set(varNode.text(), typeNode.text());
+            }
+        }
+    }
+    for (const a of fn.findAll({ rule: { kind: 'assignment_expression' } })) {
+        const left = a.field('left');
+        const right = a.field('right');
+        if (left?.kind() !== 'variable_name' || !right) {
+            continue;
+        }
+        if (right.kind() === 'object_creation_expression') {
+            const typeNode = right.children().find((c) => {
+                const k = c.kind();
+                return k === 'name' || k === 'qualified_name';
+            });
+            if (typeNode) {
+                bindings.set(left.text(), typeNode.text());
+            }
+        }
+    }
+    return bindings;
+}
+
+/**
+ * Receiver-type inference for PHP. Two paths:
+ *   1. `$x->method()` where `$x` was assigned via `$x = new Foo()` or came
+ *      from a typed parameter — keyed on the call site location so the
+ *      resolver's receiver tier can match `::Foo.method`.
+ *   2. `$this->field->method()` is handled by the DI tier (typed properties
+ *      / promoted constructor params populate diMaps in `extract`).
+ */
+function extractReceiverTypesPHP(root: SgNode, fp: string): ReceiverTypeMap {
+    const out: ReceiverTypeMap = new Map();
+    const fnKinds = ['method_declaration', 'function_definition'];
+    for (const kind of fnKinds) {
+        for (const fn of root.findAll({ rule: { kind } })) {
+            const bindings = collectPhpBindings(fn);
+            if (bindings.size === 0) {
+                continue;
+            }
+            for (const mce of fn.findAll({ rule: { kind: 'member_call_expression' } })) {
+                const obj = mce.children()[0];
+                if (!obj || obj.kind() !== 'variable_name' || obj.text() === '$this') {
+                    continue;
+                }
+                const typeName = bindings.get(obj.text());
+                if (!typeName) {
+                    continue;
+                }
+                const methodNameNode = mce.children().find((c) => c.kind() === 'name');
+                if (!methodNameNode) {
+                    continue;
+                }
+                // Same end-of-callee column convention as extractCallsFromPHP.
+                const r = methodNameNode.range().end;
+                out.set(locationKey(fp, r.line, r.column), typeName);
+            }
+        }
+    }
+    return out;
 }
 
 registerExtractor('php', phpExtractors);

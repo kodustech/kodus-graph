@@ -373,7 +373,7 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
             noise: true,
             capabilities: true,
             di_heuristic: true,
-            receiver_type: 'none',
+            receiver_type: 'scope-local',
             complexity_kinds: true,
             imports: true,
         },
@@ -381,8 +381,8 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         baseline_tier_ratios: null,
         notes: [
             'Validated on laravel/framework 2026-04-23: 93.8% resolved, 160k edges, 13344 high-confidence CALLS — up from 10 edges (fix: custom walk of function_call_expression / member_call_expression / scoped_call_expression)',
-            'Stays basic: receiver+di per-1k < 1 (PHP is dynamically typed; receiver-type inference via PHPDoc/constructor type hints is future work)',
-            'Reuses Java DI heuristic',
+            'Receiver-type (added 2026-04-27): scope-local from `$x = new Foo()` and typed parameters; DI from typed properties `private Foo $repo;` (PHP 7.4+) and PHP 8 promoted constructor properties',
+            'Reuses Java DI heuristic for interface→impl name fallback',
         ],
     },
     {

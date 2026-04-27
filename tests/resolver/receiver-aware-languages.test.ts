@@ -116,13 +116,14 @@ describe('receiver-type inference per language', () => {
         expect(map.size).toBe(0);
     });
 
-    it('PHP extractor returns an empty receiver-type map (no-op)', async () => {
-        const root = await parseAsync(
-            'php' as never,
+    it('PHP infers receiverType from `$x = new Foo()`', async () => {
+        const calls = await extractWithReceiver(
+            'php',
             '<?php class A { function r() { $x = new Foo(); $x->update(); } }',
+            'src/a.php',
         );
-        const map = extractReceiverTypesFromEngine(root, 'src/a.php', 'php');
-        expect(map.size).toBe(0);
+        const upd = calls.find((c) => c.callName === 'update');
+        expect(upd?.receiverType).toBe('Foo');
     });
 
     it('Elixir extractor returns an empty receiver-type map (no-op)', async () => {

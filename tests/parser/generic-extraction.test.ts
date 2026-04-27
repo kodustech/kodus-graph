@@ -699,6 +699,50 @@ describe('extractGeneric – PHP', () => {
         expect(admin!.implements).toContain('Serializable');
         expect(admin!.implements).toContain('JsonSerializable');
     });
+
+    test('typed property `private Foo $repo;` populates diMap', async () => {
+        const code = [
+            '<?php',
+            'class UserService {',
+            '    private UserRepository $repo;',
+            '    private Logger $logger;',
+            '    private $untyped;',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.php';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'php', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+        expect(diMap!.has('untyped')).toBe(false);
+    });
+
+    test('PHP 8 promoted constructor properties populate diMap', async () => {
+        const code = [
+            '<?php',
+            'class UserService {',
+            '    public function __construct(',
+            '        private UserRepository $repo,',
+            '        public Logger $logger,',
+            '        $plain,',
+            '    ) {}',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.php';
+        const root = await parseAsync('php', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'php', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+        expect(diMap!.has('plain')).toBe(false);
+    });
 });
 
 // ---------------------------------------------------------------------------

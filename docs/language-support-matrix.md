@@ -27,7 +27,7 @@
  | Elixir | 🟢 full | 🚶 moderate | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/elixir` | 
  | Kotlin | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/kotlin` | 
  | Rust | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/rust` | 
- | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | — | ✓ | ✓ | `tests/fixtures/php` | 
+ | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/php` | 
  | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/c` | 
  | C++ | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/cpp` | 
 
@@ -114,8 +114,8 @@
 ### PHP (`php`)
 
 - Validated on laravel/framework 2026-04-23: 93.8% resolved, 160k edges, 13344 high-confidence CALLS — up from 10 edges (fix: custom walk of function_call_expression / member_call_expression / scoped_call_expression)
-- Stays basic: receiver+di per-1k < 1 (PHP is dynamically typed; receiver-type inference via PHPDoc/constructor type hints is future work)
-- Reuses Java DI heuristic
+- Receiver-type (added 2026-04-27): scope-local from `$x = new Foo()` and typed parameters; DI from typed properties `private Foo $repo;` (PHP 7.4+) and PHP 8 promoted constructor properties
+- Reuses Java DI heuristic for interface→impl name fallback
 
 ### C (`c`)
 
