@@ -460,6 +460,20 @@ export const javaExtractors: LanguageExtractors = {
             // type extractor and the shared call extractor convention so
             // chained calls don't collide on receiver-type lookup.
             const r = (nameNode ?? mi).range().end;
+
+            // Chain detection: `obj.find().greet()` — the outer mi's object
+            // is the inner method_invocation. Record the inner's column so
+            // the resolver's second pass can propagate its return type as
+            // the outer's receiverType.
+            let chainedFromLine: number | undefined;
+            let chainedFromColumn: number | undefined;
+            if (obj?.kind() === 'method_invocation') {
+                const innerName = obj.field('name');
+                const innerR = (innerName ?? obj).range().end;
+                chainedFromLine = innerR.line;
+                chainedFromColumn = innerR.column;
+            }
+
             calls.push({
                 source: fp,
                 callName,
@@ -467,6 +481,7 @@ export const javaExtractors: LanguageExtractors = {
                 column: r.column,
                 ...(resolveInClass ? { resolveInClass } : {}),
                 ...(diField ? { diField } : {}),
+                ...(chainedFromLine !== undefined ? { chainedFromLine, chainedFromColumn } : {}),
             });
         }
     },

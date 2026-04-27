@@ -335,6 +335,15 @@ export interface RawCallSite {
      * Consumed by the resolver's receiver-aware tier (0.95 / 0.90 confidence).
      */
     receiverType?: string;
+    /**
+     * Location of the inner call this site is chained from, for `x.a().b()`
+     * patterns. Populated by language extractors when a call's receiver is
+     * itself a call expression. The resolver uses this in a second pass to
+     * propagate the inner call's resolved return type as the outer call's
+     * receiverType, closing the chain-receiver gap.
+     */
+    chainedFromLine?: number;
+    chainedFromColumn?: number;
 }
 
 export interface RawCallEdge {
