@@ -483,6 +483,42 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
 
     // Direct calls + self/super detection via shared function
     extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);
+
+    // JSX element calls — `<UserCard ... />` or `<UserCard>...</UserCard>` is
+    // semantically a call to the component function/class. Without this React
+    // codebases have a huge gap in the call graph: every component invocation
+    // is invisible. Heuristic: PascalCase tag = component (not HTML element).
+    //
+    // Only `.tsx` / `.jsx` files have JSX kinds in the grammar; querying the
+    // kind in plain `.ts` / `.js` throws `InvalidKind`. Gate by extension.
+    if (/\.(tsx|jsx)$/i.test(fp)) {
+        for (const kind of ['jsx_self_closing_element', 'jsx_opening_element']) {
+            for (const el of rootNode.findAll({ rule: { kind } })) {
+                const nameNode =
+                    el.field('name') ??
+                    el.children().find((c: SgNode) => {
+                        const k = String(c.kind());
+                        return k === 'identifier' || k === 'nested_identifier' || k === 'jsx_namespace_name';
+                    });
+                const name = nameNode?.text();
+                if (!name) {
+                    continue;
+                }
+                // Skip lowercase-tag HTML elements (`div`, `span`, `button`, …)
+                // and namespaced/member tags (`svg:rect`, `Foo.Bar`).
+                if (!/^[A-Z][A-Za-z0-9_$]*$/.test(name)) {
+                    continue;
+                }
+                const r = (nameNode ?? el).range().end;
+                calls.push({
+                    source: fp,
+                    callName: name,
+                    line: r.line,
+                    column: r.column,
+                });
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

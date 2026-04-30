@@ -213,6 +213,50 @@ end
     });
 });
 
+describe('extractCallsFromTypeScript — JSX components', () => {
+    async function extractCallsTsx(source: string, fp = 'src/App.tsx'): Promise<RawCallSite[]> {
+        const root = await parseAsync(Lang.Tsx, source);
+        const calls: RawCallSite[] = [];
+        extractCallsFromTypeScript(root, fp, calls);
+        return calls;
+    }
+
+    it('extracts PascalCase JSX self-closing element as a call', async () => {
+        const calls = await extractCallsTsx('function App() { return <UserCard user={u} />; }', 'src/App.tsx');
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('UserCard');
+    });
+
+    it('extracts PascalCase JSX opening element as a call', async () => {
+        const calls = await extractCallsTsx('function App() { return <Layout><Inner/></Layout>; }', 'src/App.tsx');
+        const names = calls.map((c) => c.callName);
+        expect(names).toContain('Layout');
+        expect(names).toContain('Inner');
+    });
+
+    it('skips lowercase HTML tags', async () => {
+        const calls = await extractCallsTsx('function App() { return <div><span>hi</span></div>; }', 'src/App.tsx');
+        const names = calls.map((c) => c.callName);
+        expect(names).not.toContain('div');
+        expect(names).not.toContain('span');
+    });
+
+    it('skips namespaced and member-access tags', async () => {
+        const calls = await extractCallsTsx('function App() { return <Foo.Bar><svg.rect/></Foo.Bar>; }', 'src/App.tsx');
+        const names = calls.map((c) => c.callName);
+        // member access `Foo.Bar` and namespace `svg.rect` aren't simple identifiers
+        expect(names).not.toContain('Foo.Bar');
+        expect(names).not.toContain('svg.rect');
+    });
+
+    it('does NOT run JSX extraction in plain `.ts` files (kind not in TS grammar)', async () => {
+        // Plain TS — no JSX. Should not throw and should produce no JSX-derived calls.
+        const calls = await extractCallsTsx('function r() { foo(); }', 'src/r.ts');
+        const names = calls.map((c) => c.callName);
+        expect(names).toEqual(['foo']);
+    });
+});
+
 import { extractCallsFromPHP } from '../../src/languages/php/extractor';
 
 describe('extractCallsFromPHP', () => {
