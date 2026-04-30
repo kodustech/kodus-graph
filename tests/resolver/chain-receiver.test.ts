@@ -181,6 +181,54 @@ describe('method-chain receiver inference', () => {
         expect(stats.receiver).toBeGreaterThanOrEqual(1);
     });
 
+    it('Python: `x = factory()` resolves outer call via factory return-type annotation', async () => {
+        const code = [
+            'class User:',
+            '    def greet(self): return ""',
+            '',
+            'def factory() -> User:',
+            '    return User()',
+            '',
+            'def run():',
+            '    x = factory()',
+            '    x.greet()',
+            '',
+        ].join('\n');
+        const fp = 'src/factory.py';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('python', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'greet');
+        expect(greetCall?.receiverType).toBe('@CALLEE:factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.greet');
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Kotlin: `val x = factory()` resolves outer call via factory return type', async () => {
+        const code = [
+            'class User { fun greet(): String = "" }',
+            'fun factory(): User = User()',
+            'fun run() {',
+            '    val x = factory()',
+            '    x.greet()',
+            '}',
+        ].join('\n');
+        const fp = 'src/factory.kt';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('kotlin', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'greet');
+        expect(greetCall?.receiverType).toBe('@CALLEE:factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.greet');
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
     it('deferred callee falls through gracefully when factory has no return type', async () => {
         // No return-type annotation on factory and no symbol table entry — the
         // resolver's deferred lookup returns undefined and the receiver tier

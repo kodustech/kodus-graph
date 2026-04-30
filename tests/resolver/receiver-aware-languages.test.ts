@@ -244,10 +244,14 @@ describe('receiver-type inference per language', () => {
         expect(upd?.receiverType).toBe('Foo');
     });
 
-    it('Python does NOT bind `x = helper()` when callee starts lowercase', async () => {
+    it('Python: `x = helper()` (lowercase factory) emits @CALLEE: marker (deferred)', async () => {
+        // Behavior change 2026-04-30: lowercase factory calls now record a
+        // `@CALLEE:helper` deferred marker so the resolver can substitute the
+        // function's actual return type cross-file. The receiver tier falls
+        // through gracefully when no return type is recorded.
         const calls = await extractWithReceiver('python', 'def r():\n    x = helper()\n    x.doWork()\n', 'src/a.py');
         const upd = calls.find((c) => c.callName === 'doWork');
-        expect(upd?.receiverType).toBeUndefined();
+        expect(upd?.receiverType).toBe('@CALLEE:helper');
     });
 
     // ── Cross-language typed-param bindings (#76) ──

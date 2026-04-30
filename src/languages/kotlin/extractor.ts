@@ -408,12 +408,31 @@ export const kotlinExtractors: LanguageExtractors = {
             const funcModifiers = extractModifiers(node);
             const range = nodeRange(node);
 
+            // Kotlin tree-sitter doesn't expose `return_type` as a field. The
+            // declared return type appears as a `user_type` (or `nullable_type`)
+            // child after the `:` token, before the function_body. Find by
+            // structural walk.
+            let returnType = '';
+            const fnKids = node.children();
+            const colonIdx = fnKids.findIndex((c) => c.kind() === ':');
+            if (colonIdx >= 0) {
+                for (let i = colonIdx + 1; i < fnKids.length; i++) {
+                    const k = fnKids[i].kind();
+                    if (k === 'user_type' || k === 'nullable_type' || k === 'function_type') {
+                        returnType = fnKids[i].text();
+                        break;
+                    }
+                    if (k === 'function_body' || k === '=') {
+                        break;
+                    }
+                }
+            }
             result.functions.push({
                 name,
                 line_start: range.line_start,
                 line_end: range.line_end,
                 params: node.field('parameters')?.text() || '()',
-                returnType: node.field('return_type')?.text() || '',
+                returnType,
                 kind,
                 ast_kind: String(node.kind()),
                 className,
@@ -550,12 +569,16 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
             .find((c: SgNode) => c.kind() === 'user_type')
             ?.text();
         let typeName: string | undefined = userType;
+        let callFnText: string | undefined;
         if (!typeName) {
             // Constructor-like call on RHS: `val x = Foo()` → call_expression with simple_identifier function.
             const call = pd.children().find((c: SgNode) => c.kind() === 'call_expression');
             const fnId = call?.children().find((c: SgNode) => c.kind() === 'simple_identifier');
-            if (fnId && /^[A-Z]/.test(fnId.text())) {
-                typeName = fnId.text();
+            if (fnId) {
+                callFnText = fnId.text();
+                if (/^[A-Z]/.test(callFnText)) {
+                    typeName = callFnText;
+                }
             }
         }
         if (!typeName) {
@@ -574,6 +597,12 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
                     typeName = ti.text();
                 }
             }
+        }
+        // Lowercase factory call: `val x = helper()` — emit a deferred
+        // `@CALLEE:helper` marker. The resolver substitutes the callee's
+        // return type at resolve time using the global returnTypes map.
+        if (!typeName && callFnText && !/^[A-Z]/.test(callFnText)) {
+            typeName = `@CALLEE:${callFnText}`;
         }
         if (typeName) {
             bindings.set(name, typeName);

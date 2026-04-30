@@ -388,7 +388,13 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
         const ctor = fnIdent.text();
         if (isLikelyClassName(ctor)) {
             bindings.set(name, ctor);
+            continue;
         }
+        // Lowercase factory call: `x = factory()` — emit a deferred marker
+        // (`@CALLEE:factory`). The resolver substitutes the callee's return
+        // type at resolve time. Falls through gracefully if `factory` has no
+        // recorded return type. Mirrors the TS deferred-callee path.
+        bindings.set(name, `@CALLEE:${ctor}`);
     }
 
     return bindings;
