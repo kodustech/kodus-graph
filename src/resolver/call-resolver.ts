@@ -67,7 +67,22 @@ interface ResolverContext {
      * than instance-on-actual-type).
      */
     classHierarchy: Map<string, string[]>;
+    /**
+     * Qualified-name → return-type map. Used by the chain pass and by the
+     * receiver tier when resolving deferred `@CALLEE:foo` receiver types
+     * (intra/cross-file factory pattern: `const x = factory(); x.method()`).
+     */
+    returnTypes: Map<string, string>;
 }
+
+/**
+ * Marker prefix written into `RawCallSite.receiverType` when the type can't
+ * be determined at extraction time but the receiver was assigned a function
+ * call. The resolver looks up the callee's qualified name + return type at
+ * resolve time (when cross-file symbol info is available) and substitutes
+ * the actual type before tier processing.
+ */
+const DEFERRED_CALLEE_PREFIX = '@CALLEE:';
 
 type StatsKey = keyof CallResolverStats;
 
@@ -95,6 +110,17 @@ const receiverTier: Tier = (call, ctx) => {
     if (!call.receiverType) {
         return null;
     }
+    // Deferred receiver type: `@CALLEE:funcName` was set when the variable
+    // came from `const x = funcName()`. Resolve funcName's return type now
+    // (cross-file symbol info is available at this stage) and substitute it.
+    if (call.receiverType.startsWith(DEFERRED_CALLEE_PREFIX)) {
+        const calleeName = call.receiverType.slice(DEFERRED_CALLEE_PREFIX.length);
+        const resolved = resolveDeferredCallee(calleeName, ctx);
+        if (!resolved) {
+            return null;
+        }
+        call.receiverType = resolved;
+    }
     const all = ctx.symbolTable.lookupGlobal(call.callName);
     const directNeedle = `::${call.receiverType}.${call.callName}`;
     const direct = all.filter((q) => q.includes(directNeedle));
@@ -121,6 +147,41 @@ const receiverTier: Tier = (call, ctx) => {
     }
     return null;
 };
+
+/**
+ * Resolve a deferred `@CALLEE:funcName` receiver type to a concrete type by
+ * looking up the function in the symbol table (same file → import → unique
+ * name) and consulting the global return-types map. Returns the stripped
+ * return type, or `undefined` if the callee can't be located or has no
+ * declared return type.
+ */
+function resolveDeferredCallee(calleeName: string, ctx: ResolverContext): string | undefined {
+    let qualified: string | undefined;
+    const sameFile = ctx.symbolTable.lookupExact(ctx.fp, calleeName);
+    if (sameFile) {
+        qualified = sameFile;
+    } else {
+        const importedFrom = ctx.importMap.lookup(ctx.fp, calleeName);
+        if (importedFrom) {
+            qualified = ctx.symbolTable.lookupExact(importedFrom, calleeName) ?? `${importedFrom}::${calleeName}`;
+        }
+    }
+    if (!qualified) {
+        // Fall back to a unique global definition.
+        const globals = ctx.symbolTable.lookupGlobal(calleeName);
+        if (globals.length === 1) {
+            qualified = globals[0];
+        }
+    }
+    if (!qualified) {
+        return undefined;
+    }
+    const returnType = ctx.returnTypes.get(qualified);
+    if (!returnType) {
+        return undefined;
+    }
+    return stripGenerics(returnType);
+}
 
 /**
  * Walk up the class hierarchy from `typeName`, returning the first qualified
@@ -308,6 +369,7 @@ export function resolveAllCalls(
     classHierarchy?: Map<string, string[]>,
 ): ResolveAllResult {
     const hierarchy = classHierarchy ?? new Map<string, string[]>();
+    const returnTypeMap = returnTypes ?? new Map<string, string>();
     const stats: CallResolverStats = {
         di: 0,
         same: 0,
@@ -335,6 +397,7 @@ export function resolveAllCalls(
             importMap,
             totalIndexedFiles,
             classHierarchy: hierarchy,
+            returnTypes: returnTypeMap,
         };
         outcomes[i] = runTiers(call, ctx);
     }
@@ -345,7 +408,6 @@ export function resolveAllCalls(
     // contain candidates whose inner could trigger the singleton heuristic
     // (no return-type entry needed for that path).
     {
-        const returnTypeMap = returnTypes ?? new Map<string, string>();
         const callIndexByLoc = new Map<string, number>();
         for (let i = 0; i < rawCalls.length; i++) {
             const c = rawCalls[i];
@@ -394,6 +456,7 @@ export function resolveAllCalls(
                 importMap,
                 totalIndexedFiles,
                 classHierarchy: hierarchy,
+                returnTypes: returnTypeMap,
             };
             const upgraded = runTiers(call, ctx);
             if (upgraded?.kind === 'edge' && upgraded.statsKey === 'receiver') {

@@ -154,6 +154,47 @@ describe('method-chain receiver inference', () => {
         expect(stats.receiver).toBe(2);
     });
 
+    it('deferred callee: `const x = factory(); x.method()` resolves via factory return type', async () => {
+        // TS: `const x = factory(); x.method()` — receiver-type extractor records
+        // `x → @CALLEE:factory` because there's no annotation/new/cast. Resolver
+        // looks up factory's return type and substitutes.
+        const code = [
+            'function factory(): User { return new User(); }',
+            'class User { greet(): string { return ""; } }',
+            'function run() {',
+            '  const x = factory();',
+            '  x.greet();',
+            '}',
+        ].join('\n');
+        const fp = 'src/factory.ts';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('TypeScript', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'greet');
+        // Pre-resolve: receiverType is the deferred marker.
+        expect(greetCall?.receiverType).toBe('@CALLEE:factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.greet');
+        expect(greetEdge?.confidence).toBeGreaterThanOrEqual(0.9);
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
+    it('deferred callee falls through gracefully when factory has no return type', async () => {
+        // No return-type annotation on factory and no symbol table entry — the
+        // resolver's deferred lookup returns undefined and the receiver tier
+        // declines, falling through to other tiers (cascade / unique / etc).
+        const calls: RawCallSite[] = [
+            { source: 'src/a.ts', callName: 'doStuff', line: 5, column: 5, receiverType: '@CALLEE:unknownFactory' },
+        ];
+        const symbolTable = createSymbolTable();
+        symbolTable.add('src/a.ts', 'doStuff', 'src/a.ts::Foo.doStuff');
+        const { stats } = resolveAllCalls(calls, new Map(), symbolTable, createImportMap(), new Map());
+        // Receiver tier declined (no factory in symbol table). Stats.receiver=0.
+        expect(stats.receiver).toBe(0);
+    });
+
     it('singleton heuristic does NOT propagate for non-factory inner names', async () => {
         // `Logger.transform()` is NOT in SINGLETON_FACTORIES. Without an explicit
         // return type, the chain pass declines to propagate; the outer call

@@ -645,6 +645,23 @@ function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string
                         : typeChild.text();
             }
         }
+        // Deferred factory binding: `const x = factory()` with no explicit
+        // type annotation. We can't resolve `factory`'s return type at extract
+        // time (cross-file), so we emit a `@CALLEE:factory` marker and let the
+        // resolver substitute the real type at resolve time using the global
+        // returnTypes map.
+        if (!typeName) {
+            const callExpr = vd.children().find((c: SgNode) => c.kind() === 'call_expression');
+            const fnNode = callExpr?.field('function');
+            if (fnNode?.kind() === 'identifier') {
+                const calleeName = fnNode.text();
+                // Skip lowercase-only names that are clearly noise (e.g. `log`,
+                // `print`) — those won't have user-domain return types anyway.
+                // Track all real call patterns; the resolver gracefully falls
+                // through when no return type exists.
+                typeName = `@CALLEE:${calleeName}`;
+            }
+        }
         if (typeName) {
             bindings.set(name, typeName);
         }
