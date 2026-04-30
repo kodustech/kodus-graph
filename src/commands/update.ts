@@ -140,24 +140,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
 
     const { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
 
-    // Tier distribution for this incremental run reflects ONLY the re-parsed
-    // slice (changed + added files), not the merged full graph. Consumers that
-    // need a full-repo snapshot should re-run `kodus-graph parse --all`.
-    // Rationale: merging this slice with the old graph's `tier_distribution`
-    // would require rerunning the resolver over unchanged files or trusting
-    // stale counters — neither is honest. Surface the partial slice and let
-    // consumers decide.
-    const tierDistribution: TierDistribution = {
-        receiver: stats.receiver,
-        di: stats.di,
-        same: stats.same,
-        import: stats.import,
-        unique: stats.unique,
-        ambiguous: stats.ambiguous,
-        noise: stats.noise,
-        ambiguousNoise: stats.ambiguousNoise,
-    };
-
     const fileHashes = new Map<string, string>();
     for (const f of absToReparse) {
         try {
@@ -177,6 +159,14 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     mergedEdges.push(...newGraphData.edges);
 
     process.stderr.write(`[5/5] Merged: ${mergedNodes.length} nodes, ${mergedEdges.length} edges\n`);
+
+    // Merged tier_distribution: count tiers across all surviving CALLS edges
+    // (old + new), not just the slice. `tier` is persisted on each edge
+    // (added 2026-04-30), so this is exact for receiver/di/same/import/unique/
+    // ambiguous. `noise` and `ambiguousNoise` are *drop* outcomes (no edge),
+    // so they reflect only the slice's reparse — old surviving files
+    // contribute nothing, since their noise counts weren't preserved.
+    const tierDistribution = mergeTierDistribution(mergedEdges, stats);
 
     const output: ParseOutput = {
         metadata: {
@@ -208,4 +198,29 @@ function ensureDir(filePath: string): void {
     if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
     }
+}
+
+interface SliceNoiseStats {
+    noise: number;
+    ambiguousNoise: number;
+}
+
+function mergeTierDistribution(mergedEdges: GraphEdge[], sliceStats: SliceNoiseStats): TierDistribution {
+    const td: TierDistribution = {
+        receiver: 0,
+        di: 0,
+        same: 0,
+        import: 0,
+        unique: 0,
+        ambiguous: 0,
+        noise: sliceStats.noise,
+        ambiguousNoise: sliceStats.ambiguousNoise,
+    };
+    for (const e of mergedEdges) {
+        if (e.kind !== 'CALLS' || !e.tier) {
+            continue;
+        }
+        td[e.tier]++;
+    }
+    return td;
 }

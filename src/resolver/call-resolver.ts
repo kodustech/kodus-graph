@@ -325,12 +325,15 @@ export function resolveAllCalls(
         }
         if (outcome.kind === 'edge') {
             const call = rawCalls[i];
+            // `statsKey` for edge outcomes is one of the EdgeTier strings —
+            // 'noise'/'ambiguousNoise' are drop-only and never reach this branch.
             callEdges.push({
                 source: call.source,
                 target: outcome.target,
                 callName: call.callName,
                 line: call.line,
                 confidence: outcome.confidence,
+                tier: outcome.statsKey as RawCallEdge['tier'],
                 ...(outcome.alternatives ? { alternatives: outcome.alternatives } : {}),
             });
         }

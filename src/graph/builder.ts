@@ -202,6 +202,7 @@ export function buildGraphData(
             file_path: sourceFile,
             line: ce.line,
             confidence: ce.confidence,
+            ...(ce.tier ? { tier: ce.tier } : {}),
             ...(ce.alternatives && ce.alternatives.length > 0 ? { alternatives: ce.alternatives } : {}),
         });
     }

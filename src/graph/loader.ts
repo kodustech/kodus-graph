@@ -44,6 +44,8 @@ const ParseOutputSchema = z.object({
             file_path: z.string(),
             line: z.number(),
             confidence: z.number().optional(),
+            alternatives: z.array(z.string()).optional(),
+            tier: z.enum(['receiver', 'di', 'same', 'import', 'unique', 'ambiguous']).optional(),
         }),
     ),
 });

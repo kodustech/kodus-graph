@@ -31,6 +31,15 @@ export interface GraphNode {
 }
 
 // ── Graph edge (matches ast_edges table) ──
+/**
+ * Resolution tier for a CALLS edge — the resolver pipeline stage that produced
+ * it. Persisted on each edge so consumers (and `kodus-graph update`) can
+ * recompute `tier_distribution` over a merged graph without rerunning the
+ * resolver. `noise` and `ambiguousNoise` are *drop* outcomes (no edge), so
+ * they don't appear here.
+ */
+export type EdgeTier = 'receiver' | 'di' | 'same' | 'import' | 'unique' | 'ambiguous';
+
 export interface GraphEdge {
     kind: EdgeKind;
     source_qualified: string;
@@ -40,6 +49,8 @@ export interface GraphEdge {
     confidence?: number; // 0.0-1.0, only for CALLS
     /** Non-picked candidates when confidence is low (CALLS edges at the ambiguous tier). */
     alternatives?: string[];
+    /** Resolution tier — only set for CALLS edges. Optional for backward compat with pre-2026-04 graphs. */
+    tier?: EdgeTier;
 }
 
 // ── Full graph data ──
@@ -354,6 +365,11 @@ export interface RawCallEdge {
     confidence: number;
     /** Non-picked candidates at the ambiguous tier; useful for LLM consumers to see what was passed over. */
     alternatives?: string[];
+    /**
+     * Resolution tier (receiver / di / same / import / unique / ambiguous).
+     * Optional only to keep test fixtures simple; the resolver always sets it.
+     */
+    tier?: EdgeTier;
 }
 
 export interface ImportEdge {
