@@ -161,9 +161,10 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         notes: [
             'Validated on keycloak (801M, 6665 .java files)',
             'DI: parses @Inject/@Autowired/@Resource on fields and constructors (last-segment match, FQ-prefixed forms supported). Combines with Foo->FooImpl name heuristic.',
+            'Spring 4.3+ implicit ctor injection (added 2026-04-30): @Service / @Component / @Repository / @Controller / @RestController / @Configuration with a single constructor auto-injects all params (no @Autowired required).',
+            'Receiver-type covers ctor params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed ctor param.',
             'Call sites: this.field.method() threads field through diMap (added 2026-04-27)',
             'Multi-module Maven import resolution ~2% (weak)',
-            'Note: implicit constructor injection (Spring 4.3+ single-constructor auto-wire) not detected — requires @Autowired or @Inject on the constructor',
         ],
     },
     {

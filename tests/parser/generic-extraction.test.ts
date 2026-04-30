@@ -343,6 +343,95 @@ describe('extractGeneric – Java', () => {
         expect(diMap!.get('logger')).toBe('Logger');
     });
 
+    test('Spring @Service + single ctor implicitly injects all params (Spring 4.3+)', async () => {
+        const code = [
+            '@Service',
+            'public class UserService {',
+            '    private final UserRepository repo;',
+            '    private final Logger logger;',
+            '    public UserService(UserRepository repo, Logger logger) {',
+            '        this.repo = repo;',
+            '        this.logger = logger;',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+    });
+
+    test('Spring @RestController + single ctor implicitly injects all params', async () => {
+        const code = [
+            '@RestController',
+            'public class UserController {',
+            '    public UserController(UserService svc) { this.svc = svc; }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserController.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('svc')).toBe('UserService');
+    });
+
+    test('Spring @Component with two ctors does NOT trigger implicit DI', async () => {
+        const code = [
+            '@Component',
+            'public class Svc {',
+            '    public Svc(Repo repo) {}',
+            '    public Svc(Repo repo, Logger logger) {}',
+            '}',
+        ].join('\n');
+        const fp = '/virt/Svc.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        // No DI: ambiguous — Spring requires exactly one ctor for implicit injection.
+        expect(diMap?.get('repo')).toBeUndefined();
+        expect(diMap?.get('logger')).toBeUndefined();
+    });
+
+    test('Plain class with single ctor and no stereotype produces no DI', async () => {
+        const code = ['public class PlainBean {', '    public PlainBean(Repo repo, Logger logger) {}', '}'].join('\n');
+        const fp = '/virt/PlainBean.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap?.get('repo')).toBeUndefined();
+        expect(diMap?.get('logger')).toBeUndefined();
+    });
+
+    test('Spring @Service + explicit @Autowired ctor still extracts DI', async () => {
+        const code = [
+            '@Service',
+            'public class UserService {',
+            '    @Autowired',
+            '    public UserService(UserRepository repo) {}',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+    });
+
     test('this.field.method() call sets diField for resolver routing', async () => {
         const code = [
             'public class Svc {',

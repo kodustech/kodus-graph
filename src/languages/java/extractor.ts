@@ -130,7 +130,24 @@ const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 // `@org.springframework.beans.factory.annotation.Autowired`, `@Resource`).
 const DI_ANNOTATION_NAMES = new Set(['Inject', 'Autowired', 'Resource']);
 
-function hasJavaDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+// Spring stereotype annotations that mark a class as a managed bean.
+// Since Spring 4.3 (2016), classes carrying any of these AND having a single
+// constructor get all ctor params auto-injected — `@Autowired` is implicit.
+const SPRING_STEREOTYPE_NAMES = new Set([
+    'Service',
+    'Component',
+    'Repository',
+    'Controller',
+    'RestController',
+    'Configuration',
+]);
+
+function annotationLastSegment(c: SgNode): string {
+    const head = c.text().split('(')[0].trim().replace(/^@/, '');
+    return head.split('.').pop() ?? '';
+}
+
+function hasJavaAnnotationFrom(modifiersNode: SgNode | undefined, names: ReadonlySet<string>): boolean {
     if (!modifiersNode) {
         return false;
     }
@@ -139,13 +156,41 @@ function hasJavaDIAnnotation(modifiersNode: SgNode | undefined): boolean {
         if (k !== 'marker_annotation' && k !== 'annotation') {
             continue;
         }
-        const head = c.text().split('(')[0].trim().replace(/^@/, '');
-        const last = head.split('.').pop() ?? '';
-        if (DI_ANNOTATION_NAMES.has(last)) {
+        if (names.has(annotationLastSegment(c))) {
             return true;
         }
     }
     return false;
+}
+
+function hasJavaDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+    return hasJavaAnnotationFrom(modifiersNode, DI_ANNOTATION_NAMES);
+}
+
+function hasJavaStereotypeAnnotation(modifiersNode: SgNode | undefined): boolean {
+    return hasJavaAnnotationFrom(modifiersNode, SPRING_STEREOTYPE_NAMES);
+}
+
+// Class declaration kinds that can host @Service / @Component etc.
+// `record_declaration` lets Java records (Java 14+) act as Spring beans too.
+const JAVA_CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration']);
+
+function findEnclosingJavaClass(node: SgNode): SgNode | null {
+    return node.ancestors().find((a) => JAVA_CLASS_DECL_KINDS.has(String(a.kind()))) ?? null;
+}
+
+function countJavaConstructors(classNode: SgNode): number {
+    const body = classNode.field('body');
+    if (!body) {
+        return 0;
+    }
+    let n = 0;
+    for (const c of body.children()) {
+        if (c.kind() === 'constructor_declaration') {
+            n++;
+        }
+    }
+    return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,11 +381,23 @@ export const javaExtractors: LanguageExtractors = {
 
         // Constructor injection: `@Inject` (or `@Autowired`) on the constructor
         // marks each parameter as a DI binding (param name → param type).
-        // Spring 4.3+ also auto-injects when there is a single constructor;
-        // we leave that implicit case to a future heuristic.
+        // Spring 4.3+ also auto-injects when the enclosing class has a stereotype
+        // annotation (@Service / @Component / @Repository / @Controller /
+        // @RestController / @Configuration) AND exactly one constructor.
         for (const cd of root.findAll({ rule: { kind: 'constructor_declaration' } })) {
             const mods = cd.children().find((c) => c.kind() === 'modifiers');
-            if (!hasJavaDIAnnotation(mods)) {
+            const explicitDI = hasJavaDIAnnotation(mods);
+            let implicitSpringDI = false;
+            if (!explicitDI) {
+                const enclosing = findEnclosingJavaClass(cd);
+                if (enclosing) {
+                    const classMods = enclosing.children().find((c) => c.kind() === 'modifiers');
+                    if (hasJavaStereotypeAnnotation(classMods) && countJavaConstructors(enclosing) === 1) {
+                        implicitSpringDI = true;
+                    }
+                }
+            }
+            if (!explicitDI && !implicitSpringDI) {
                 continue;
             }
             const params = cd.field('parameters');
@@ -513,6 +570,36 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
             if (typeName) {
                 bindings.set(name, typeName);
             }
+        }
+    }
+    // Constructor parameters become method-scope bindings — `repo.findAll()`
+    // inside the body resolves through the receiver tier (0.95) instead of
+    // falling through to DI (0.9) or cascade.
+    for (const cd of root.findAll({ rule: { kind: 'constructor_declaration' } })) {
+        const params = cd.field('parameters');
+        if (!params) {
+            continue;
+        }
+        for (const p of params.children()) {
+            if (p.kind() !== 'formal_parameter') {
+                continue;
+            }
+            const typeNode = p.children().find((c) => {
+                const k = c.kind();
+                return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+            });
+            const name = p.field('name')?.text();
+            if (!typeNode || !name) {
+                continue;
+            }
+            const typeName =
+                typeNode.kind() === 'generic_type'
+                    ? (typeNode
+                          .children()
+                          .find((c) => c.kind() === 'type_identifier')
+                          ?.text() ?? typeNode.text())
+                    : typeNode.text();
+            bindings.set(name, typeName);
         }
     }
     for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {

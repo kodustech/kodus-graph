@@ -48,6 +48,23 @@ describe('receiver-type inference per language', () => {
         expect(upd?.receiverType).toBe('Foo');
     });
 
+    it('Java ctor param type seeds receiver-type inside class body', async () => {
+        const calls = await extractWithReceiver(
+            'java',
+            [
+                '@Service',
+                'class UserService {',
+                '    private final UserRepository repo;',
+                '    public UserService(UserRepository repo) { this.repo = repo; }',
+                '    public void list() { repo.findAll(); }',
+                '}',
+            ].join('\n'),
+            'src/UserService.java',
+        );
+        const findAll = calls.find((c) => c.callName === 'findAll');
+        expect(findAll?.receiverType).toBe('UserRepository');
+    });
+
     it('C# infers receiverType from `Foo x = new Foo()`', async () => {
         const calls = await extractWithReceiver(
             'csharp',
