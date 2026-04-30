@@ -249,6 +249,28 @@ function runTiers(call: RawCallSite, ctx: ResolverContext): TierOutcome {
  * (`Promise<User>` → `User`, `User[]` → `User`, `List<User>` → `User`,
  * `Optional[User]` → `User`). Multi-arg generics keep the first parameter.
  */
+/**
+ * Method names that conventionally return the type they're called on (the
+ * singleton / factory / shared-instance pattern). When the chain pass sees
+ * `Foo.getInstance().method()` and the inner `getInstance` has no explicit
+ * return type in the symbol table, treat the receiver type as the propagated
+ * type. Cross-language: Java `getInstance`, Swift `shared`, Kotlin `Default`,
+ * TS `getInstance` / `default`, C# `Instance`.
+ */
+const SINGLETON_FACTORIES: ReadonlySet<string> = new Set([
+    'getInstance',
+    'instance',
+    'Instance',
+    'default',
+    'Default',
+    'getDefault',
+    'shared',
+    'Shared',
+    'newInstance',
+    'create',
+    'of',
+]);
+
 function stripGenerics(returnType: string): string {
     let t = returnType.trim();
     // Array brackets (TS / Java / C# / Rust slices in some forms).
@@ -319,9 +341,11 @@ export function resolveAllCalls(
 
     // Chain pass: for each outer call with a known inner, propagate the
     // inner's resolved-target return type as the outer's receiverType, then
-    // re-run TIERS. Skip when the outer is already receiver-tier resolved
-    // (no upgrade possible) or when there's no return-type info.
-    if (returnTypes && returnTypes.size > 0) {
+    // re-run TIERS. Runs whenever there's a return-type map OR rawCalls
+    // contain candidates whose inner could trigger the singleton heuristic
+    // (no return-type entry needed for that path).
+    {
+        const returnTypeMap = returnTypes ?? new Map<string, string>();
         const callIndexByLoc = new Map<string, number>();
         for (let i = 0; i < rawCalls.length; i++) {
             const c = rawCalls[i];
@@ -345,11 +369,18 @@ export function resolveAllCalls(
             if (!innerOutcome || innerOutcome.kind !== 'edge') {
                 continue;
             }
-            const returnType = returnTypes.get(innerOutcome.target);
-            if (!returnType) {
-                continue;
+            let stripped: string | undefined;
+            const returnType = returnTypeMap.get(innerOutcome.target);
+            if (returnType) {
+                stripped = stripGenerics(returnType);
             }
-            const stripped = stripGenerics(returnType);
+            // Singleton/factory heuristic: `Foo.getInstance().method()` —
+            // when the inner call's name is a known self-returning factory and
+            // its receiverType is set, propagate that type. Catches cases where
+            // the method body has an inferred return type the parser can't see.
+            if (!stripped && rawCalls[innerIdx].receiverType && SINGLETON_FACTORIES.has(rawCalls[innerIdx].callName)) {
+                stripped = rawCalls[innerIdx].receiverType;
+            }
             if (!stripped) {
                 continue;
             }

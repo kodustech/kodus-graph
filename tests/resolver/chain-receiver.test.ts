@@ -113,4 +113,73 @@ describe('method-chain receiver inference', () => {
         expect(greetEdge).toBeDefined();
         expect(greetEdge?.target).toContain('User.greet');
     });
+
+    it('singleton heuristic propagates receiver type for chained `Foo.getInstance().method()`', async () => {
+        // Direct unit test: synthesize the two chained calls manually so the
+        // test isolates the singleton heuristic from extractor-method visibility.
+        const innerCall: RawCallSite = {
+            source: 'src/log.ts',
+            callName: 'getInstance',
+            line: 5,
+            column: 24,
+            receiverType: 'Logger',
+        };
+        const outerCall: RawCallSite = {
+            source: 'src/log.ts',
+            callName: 'warn',
+            line: 5,
+            column: 30,
+            chainedFromLine: 5,
+            chainedFromColumn: 24,
+        };
+        const symbolTable = createSymbolTable();
+        // Both methods exist in the symbol table — the inner is reachable via
+        // receiver tier on its own, the outer needs the singleton propagation.
+        symbolTable.add('src/log.ts', 'getInstance', 'src/log.ts::Logger.getInstance');
+        symbolTable.add('src/log.ts', 'warn', 'src/log.ts::Logger.warn');
+
+        const { callEdges, stats } = resolveAllCalls(
+            [innerCall, outerCall],
+            new Map(),
+            symbolTable,
+            createImportMap(),
+            new Map(), // no return-type annotations on getInstance
+        );
+        const warnEdge = callEdges.find((e) => e.callName === 'warn');
+        expect(warnEdge).toBeDefined();
+        expect(warnEdge?.target).toBe('src/log.ts::Logger.warn');
+        expect(warnEdge?.confidence).toBeGreaterThanOrEqual(0.9);
+        // Both inner (Logger.getInstance via static) and outer (via singleton
+        // chain propagation) land at the receiver tier.
+        expect(stats.receiver).toBe(2);
+    });
+
+    it('singleton heuristic does NOT propagate for non-factory inner names', async () => {
+        // `Logger.transform()` is NOT in SINGLETON_FACTORIES. Without an explicit
+        // return type, the chain pass declines to propagate; the outer call
+        // doesn't get a receiverType boost and remains at its base tier.
+        const innerCall: RawCallSite = {
+            source: 'src/log.ts',
+            callName: 'transform',
+            line: 5,
+            column: 22,
+            receiverType: 'Logger',
+        };
+        const outerCall: RawCallSite = {
+            source: 'src/log.ts',
+            callName: 'warn',
+            line: 5,
+            column: 32,
+            chainedFromLine: 5,
+            chainedFromColumn: 22,
+        };
+        const symbolTable = createSymbolTable();
+        symbolTable.add('src/log.ts', 'transform', 'src/log.ts::Logger.transform');
+        symbolTable.add('src/log.ts', 'warn', 'src/log.ts::Logger.warn');
+
+        const { stats } = resolveAllCalls([innerCall, outerCall], new Map(), symbolTable, createImportMap(), new Map());
+        // Inner Logger.transform resolves at receiver tier (=1). The outer
+        // wasn't propagated and didn't fire receiver — stats.receiver stays at 1.
+        expect(stats.receiver).toBe(1);
+    });
 });
