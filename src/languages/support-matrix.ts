@@ -164,7 +164,7 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
             'Spring 4.3+ implicit ctor injection (added 2026-04-30): @Service / @Component / @Repository / @Controller / @RestController / @Configuration with a single constructor auto-injects all params (no @Autowired required).',
             'Receiver-type covers ctor params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed ctor param.',
             'Call sites: this.field.method() threads field through diMap (added 2026-04-27)',
-            'Multi-module Maven import resolution ~2% (weak)',
+            'Multi-module Maven imports (improved 2026-04-30): adds src/test/{java,kotlin,scala} to discovered roots so test files can resolve cross-module references; honors <sourceDirectory>/<testSourceDirectory> overrides; memoizes source-root discovery and pom.xml reads per-repo (resolves the keycloak-scale perf cost). Pending re-validation.',
         ],
     },
     {

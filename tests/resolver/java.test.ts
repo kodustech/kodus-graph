@@ -204,6 +204,69 @@ describe('Java Kotlin interop', () => {
 
 const TMP_NESTED_MAVEN = join(import.meta.dir, '../fixtures/java-nested-maven-tmp');
 
+const TMP_TEST_SRC = join(import.meta.dir, '../fixtures/java-test-src-tmp');
+
+describe('Java Maven src/test source roots', () => {
+    test('setup', () => {
+        rmSync(TMP_TEST_SRC, { recursive: true, force: true });
+        mkdirSync(join(TMP_TEST_SRC, 'api/src/test/java/com/example/api'), { recursive: true });
+        mkdirSync(join(TMP_TEST_SRC, 'core/src/main/java/com/example/core'), { recursive: true });
+
+        writeFileSync(
+            join(TMP_TEST_SRC, 'pom.xml'),
+            '<project><modules><module>api</module><module>core</module></modules></project>\n',
+        );
+        writeFileSync(join(TMP_TEST_SRC, 'api/pom.xml'), '<project></project>\n');
+        writeFileSync(join(TMP_TEST_SRC, 'core/pom.xml'), '<project></project>\n');
+        writeFileSync(
+            join(TMP_TEST_SRC, 'api/src/test/java/com/example/api/AuthServiceTest.java'),
+            'package com.example.api;\nimport com.example.core.Service;\nclass AuthServiceTest {}\n',
+        );
+        writeFileSync(
+            join(TMP_TEST_SRC, 'core/src/main/java/com/example/core/Service.java'),
+            'package com.example.core;\npublic class Service {}\n',
+        );
+    });
+
+    test('test class in module-A/src/test/java is resolvable from another module', () => {
+        const result = resolve('', 'com.example.api.AuthServiceTest', TMP_TEST_SRC);
+        expect(result).not.toBeNull();
+        expect(result).toContain('AuthServiceTest.java');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_TEST_SRC, { recursive: true, force: true });
+    });
+});
+
+const TMP_CUSTOM_SRC = join(import.meta.dir, '../fixtures/java-custom-srcdir-tmp');
+
+describe('Java Maven custom <sourceDirectory>', () => {
+    test('setup', () => {
+        rmSync(TMP_CUSTOM_SRC, { recursive: true, force: true });
+        mkdirSync(join(TMP_CUSTOM_SRC, 'legacy-src/com/example/legacy'), { recursive: true });
+
+        writeFileSync(
+            join(TMP_CUSTOM_SRC, 'pom.xml'),
+            '<project><build><sourceDirectory>legacy-src</sourceDirectory></build></project>\n',
+        );
+        writeFileSync(
+            join(TMP_CUSTOM_SRC, 'legacy-src/com/example/legacy/Old.java'),
+            'package com.example.legacy;\npublic class Old {}\n',
+        );
+    });
+
+    test('resolves class in module-level custom <sourceDirectory>', () => {
+        const result = resolve('', 'com.example.legacy.Old', TMP_CUSTOM_SRC);
+        expect(result).not.toBeNull();
+        expect(result).toContain('Old.java');
+    });
+
+    test('cleanup', () => {
+        rmSync(TMP_CUSTOM_SRC, { recursive: true, force: true });
+    });
+});
+
 describe('Java nested Maven multi-module', () => {
     test('setup', () => {
         rmSync(TMP_NESTED_MAVEN, { recursive: true, force: true });

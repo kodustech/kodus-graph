@@ -1,6 +1,5 @@
-import { readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
-import { cachedExists, cachedReaddir } from '../../resolver/fs-cache';
+import { cachedExists, cachedReaddir, cachedReadFile, registerCacheClear } from '../../resolver/fs-cache';
 
 const STDLIB_PREFIXES = [
     'java.',
@@ -14,13 +13,47 @@ const STDLIB_PREFIXES = [
     'akka.',
     'play.',
 ];
-const SOURCE_ROOTS = ['src/main/java', 'src/main/kotlin', 'src/main/scala', 'src', ''];
+// Default source roots probed at the repo root. Every Maven/Gradle module
+// also gets these — `src/main/{java,kotlin,scala}` for production code and
+// `src/test/{java,kotlin,scala}` so test files can resolve cross-module
+// references (added 2026-04-30 for #74).
+const SOURCE_ROOTS = [
+    'src/main/java',
+    'src/main/kotlin',
+    'src/main/scala',
+    'src/test/java',
+    'src/test/kotlin',
+    'src/test/scala',
+    'src',
+    '',
+];
+const MODULE_SUB_ROOTS = [
+    'src/main/java',
+    'src/main/kotlin',
+    'src/main/scala',
+    'src/test/java',
+    'src/test/kotlin',
+    'src/test/scala',
+];
 const EXTENSIONS = ['.java', '.kt', '.scala'];
 
+// Per-repo memoization of source-root discovery — collectSourceRoots otherwise
+// re-parses every pom.xml on every import resolution call (thousands of hits
+// for keycloak-scale repos). Cleared by `clearFsCache`.
+const sourceRootsCache = new Map<string, string[]>();
+registerCacheClear(() => sourceRootsCache.clear());
+
 /**
- * Collect all source roots, including those inside Gradle subproject directories.
+ * Collect all source roots, including those inside Gradle/Maven subproject
+ * directories. Result is cached per repoRoot — keycloak-scale repos otherwise
+ * pay the discovery cost on every import resolution call.
  */
 function collectSourceRoots(repoRoot: string): string[] {
+    const cached = sourceRootsCache.get(repoRoot);
+    if (cached) {
+        return cached;
+    }
+
     const roots: string[] = [...SOURCE_ROOTS];
 
     // Discover Gradle subprojects from settings.gradle / settings.gradle.kts
@@ -30,16 +63,17 @@ function collectSourceRoots(repoRoot: string): string[] {
             continue;
         }
 
-        const content = readFileSync(settingsPath, 'utf-8');
+        const content = cachedReadFile(settingsPath);
+        if (content === null) {
+            continue;
+        }
         // Match patterns like ':app', ':lib', ':core:domain'
         const projectRegex = /['"]:([\w:/-]+)['"]/g;
         let match: RegExpExecArray | null = projectRegex.exec(content);
         while (match !== null) {
             const subDir = match[1].replace(/:/g, '/');
-            for (const srcRoot of SOURCE_ROOTS) {
-                if (srcRoot) {
-                    roots.push(join(subDir, srcRoot));
-                }
+            for (const srcRoot of MODULE_SUB_ROOTS) {
+                roots.push(join(subDir, srcRoot));
             }
             match = projectRegex.exec(content);
         }
@@ -75,47 +109,52 @@ function collectSourceRoots(repoRoot: string): string[] {
     }
 
     for (const { dir, file } of gradleFiles) {
-        try {
-            const content = readFileSync(join(repoRoot, file), 'utf-8');
+        const content = cachedReadFile(join(repoRoot, file));
+        if (content === null) {
+            continue;
+        }
 
-            // Match: srcDirs = ['path1', 'path2']
-            const srcDirsArrayRegex = /srcDirs\s*=\s*\[([^\]]+)\]/g;
-            let sdMatch: RegExpExecArray | null = srcDirsArrayRegex.exec(content);
-            while (sdMatch !== null) {
-                const entries = sdMatch[1];
-                const pathRegex = /['"]([^'"]+)['"]/g;
-                let pathMatch: RegExpExecArray | null = pathRegex.exec(entries);
-                while (pathMatch !== null) {
-                    const srcDir = pathMatch[1];
-                    const root = dir ? join(dir, srcDir) : srcDir;
-                    if (!roots.includes(root)) {
-                        roots.push(root);
-                    }
-                    pathMatch = pathRegex.exec(entries);
-                }
-                sdMatch = srcDirsArrayRegex.exec(content);
-            }
-
-            // Match: srcDir 'path' or srcDir "path"
-            const srcDirSingleRegex = /srcDir\s+['"]([^'"]+)['"]/g;
-            let singleMatch: RegExpExecArray | null = srcDirSingleRegex.exec(content);
-            while (singleMatch !== null) {
-                const srcDir = singleMatch[1];
+        // Match: srcDirs = ['path1', 'path2']
+        const srcDirsArrayRegex = /srcDirs\s*=\s*\[([^\]]+)\]/g;
+        let sdMatch: RegExpExecArray | null = srcDirsArrayRegex.exec(content);
+        while (sdMatch !== null) {
+            const entries = sdMatch[1];
+            const pathRegex = /['"]([^'"]+)['"]/g;
+            let pathMatch: RegExpExecArray | null = pathRegex.exec(entries);
+            while (pathMatch !== null) {
+                const srcDir = pathMatch[1];
                 const root = dir ? join(dir, srcDir) : srcDir;
                 if (!roots.includes(root)) {
                     roots.push(root);
                 }
-                singleMatch = srcDirSingleRegex.exec(content);
+                pathMatch = pathRegex.exec(entries);
             }
-        } catch {
-            // build.gradle read failed, continue
+            sdMatch = srcDirsArrayRegex.exec(content);
+        }
+
+        // Match: srcDir 'path' or srcDir "path"
+        const srcDirSingleRegex = /srcDir\s+['"]([^'"]+)['"]/g;
+        let singleMatch: RegExpExecArray | null = srcDirSingleRegex.exec(content);
+        while (singleMatch !== null) {
+            const srcDir = singleMatch[1];
+            const root = dir ? join(dir, srcDir) : srcDir;
+            if (!roots.includes(root)) {
+                roots.push(root);
+            }
+            singleMatch = srcDirSingleRegex.exec(content);
         }
     }
 
     // Discover Maven subprojects from pom.xml (recursive)
     discoverMavenModules(repoRoot, '', roots, 0);
 
+    sourceRootsCache.set(repoRoot, roots);
     return roots;
+}
+
+/** Test-only — clears memoized source roots so repeated tests in one process see fresh state. */
+export function _clearSourceRootsCache(): void {
+    sourceRootsCache.clear();
 }
 
 /**
@@ -140,6 +179,9 @@ const MAX_MAVEN_DEPTH = 5;
  * Recursively discover Maven modules from pom.xml files.
  * Each module's pom.xml may declare its own <module> elements,
  * forming a tree (e.g. Keycloak: root → services → sub-service).
+ *
+ * Also discovers `<sourceDirectory>` and `<testSourceDirectory>` overrides
+ * declared in `<build>` blocks (uncommon but present in legacy projects).
  */
 function discoverMavenModules(repoRoot: string, relDir: string, roots: string[], depth: number): void {
     if (depth > MAX_MAVEN_DEPTH) {
@@ -151,31 +193,48 @@ function discoverMavenModules(repoRoot: string, relDir: string, roots: string[],
         return;
     }
 
-    try {
-        const content = readFileSync(pomPath, 'utf-8');
-        const moduleRegex = /<module>([^<]+)<\/module>/g;
-        let mvnMatch: RegExpExecArray | null = moduleRegex.exec(content);
-        while (mvnMatch !== null) {
-            const moduleName = mvnMatch[1];
-            const moduleDir = relDir ? join(relDir, moduleName) : moduleName;
+    const content = cachedReadFile(pomPath);
+    if (content === null) {
+        return;
+    }
 
-            // Add source roots for this module
-            const javaRoot = join(moduleDir, 'src/main/java');
-            if (!roots.includes(javaRoot)) {
-                roots.push(javaRoot);
+    // Custom <sourceDirectory>/<testSourceDirectory> in this pom's <build> block.
+    const customDirRegex =
+        /<(?:sourceDirectory|testSourceDirectory)>([^<]+)<\/(?:sourceDirectory|testSourceDirectory)>/g;
+    let customMatch: RegExpExecArray | null = customDirRegex.exec(content);
+    while (customMatch !== null) {
+        const raw = customMatch[1].trim();
+        // Strip leading ${project.basedir}/ or ${basedir}/ — common in legacy poms.
+        const cleaned = raw.replace(/^\$\{[^}]+\}\/?/, '');
+        if (cleaned && !cleaned.includes('${')) {
+            const root = relDir ? join(relDir, cleaned) : cleaned;
+            if (!roots.includes(root)) {
+                roots.push(root);
             }
-            const kotlinRoot = join(moduleDir, 'src/main/kotlin');
-            if (!roots.includes(kotlinRoot)) {
-                roots.push(kotlinRoot);
-            }
-
-            // Recurse into the module's own pom.xml
-            discoverMavenModules(repoRoot, moduleDir, roots, depth + 1);
-
-            mvnMatch = moduleRegex.exec(content);
         }
-    } catch {
-        // pom.xml read failed, continue
+        customMatch = customDirRegex.exec(content);
+    }
+
+    const moduleRegex = /<module>([^<]+)<\/module>/g;
+    let mvnMatch: RegExpExecArray | null = moduleRegex.exec(content);
+    while (mvnMatch !== null) {
+        const moduleName = mvnMatch[1].trim();
+        const moduleDir = relDir ? join(relDir, moduleName) : moduleName;
+
+        // Add main + test source roots for this module — keycloak-style repos
+        // mix prod and test references across modules; without test roots,
+        // imports from test files fall through to "unresolved".
+        for (const sub of MODULE_SUB_ROOTS) {
+            const root = join(moduleDir, sub);
+            if (!roots.includes(root)) {
+                roots.push(root);
+            }
+        }
+
+        // Recurse into the module's own pom.xml
+        discoverMavenModules(repoRoot, moduleDir, roots, depth + 1);
+
+        mvnMatch = moduleRegex.exec(content);
     }
 }
 
