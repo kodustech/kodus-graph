@@ -561,7 +561,12 @@ function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
         if (!base) {
             continue;
         }
-        const typeName = bindings.get(base.text());
+        const baseText = base.text();
+        let typeName = bindings.get(baseText);
+        // Static method call heuristic: PascalCase receiver = type reference.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(baseText)) {
+            typeName = baseText;
+        }
         if (!typeName) {
             continue;
         }

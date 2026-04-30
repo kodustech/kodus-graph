@@ -421,7 +421,13 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
         if (!expr || expr.kind() !== 'identifier') {
             continue;
         }
-        const typeName = bindings.get(expr.text());
+        const exprText = expr.text();
+        let typeName = bindings.get(exprText);
+        // Static method call heuristic: PascalCase receiver = class reference.
+        // C# `Console.WriteLine(...)`, `Math.Sqrt(...)` → receiverType=class.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(exprText)) {
+            typeName = exprText;
+        }
         if (!typeName) {
             continue;
         }

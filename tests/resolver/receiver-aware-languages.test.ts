@@ -376,6 +376,50 @@ describe('receiver-type inference per language', () => {
         const find = calls.find((c) => c.callName === 'find');
         expect(find?.receiverType).toBe('Repo');
     });
+
+    // ── Static method calls (PascalCase receiver = class reference) ──
+    // Uses the class name itself as receiverType so the resolver can look up
+    // `ClassName.method` directly in the symbol table at the receiver tier.
+
+    it('TypeScript: static call `Logger.warn(...)` seeds receiverType=Logger', async () => {
+        const calls = await extractWithReceiver('TypeScript', 'function r() { Logger.warn("hi"); }', 'src/r.ts');
+        const warn = calls.find((c) => c.callName === 'warn');
+        expect(warn?.receiverType).toBe('Logger');
+    });
+
+    it('Java: static call `Math.sqrt(...)` seeds receiverType=Math', async () => {
+        const calls = await extractWithReceiver('java', 'class A { void r() { Math.sqrt(2.0); } }', 'src/A.java');
+        const sqrt = calls.find((c) => c.callName === 'sqrt');
+        expect(sqrt?.receiverType).toBe('Math');
+    });
+
+    it('Kotlin: static-style call `Logger.warn(...)` seeds receiverType=Logger', async () => {
+        const calls = await extractWithReceiver('kotlin', 'fun r() { Logger.warn("hi") }', 'src/r.kt');
+        const warn = calls.find((c) => c.callName === 'warn');
+        expect(warn?.receiverType).toBe('Logger');
+    });
+
+    it('C#: static call `Console.WriteLine(...)` seeds receiverType=Console', async () => {
+        const calls = await extractWithReceiver(
+            'csharp',
+            'class A { void R() { Console.WriteLine("hi"); } }',
+            'src/A.cs',
+        );
+        const wl = calls.find((c) => c.callName === 'WriteLine');
+        expect(wl?.receiverType).toBe('Console');
+    });
+
+    it('Python: classmethod-style call `Logger.warn(...)` seeds receiverType=Logger', async () => {
+        const calls = await extractWithReceiver('python', 'def r():\n    Logger.warn("hi")\n', 'src/r.py');
+        const warn = calls.find((c) => c.callName === 'warn');
+        expect(warn?.receiverType).toBe('Logger');
+    });
+
+    it('Python: lowercase receiver does NOT trigger static heuristic', async () => {
+        const calls = await extractWithReceiver('python', 'def r():\n    config.load()\n', 'src/r.py');
+        const load = calls.find((c) => c.callName === 'load');
+        expect(load?.receiverType).toBeUndefined();
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -679,6 +679,13 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
         if (!typeName) {
             typeName = fileBindings.get(receiver);
         }
+        // Static method call heuristic: PascalCase receiver with no binding match
+        // is treated as a class reference. `Logger.warn()` → receiverType='Logger'.
+        // The receiver tier validates against the symbol table; if `Logger.warn`
+        // isn't a real method, the tier returns null and we fall through.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(receiver)) {
+            typeName = receiver;
+        }
         if (!typeName) {
             continue;
         }

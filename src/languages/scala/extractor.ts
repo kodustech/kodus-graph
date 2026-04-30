@@ -519,7 +519,12 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
         if (!base || base.kind() !== 'identifier') {
             continue;
         }
-        const typeName = bindings.get(base.text());
+        const baseText = base.text();
+        let typeName = bindings.get(baseText);
+        // Static method call heuristic: PascalCase receiver = class/object reference.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(baseText)) {
+            typeName = baseText;
+        }
         if (!typeName) {
             continue;
         }

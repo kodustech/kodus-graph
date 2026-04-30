@@ -812,7 +812,12 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
         if (!receiver || receiver.kind() !== 'identifier') {
             continue;
         }
-        const typeName = bindings.get(receiver.text());
+        const receiverText = receiver.text();
+        let typeName = bindings.get(receiverText);
+        // Static method call heuristic: PascalCase receiver = class reference.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(receiverText)) {
+            typeName = receiverText;
+        }
         if (!typeName) {
             continue;
         }

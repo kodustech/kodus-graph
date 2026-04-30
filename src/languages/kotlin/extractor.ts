@@ -599,7 +599,14 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
         if (!base) {
             continue;
         }
-        const typeName = bindings.get(base.text());
+        const baseText = base.text();
+        let typeName = bindings.get(baseText);
+        // Static method call heuristic: PascalCase receiver = class/object reference.
+        // `Logger.getLogger(...)` → receiverType='Logger'. Also covers Kotlin
+        // `object Foo { fun bar() }` and companion objects (`Foo.bar()`).
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(baseText)) {
+            typeName = baseText;
+        }
         if (!typeName) {
             continue;
         }

@@ -634,6 +634,11 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
                     bestSize = size;
                 }
             }
+            // Static / classmethod call heuristic: PascalCase receiver with no
+            // binding match — `Logger.warn(...)` → receiverType='Logger'.
+            if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(receiverName)) {
+                typeName = receiverName;
+            }
         }
 
         if (!typeName) {

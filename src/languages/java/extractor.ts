@@ -613,7 +613,13 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
         if (!obj || obj.kind() !== 'identifier') {
             continue;
         }
-        const typeName = bindings.get(obj.text());
+        const objText = obj.text();
+        let typeName = bindings.get(objText);
+        // Static method call heuristic: PascalCase receiver = class reference.
+        // `Logger.getLogger(...)` → receiverType='Logger'.
+        if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(objText)) {
+            typeName = objText;
+        }
         if (!typeName) {
             continue;
         }
