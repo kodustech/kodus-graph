@@ -130,16 +130,32 @@ const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 // `@org.springframework.beans.factory.annotation.Autowired`, `@Resource`).
 const DI_ANNOTATION_NAMES = new Set(['Inject', 'Autowired', 'Resource']);
 
-// Spring stereotype annotations that mark a class as a managed bean.
-// Since Spring 4.3 (2016), classes carrying any of these AND having a single
-// constructor get all ctor params auto-injected — `@Autowired` is implicit.
-const SPRING_STEREOTYPE_NAMES = new Set([
+// Class-level annotations that mark a Java type as a managed bean. Each of
+// these triggers implicit ctor injection (single-ctor + class annotation =
+// auto-inject params) following the Spring 4.3+ pattern. Covers Spring,
+// Jakarta CDI, EJB, JAX-RS, Quarkus, MicroProfile, and Java EE.
+const JAVA_DI_STEREOTYPE_NAMES = new Set([
+    // Spring
     'Service',
     'Component',
     'Repository',
     'Controller',
     'RestController',
     'Configuration',
+    // CDI / Jakarta EE
+    'ApplicationScoped',
+    'RequestScoped',
+    'SessionScoped',
+    'ConversationScoped',
+    'Dependent',
+    'Singleton',
+    // EJB
+    'Stateless',
+    'Stateful',
+    'MessageDriven',
+    // JAX-RS
+    'Path',
+    'Provider',
 ]);
 
 function annotationLastSegment(c: SgNode): string {
@@ -168,7 +184,7 @@ function hasJavaDIAnnotation(modifiersNode: SgNode | undefined): boolean {
 }
 
 function hasJavaStereotypeAnnotation(modifiersNode: SgNode | undefined): boolean {
-    return hasJavaAnnotationFrom(modifiersNode, SPRING_STEREOTYPE_NAMES);
+    return hasJavaAnnotationFrom(modifiersNode, JAVA_DI_STEREOTYPE_NAMES);
 }
 
 // Class declaration kinds that can host @Service / @Component etc.
@@ -342,13 +358,22 @@ export const javaExtractors: LanguageExtractors = {
             }
         }
 
-        // ── DI: annotated fields and constructors ────────────────────────
-        // Field injection: `@Inject T field;` → diMap[field] = T
+        // ── DI: typed fields and annotated constructors ─────────────────
+        // Field injection: ALL typed reference fields become diMap entries.
+        // Annotated (`@Inject`/`@Autowired`/`@Resource`) fields are the explicit
+        // signal; for all others we still extract the field's declared type so
+        // `this.field.method()` resolves at the receiver tier.
+        //
+        // Rationale (added 2026-04-30 for Quarkus/CDI/EJB codebases like
+        // keycloak): real-world Java DI patterns frequently DON'T use
+        // annotations — Lombok `@RequiredArgsConstructor` injects all final
+        // fields without explicit `@Inject`, manual ctor injection sets bare
+        // `private final Foo foo;`, and CDI's @Inject often goes on the ctor
+        // rather than the fields. Extracting all typed-field declarations
+        // catches these patterns at the cost of also indexing non-DI fields —
+        // which is harmless because the resolver only consults diMap when the
+        // call is `this.field.method()`.
         for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
-            const mods = fd.children().find((c) => c.kind() === 'modifiers');
-            if (!hasJavaDIAnnotation(mods)) {
-                continue;
-            }
             const typeNode = fd.children().find((c) => {
                 const k = c.kind();
                 return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';

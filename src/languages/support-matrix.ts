@@ -103,10 +103,11 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
             high_conf_min_ratio: 0.1,
         },
         notes: [
-            'Validated on sentry (779M, 6613 .py files)',
+            'Validated on sentry (779M, 14059 files): 🟢 PASS — resolved 74.5%, ambig 27.4%, receiver 75.9/1k, high_conf 16.8% (re-validated 2026-04-30 after typed-params + static + deferred-callee + factory-init).',
             'self.attr receiver-type via class attrs + __init__/setUp/__post_init__ typed params; no flow analysis',
             'Generic unwrap (added 2026-04-27): List[Foo]/Optional[Foo]/Dict[K,V] resolve to inner type (last arg wins for Dict; first for Annotated)',
             'FastAPI Depends() resolves through `typed_default_parameter` — `svc: Service = Depends(...)` binds svc to Service',
+            "Deferred callee (added 2026-04-30): `x = factory()` records `@CALLEE:factory` and the resolver substitutes the callee's declared return type cross-file.",
         ],
     },
     {
@@ -161,7 +162,8 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         notes: [
             'Validated on keycloak (801M, 6665 .java files)',
             'DI: parses @Inject/@Autowired/@Resource on fields and constructors (last-segment match, FQ-prefixed forms supported). Combines with Foo->FooImpl name heuristic.',
-            'Spring 4.3+ implicit ctor injection (added 2026-04-30): @Service / @Component / @Repository / @Controller / @RestController / @Configuration with a single constructor auto-injects all params (no @Autowired required).',
+            'Implicit ctor injection (added 2026-04-30): Spring (@Service / @Component / @Repository / @Controller / @RestController / @Configuration), CDI/Jakarta (@ApplicationScoped / @RequestScoped / @SessionScoped / @ConversationScoped / @Dependent / @Singleton), EJB (@Stateless / @Stateful / @MessageDriven), JAX-RS (@Path / @Provider) — single-ctor classes get all params auto-injected. Catches Quarkus, Keycloak, Java EE patterns.',
+            'Bare typed fields enter diMap (added 2026-04-30) — `private final Foo foo;` resolves `this.foo.method()` at the receiver tier without requiring @Inject. Catches Lombok @RequiredArgsConstructor, manual ctor injection, and any plain typed-field declaration.',
             'Receiver-type covers ctor params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed ctor param.',
             'Call sites: this.field.method() threads field through diMap (added 2026-04-27)',
             'Multi-module Maven imports (improved 2026-04-30): adds src/test/{java,kotlin,scala} to discovered roots so test files can resolve cross-module references; honors <sourceDirectory>/<testSourceDirectory> overrides; memoizes source-root discovery and pom.xml reads per-repo (resolves the keycloak-scale perf cost). Pending re-validation.',

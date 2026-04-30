@@ -295,7 +295,12 @@ describe('extractGeneric – Java', () => {
         expect(ctor!.modifiers).toContain('@Autowired');
     });
 
-    test('@Inject / @Autowired fields populate diMap with field → type', async () => {
+    test('Java field → diMap covers BOTH annotated and bare typed fields', async () => {
+        // Behavior change 2026-04-30: bare typed fields (no annotation) also
+        // populate diMap so `this.other.foo()` resolves at the receiver tier.
+        // Catches Lombok @RequiredArgsConstructor and manual ctor injection
+        // patterns where fields aren't individually annotated. Annotated
+        // fields still work the same way.
         const code = [
             'public class UserService {',
             '    @Inject',
@@ -304,7 +309,7 @@ describe('extractGeneric – Java', () => {
             '    private final Logger logger;',
             '    @jakarta.inject.Inject',
             '    private NotifierService notifier;',
-            '    private final NotInjected other;',
+            '    private final BareTypedField bare;',
             '}',
         ].join('\n');
         const fp = '/virt/UserService.java';
@@ -317,7 +322,8 @@ describe('extractGeneric – Java', () => {
         expect(diMap!.get('repo')).toBe('UserRepository');
         expect(diMap!.get('logger')).toBe('Logger');
         expect(diMap!.get('notifier')).toBe('NotifierService');
-        expect(diMap!.has('other')).toBe(false);
+        // `bare` is NOT annotated but its type is known — bound for receiver-tier use.
+        expect(diMap!.get('bare')).toBe('BareTypedField');
     });
 
     test('@Inject on constructor adds every parameter to diMap', async () => {
@@ -412,6 +418,43 @@ describe('extractGeneric – Java', () => {
         const diMap = graph.diMaps.get(fp);
         expect(diMap?.get('repo')).toBeUndefined();
         expect(diMap?.get('logger')).toBeUndefined();
+    });
+
+    test('CDI @ApplicationScoped + single ctor implicitly injects params', async () => {
+        const code = [
+            '@ApplicationScoped',
+            'public class UserService {',
+            '    public UserService(UserRepository repo) {}',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+        expect(graph.diMaps.get(fp)?.get('repo')).toBe('UserRepository');
+    });
+
+    test('EJB @Stateless + single ctor implicitly injects params', async () => {
+        const code = ['@Stateless', 'public class Svc {', '    public Svc(Repo repo) {}', '}'].join('\n');
+        const fp = '/virt/Svc.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+        expect(graph.diMaps.get(fp)?.get('repo')).toBe('Repo');
+    });
+
+    test('JAX-RS @Path + single ctor implicitly injects params', async () => {
+        const code = [
+            '@Path("/users")',
+            'public class UserResource {',
+            '    public UserResource(UserService svc) {}',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserResource.java';
+        const root = await parseAsync('java', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'java', new Set(), graph);
+        expect(graph.diMaps.get(fp)?.get('svc')).toBe('UserService');
     });
 
     test('Spring @Service + explicit @Autowired ctor still extracts DI', async () => {
