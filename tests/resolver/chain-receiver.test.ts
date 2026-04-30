@@ -243,6 +243,38 @@ describe('method-chain receiver inference', () => {
         expect(stats.receiver).toBe(0);
     });
 
+    it('Kotlin extension function `fun Foo.bar()` indexed as Foo.bar — caller resolves at receiver tier', async () => {
+        // `fun Foo.bar(): X` is syntactically top-level but semantically a
+        // method on Foo. Without the extension-receiver fix, kotlinx-style
+        // codebases lose every extension call to ambiguous tier.
+        const code = [
+            'class Foo',
+            'fun Foo.bar(): String = "hi"',
+            'fun run() {',
+            '    val foo = Foo()',
+            '    foo.bar()',
+            '}',
+        ].join('\n');
+        const fp = 'src/ext.kt';
+        const { rawCalls, symbolTable, importMap, returnTypes, functions } = await prepare('kotlin', code, fp);
+
+        // Extractor: `bar` is registered with className=Foo, so its qualified
+        // name is `<fp>::Foo.bar` (not `<fp>::bar`).
+        const barFn = functions.find((f) => f.name === 'bar');
+        expect(barFn).toBeDefined();
+        expect(barFn!.qualified).toBe('src/ext.kt::Foo.bar');
+
+        const barCall = rawCalls.find((c) => c.callName === 'bar');
+        expect(barCall?.receiverType).toBe('Foo');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const barEdge = callEdges.find((e) => e.callName === 'bar');
+        expect(barEdge).toBeDefined();
+        expect(barEdge?.target).toBe('src/ext.kt::Foo.bar');
+        expect(barEdge?.confidence).toBeGreaterThanOrEqual(0.9);
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
     it('singleton heuristic does NOT propagate for non-factory inner names', async () => {
         // `Logger.transform()` is NOT in SINGLETON_FACTORIES. Without an explicit
         // return type, the chain pass declines to propagate; the outer call

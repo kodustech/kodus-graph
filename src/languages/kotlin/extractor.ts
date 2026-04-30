@@ -114,6 +114,32 @@ function kotlinFuncName(node: SgNode): string | undefined {
         ?.text();
 }
 
+/**
+ * Detect Kotlin extension function: `fun Foo.bar(): T = ...` carries a
+ * `user_type` child BEFORE the function-name `simple_identifier`. Returns
+ * the receiver type name (e.g. 'Foo'). For non-extension functions returns
+ * `undefined`.
+ *
+ * Without this, every extension function is treated as a top-level
+ * function with no className — calls to `foo.bar()` where foo: Foo can't
+ * resolve to `Foo.bar` at the receiver tier. This is the dominant pattern
+ * in kotlinx.coroutines, Compose, and Spring Kotlin DSL.
+ */
+function kotlinExtensionReceiver(node: SgNode): string | undefined {
+    const children = node.children();
+    const nameIdx = children.findIndex((c) => c.kind() === 'simple_identifier');
+    if (nameIdx < 0) {
+        return undefined;
+    }
+    for (let i = 0; i < nameIdx; i++) {
+        if (children[i].kind() === 'user_type') {
+            const typeId = children[i].children().find((c) => c.kind() === 'type_identifier');
+            return typeId?.text() ?? children[i].text();
+        }
+    }
+    return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Heritage helpers
 // ---------------------------------------------------------------------------
@@ -396,6 +422,16 @@ export const kotlinExtractors: LanguageExtractors = {
             });
             if (classAncestor) {
                 className = kotlinTypeName(classAncestor) || '';
+            }
+            // Extension function — `fun Foo.bar()` is semantically a method on
+            // Foo even though it's syntactically top-level. Set className to
+            // the receiver type so the symbol table indexes it as `Foo.bar`,
+            // enabling receiver-tier resolution at call sites.
+            if (!className) {
+                const ext = kotlinExtensionReceiver(node);
+                if (ext) {
+                    className = ext;
+                }
             }
 
             const kind: 'Function' | 'Method' | 'Constructor' = className ? 'Method' : 'Function';

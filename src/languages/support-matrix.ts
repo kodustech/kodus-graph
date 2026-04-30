@@ -337,7 +337,8 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         canonical_fixture: 'tests/fixtures/kotlin',
         baseline_tier_ratios: null,
         notes: [
-            'Re-validated on kotlinx.coroutines 2026-04-30: 🟡 GAP (ambigRatio 0.674 > 0.6, was 0.683 on 2026-04-19) — extension functions and generic-heavy code dominate; OO-style improvements (inheritance, typed-params) have limited reach.',
+            'Re-validated on kotlinx.coroutines 2026-04-30: 🟡 GAP (ambigRatio 0.663 > 0.6, was 0.683) — receiver tier 1061 → 1494 hits (+40%) after extension-function fix. Extension functions on generic receivers (e.g. `fun <T> List<T>.foo()`) resolve through the `type_identifier` head of the user_type (List).',
+            'Extension functions (added 2026-04-30): `fun Foo.bar()` is syntactically top-level but indexed as `Foo.bar` in the symbol table — calls `foo.bar()` where foo: Foo now resolve at the receiver tier instead of falling to ambiguous. Dominant pattern in kotlinx, Compose, Spring Kotlin DSL.',
             'Noise list expanded 2026-04-30: added preconditions (check/checkNotNull/requireNotNull/error/assert), stdlib helpers (lazy/lazyOf/repeat/synchronized/TODO/runCatching), and full collection builder family (arrayOf, mutableListOf, hashMapOf, emptyList, etc.). Contributed ~1.3pp ambig reduction.',
             "returnType extraction fix (2026-04-30): tree-sitter-kotlin doesn't expose `field('return_type')`; walk children structurally for the `user_type` after `:`. Without this, every Kotlin function had returnType='' and the chain pass / deferred-callee couldn't propagate.",
             "Deferred callee (2026-04-30): `val x = factory()` records `@CALLEE:factory`; resolver substitutes the function's declared return type cross-file.",
