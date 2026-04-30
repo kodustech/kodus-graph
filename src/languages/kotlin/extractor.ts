@@ -558,6 +558,23 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
                 typeName = fnId.text();
             }
         }
+        if (!typeName) {
+            // Type cast: `val x = something() as Foo` — extract the type from the
+            // `as_expression` (Kotlin tree-sitter exposes this as `infix_expression`
+            // with `as` operator and a `user_type` child for the target).
+            const asExpr = pd
+                .children()
+                .find((c: SgNode) => c.kind() === 'as_expression' || c.kind() === 'infix_expression');
+            if (asExpr) {
+                const ut = asExpr.children().find((c: SgNode) => c.kind() === 'user_type');
+                const ti = ut
+                    ?.children()
+                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier');
+                if (ti) {
+                    typeName = ti.text();
+                }
+            }
+        }
         if (typeName) {
             bindings.set(name, typeName);
         }

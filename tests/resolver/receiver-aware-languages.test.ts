@@ -420,6 +420,39 @@ describe('receiver-type inference per language', () => {
         const load = calls.find((c) => c.callName === 'load');
         expect(load?.receiverType).toBeUndefined();
     });
+
+    // ── Type cast / `as` assertion seeds receiverType ──
+
+    it('TypeScript: `const x = something() as Foo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'TypeScript',
+            'function r() { const x = something() as Foo; x.doWork(); }',
+            'src/r.ts',
+        );
+        const doWork = calls.find((c) => c.callName === 'doWork');
+        expect(doWork?.receiverType).toBe('Foo');
+    });
+
+    it('TypeScript: `const x = something() as Promise<Foo>` extracts outer generic name', async () => {
+        const calls = await extractWithReceiver(
+            'TypeScript',
+            'function r() { const x = something() as Promise<Foo>; x.doWork(); }',
+            'src/r.ts',
+        );
+        const doWork = calls.find((c) => c.callName === 'doWork');
+        // generic_type wrapper — we extract the head identifier (Promise).
+        expect(doWork?.receiverType).toBe('Promise');
+    });
+
+    it('Kotlin: `val x = something() as Foo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'kotlin',
+            'fun r() { val x = something() as Foo\n    x.doWork() }',
+            'src/r.kt',
+        );
+        const doWork = calls.find((c) => c.callName === 'doWork');
+        expect(doWork?.receiverType).toBe('Foo');
+    });
 });
 
 // ---------------------------------------------------------------------------

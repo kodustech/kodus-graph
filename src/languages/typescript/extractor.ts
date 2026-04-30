@@ -620,12 +620,30 @@ function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string
         }
         const typeAnn = vd.children().find((c: SgNode) => c.kind() === 'type_annotation');
         const newExpr = vd.children().find((c: SgNode) => c.kind() === 'new_expression');
+        const asExpr = vd.children().find((c: SgNode) => c.kind() === 'as_expression');
         let typeName: string | undefined;
         if (typeAnn) {
             typeName = typeFromAnnotation(typeAnn);
         }
         if (!typeName && newExpr) {
             typeName = typeFromNewExpression(newExpr);
+        }
+        // Type assertion: `const x = something() as Foo` — pull the type from
+        // the as_expression's type child. Useful when the LHS has no explicit
+        // annotation but the dev is forcing a known type at runtime.
+        if (!typeName && asExpr) {
+            const typeChild = asExpr
+                .children()
+                .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'generic_type');
+            if (typeChild) {
+                typeName =
+                    typeChild.kind() === 'generic_type'
+                        ? (typeChild
+                              .children()
+                              .find((c: SgNode) => c.kind() === 'type_identifier')
+                              ?.text() ?? typeChild.text())
+                        : typeChild.text();
+            }
         }
         if (typeName) {
             bindings.set(name, typeName);
