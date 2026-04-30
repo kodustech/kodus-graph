@@ -59,6 +59,14 @@ interface ResolverContext {
     symbolTable: SymbolTable;
     importMap: ImportMap;
     totalIndexedFiles: number;
+    /**
+     * Class hierarchy: subclass type-name → array of parent type-names (extends
+     * + implements). Used by the receiver tier as a fallback: if `Foo.method`
+     * isn't in the symbol table but Foo extends Bar and `Bar.method` is, resolve
+     * to `Bar.method` at 0.85 confidence (inheritance is precise but less direct
+     * than instance-on-actual-type).
+     */
+    classHierarchy: Map<string, string[]>;
 }
 
 type StatsKey = keyof CallResolverStats;
@@ -87,15 +95,15 @@ const receiverTier: Tier = (call, ctx) => {
     if (!call.receiverType) {
         return null;
     }
-    const needle = `::${call.receiverType}.${call.callName}`;
     const all = ctx.symbolTable.lookupGlobal(call.callName);
-    const matches = all.filter((q) => q.includes(needle));
-    if (matches.length === 1) {
-        return { kind: 'edge', target: matches[0], confidence: 0.95, statsKey: 'receiver' };
+    const directNeedle = `::${call.receiverType}.${call.callName}`;
+    const direct = all.filter((q) => q.includes(directNeedle));
+    if (direct.length === 1) {
+        return { kind: 'edge', target: direct[0], confidence: 0.95, statsKey: 'receiver' };
     }
-    if (matches.length > 1) {
-        const best = pickClosestCandidate(matches, ctx.fp);
-        const alternatives = matches.filter((q) => q !== best).sort();
+    if (direct.length > 1) {
+        const best = pickClosestCandidate(direct, ctx.fp);
+        const alternatives = direct.filter((q) => q !== best).sort();
         return {
             kind: 'edge',
             target: best,
@@ -104,8 +112,51 @@ const receiverTier: Tier = (call, ctx) => {
             ...(alternatives.length > 0 ? { alternatives } : {}),
         };
     }
+    // Inheritance fallback — `Foo.method` not found, but Foo extends Bar (or
+    // implements an interface with `method`). Walk up the hierarchy with cycle
+    // protection. Confidence drops to 0.85 to reflect indirect resolution.
+    const inheritedTarget = lookupViaInheritance(call.receiverType, call.callName, all, ctx.classHierarchy);
+    if (inheritedTarget) {
+        return { kind: 'edge', target: inheritedTarget, confidence: 0.85, statsKey: 'receiver' };
+    }
     return null;
 };
+
+/**
+ * Walk up the class hierarchy from `typeName`, returning the first qualified
+ * symbol where `<parent>.<callName>` is in the symbol table. Visits each
+ * ancestor at most once. Caps depth at 8 to bound work — deeper hierarchies
+ * are rare and pathological.
+ */
+function lookupViaInheritance(
+    typeName: string,
+    callName: string,
+    candidates: string[],
+    classHierarchy: Map<string, string[]>,
+): string | undefined {
+    const visited = new Set<string>([typeName]);
+    let frontier = classHierarchy.get(typeName) ?? [];
+    for (let depth = 0; depth < 8 && frontier.length > 0; depth++) {
+        const next: string[] = [];
+        for (const parent of frontier) {
+            if (visited.has(parent)) {
+                continue;
+            }
+            visited.add(parent);
+            const needle = `::${parent}.${callName}`;
+            const hit = candidates.find((q) => q.includes(needle));
+            if (hit) {
+                return hit;
+            }
+            const parents = classHierarchy.get(parent);
+            if (parents) {
+                next.push(...parents);
+            }
+        }
+        frontier = next;
+    }
+    return undefined;
+}
 
 /** Drop calls whose name is in the language's noise list. */
 const noiseTier: Tier = (call, ctx) => {
@@ -232,7 +283,9 @@ export function resolveAllCalls(
     symbolTable: SymbolTable,
     importMap: ImportMap,
     returnTypes?: Map<string, string>,
+    classHierarchy?: Map<string, string[]>,
 ): ResolveAllResult {
+    const hierarchy = classHierarchy ?? new Map<string, string[]>();
     const stats: CallResolverStats = {
         di: 0,
         same: 0,
@@ -259,6 +312,7 @@ export function resolveAllCalls(
             symbolTable,
             importMap,
             totalIndexedFiles,
+            classHierarchy: hierarchy,
         };
         outcomes[i] = runTiers(call, ctx);
     }
@@ -308,6 +362,7 @@ export function resolveAllCalls(
                 symbolTable,
                 importMap,
                 totalIndexedFiles,
+                classHierarchy: hierarchy,
             };
             const upgraded = runTiers(call, ctx);
             if (upgraded?.kind === 'edge' && upgraded.statsKey === 'receiver') {

@@ -152,7 +152,31 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
             returnTypes.set(f.qualified, f.returnType);
         }
     }
-    let { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap, returnTypes);
+    // Build the class hierarchy map (subclass → [parents]) from extracted
+    // classes' `extends` and `implements` fields. The receiver tier walks this
+    // when a method isn't on the immediate type but is on a parent.
+    const classHierarchy = new Map<string, string[]>();
+    for (const c of rawGraph.classes) {
+        const parents: string[] = [];
+        if (c.extends) {
+            parents.push(c.extends);
+        }
+        if (c.implements?.length) {
+            parents.push(...c.implements);
+        }
+        if (parents.length > 0) {
+            const existing = classHierarchy.get(c.name);
+            classHierarchy.set(c.name, existing ? [...existing, ...parents] : parents);
+        }
+    }
+    let { callEdges, stats } = resolveAllCalls(
+        rawGraph.rawCalls,
+        rawGraph.diMaps,
+        symbolTable,
+        importMap,
+        returnTypes,
+        classHierarchy,
+    );
     process.stderr.write(
         `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
     );

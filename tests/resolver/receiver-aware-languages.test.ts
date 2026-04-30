@@ -598,3 +598,89 @@ class UserService:
         expect(workCall?.receiverType).toBe('Other');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Inheritance-aware receiver-tier lookup. When `Foo.method` isn't in the
+// symbol table but Foo extends Bar / implements Baz where the method DOES
+// exist, the resolver walks up the hierarchy and resolves at 0.85 confidence.
+// ---------------------------------------------------------------------------
+
+describe('receiver-type inheritance fallback', () => {
+    it('extends: subclass call resolves to parent.method at 0.85', async () => {
+        const calls: RawCallSite[] = [
+            {
+                source: 'src/UserService.java',
+                callName: 'find',
+                line: 1,
+                column: 1,
+                receiverType: 'UserService',
+            },
+        ];
+        const table = createSymbolTable();
+        // No `UserService.find` in the table — only the parent's.
+        table.add('src/BaseService.java', 'find', 'src/BaseService.java::BaseService.find');
+        const hierarchy = new Map<string, string[]>([['UserService', ['BaseService']]]);
+        const { callEdges, stats } = resolveAllCalls(calls, new Map(), table, createImportMap(), undefined, hierarchy);
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].confidence).toBe(0.85);
+        expect(callEdges[0].target).toBe('src/BaseService.java::BaseService.find');
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('multi-level: walks GrandChild → Child → Parent until hit', async () => {
+        const calls: RawCallSite[] = [
+            { source: 'src/A.java', callName: 'doIt', line: 1, column: 1, receiverType: 'GrandChild' },
+        ];
+        const table = createSymbolTable();
+        table.add('src/Parent.java', 'doIt', 'src/Parent.java::Parent.doIt');
+        const hierarchy = new Map<string, string[]>([
+            ['GrandChild', ['Child']],
+            ['Child', ['Parent']],
+        ]);
+        const { callEdges } = resolveAllCalls(calls, new Map(), table, createImportMap(), undefined, hierarchy);
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].target).toBe('src/Parent.java::Parent.doIt');
+    });
+
+    it('implements: interface method resolves via implements list', async () => {
+        const calls: RawCallSite[] = [
+            { source: 'src/Foo.java', callName: 'serialize', line: 1, column: 1, receiverType: 'Foo' },
+        ];
+        const table = createSymbolTable();
+        table.add('src/Serializable.java', 'serialize', 'src/Serializable.java::Serializable.serialize');
+        const hierarchy = new Map<string, string[]>([['Foo', ['Serializable']]]);
+        const { callEdges } = resolveAllCalls(calls, new Map(), table, createImportMap(), undefined, hierarchy);
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].confidence).toBe(0.85);
+        expect(callEdges[0].target).toBe('src/Serializable.java::Serializable.serialize');
+    });
+
+    it('cycle in hierarchy does not infinite-loop', async () => {
+        const calls: RawCallSite[] = [
+            { source: 'src/A.java', callName: 'unknown', line: 1, column: 1, receiverType: 'A' },
+        ];
+        const table = createSymbolTable();
+        // No matching method anywhere.
+        const hierarchy = new Map<string, string[]>([
+            ['A', ['B']],
+            ['B', ['A']],
+        ]);
+        const { callEdges } = resolveAllCalls(calls, new Map(), table, createImportMap(), undefined, hierarchy);
+        // No resolution — falls through to cascade which also misses.
+        expect(callEdges).toHaveLength(0);
+    });
+
+    it('direct hit on Foo.method takes precedence over inheritance', async () => {
+        const calls: RawCallSite[] = [
+            { source: 'src/A.java', callName: 'do', line: 1, column: 1, receiverType: 'Foo' },
+        ];
+        const table = createSymbolTable();
+        table.add('src/Foo.java', 'do', 'src/Foo.java::Foo.do');
+        table.add('src/Base.java', 'do', 'src/Base.java::Base.do');
+        const hierarchy = new Map<string, string[]>([['Foo', ['Base']]]);
+        const { callEdges } = resolveAllCalls(calls, new Map(), table, createImportMap(), undefined, hierarchy);
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].confidence).toBe(0.95);
+        expect(callEdges[0].target).toBe('src/Foo.java::Foo.do');
+    });
+});
