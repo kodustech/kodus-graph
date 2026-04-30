@@ -335,6 +335,7 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
         baseline_tier_ratios: null,
         notes: [
             'Validated on kotlinx.coroutines 2026-04-19: 🟡 GAP (ambigRatio 0.683 > 0.6) — same Kotlin method-name-reuse pattern as Java',
+            'Noise list expanded 2026-04-30: added preconditions (check/checkNotNull/requireNotNull/error/assert), stdlib helpers (lazy/lazyOf/repeat/synchronized/TODO/runCatching), and full collection builder family (arrayOf, mutableListOf, hashMapOf, emptyList, etc.). Pending re-validation against kotlinx.coroutines.',
             'DI (added 2026-04-27): parses @Inject/@Autowired/@Resource on properties and primary constructors; bare `repo.method()` and `this.repo.method()` thread `repo` as diField. Reuses Java FooImpl name heuristic.',
         ],
     },

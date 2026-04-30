@@ -4,6 +4,7 @@ import { getNoiseFor, registerNoise } from '../../src/languages/noise-registry';
 // Side-effect imports — mirrors how the resolver will pull them.
 import '../../src/languages/go';
 import '../../src/languages/java';
+import '../../src/languages/kotlin';
 import '../../src/languages/python';
 import '../../src/languages/ruby';
 import '../../src/languages/typescript';
@@ -41,6 +42,32 @@ describe('per-language NOISE registry', () => {
         const noise = getNoiseFor('java');
         expect(noise.has('println')).toBe(true);
         expect(noise.has('equals')).toBe(true);
+    });
+
+    it('returns the Kotlin noise set for Kotlin language', () => {
+        const noise = getNoiseFor('kotlin');
+        // Stable scope/IO functions
+        expect(noise.has('println')).toBe(true);
+        expect(noise.has('apply')).toBe(true);
+        // Expanded set (added 2026-04-30) — preconditions + stdlib helpers + builders
+        for (const name of [
+            'check',
+            'checkNotNull',
+            'requireNotNull',
+            'error',
+            'lazy',
+            'repeat',
+            'synchronized',
+            'TODO',
+            'runCatching',
+            'arrayOf',
+            'mutableListOf',
+            'emptyList',
+        ]) {
+            expect(noise.has(name)).toBe(true);
+        }
+        // Java-only noise should NOT appear in Kotlin set
+        expect(noise.has('equals')).toBe(false);
     });
 
     it('returns an empty set when language is unregistered', () => {
