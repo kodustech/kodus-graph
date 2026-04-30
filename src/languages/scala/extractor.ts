@@ -476,6 +476,40 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     }
+    // Function/method parameters with explicit types — `def handle(repo: Repo)` —
+    // become bindings inside the body so `repo.find()` resolves at the receiver
+    // tier. Scala tree-sitter exposes `parameters > parameter > [identifier, type]`.
+    for (const fn of root.findAll({ rule: { kind: 'function_definition' } })) {
+        const paramsNodes = fn.children().filter((c: SgNode) => c.kind() === 'parameters');
+        for (const params of paramsNodes) {
+            for (const p of params.children()) {
+                if (p.kind() !== 'parameter') {
+                    continue;
+                }
+                const name = p
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'identifier')
+                    ?.text();
+                const typeNode = p
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'generic_type');
+                if (!name || !typeNode) {
+                    continue;
+                }
+                const typeName =
+                    typeNode.kind() === 'generic_type'
+                        ? (typeNode
+                              .children()
+                              .find((c: SgNode) => c.kind() === 'type_identifier')
+                              ?.text() ?? typeNode.text())
+                        : typeNode.text();
+                if (typeName) {
+                    bindings.set(name, typeName);
+                }
+            }
+        }
+    }
+
     for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
         const fn = ce.field('function');
         if (!fn || fn.kind() !== 'field_expression') {

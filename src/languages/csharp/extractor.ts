@@ -356,6 +356,62 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
             }
         }
     }
+    // Method/constructor parameters with explicit types — `void Handle(Repo repo)` —
+    // become bindings inside the body so `repo.Find()` resolves at the receiver
+    // tier. C# tree-sitter exposes `parameter_list > parameter > [type, identifier]`.
+    const seedCsParam = (p: SgNode): void => {
+        if (p.kind() !== 'parameter') {
+            return;
+        }
+        const name =
+            p.field('name')?.text() ??
+            p
+                .children()
+                .find((c: SgNode) => c.kind() === 'identifier')
+                ?.text();
+        const typeNode = p.field('type');
+        if (!name || !typeNode) {
+            return;
+        }
+        let typeName: string | undefined;
+        const tk = typeNode.kind();
+        if (tk === 'identifier' || tk === 'type_identifier' || tk === 'predefined_type') {
+            typeName = typeNode.text();
+        } else if (tk === 'generic_name') {
+            typeName =
+                typeNode
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'identifier')
+                    ?.text() ?? typeNode.text();
+        } else if (tk === 'nullable_type') {
+            const inner = typeNode
+                .children()
+                .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'generic_name');
+            typeName =
+                inner?.kind() === 'generic_name'
+                    ? inner
+                          .children()
+                          .find((c: SgNode) => c.kind() === 'identifier')
+                          ?.text()
+                    : inner?.text();
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    };
+    const CSHARP_FN_KINDS = ['method_declaration', 'constructor_declaration', 'local_function_statement'];
+    for (const kind of CSHARP_FN_KINDS) {
+        for (const fn of root.findAll({ rule: { kind } })) {
+            const params = fn.field('parameters');
+            if (!params) {
+                continue;
+            }
+            for (const p of params.children()) {
+                seedCsParam(p);
+            }
+        }
+    }
+
     for (const inv of root.findAll({ rule: { kind: 'invocation_expression' } })) {
         const fn = inv.field('function');
         if (!fn || fn.kind() !== 'member_access_expression') {

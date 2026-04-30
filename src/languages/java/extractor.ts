@@ -572,34 +572,40 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
             }
         }
     }
-    // Constructor parameters become method-scope bindings — `repo.findAll()`
-    // inside the body resolves through the receiver tier (0.95) instead of
-    // falling through to DI (0.9) or cascade.
-    for (const cd of root.findAll({ rule: { kind: 'constructor_declaration' } })) {
-        const params = cd.field('parameters');
-        if (!params) {
-            continue;
+    // Constructor and method parameters become scope-local bindings —
+    // `repo.findAll()` inside the body resolves through the receiver tier (0.95)
+    // instead of falling through to DI (0.9) or cascade. Covers both
+    // constructors and regular methods (extended 2026-04-30).
+    const seedJavaParam = (p: SgNode): void => {
+        if (p.kind() !== 'formal_parameter') {
+            return;
         }
-        for (const p of params.children()) {
-            if (p.kind() !== 'formal_parameter') {
+        const typeNode = p.children().find((c) => {
+            const k = c.kind();
+            return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+        });
+        const name = p.field('name')?.text();
+        if (!typeNode || !name) {
+            return;
+        }
+        const typeName =
+            typeNode.kind() === 'generic_type'
+                ? (typeNode
+                      .children()
+                      .find((c) => c.kind() === 'type_identifier')
+                      ?.text() ?? typeNode.text())
+                : typeNode.text();
+        bindings.set(name, typeName);
+    };
+    for (const kind of ['constructor_declaration', 'method_declaration']) {
+        for (const fn of root.findAll({ rule: { kind } })) {
+            const params = fn.field('parameters');
+            if (!params) {
                 continue;
             }
-            const typeNode = p.children().find((c) => {
-                const k = c.kind();
-                return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
-            });
-            const name = p.field('name')?.text();
-            if (!typeNode || !name) {
-                continue;
+            for (const p of params.children()) {
+                seedJavaParam(p);
             }
-            const typeName =
-                typeNode.kind() === 'generic_type'
-                    ? (typeNode
-                          .children()
-                          .find((c) => c.kind() === 'type_identifier')
-                          ?.text() ?? typeNode.text())
-                    : typeNode.text();
-            bindings.set(name, typeName);
         }
     }
     for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {

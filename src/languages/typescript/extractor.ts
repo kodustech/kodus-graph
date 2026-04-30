@@ -568,8 +568,13 @@ function typeFromAnnotation(typeAnn: SgNode): string | undefined {
  * Collect variable-to-type bindings within a given scope (function body or
  * file root). Only tracks explicit type annotations and `new` expressions —
  * we deliberately do NOT attempt to infer from arbitrary expressions.
+ *
+ * When `scope` is a function-like node (function/method/arrow), the function's
+ * top-level typed parameters are also seeded into the bindings map. This lets
+ * `repo.find()` inside `function handle(repo: UserRepo) { ... }` resolve at
+ * the receiver tier.
  */
-function collectBindings(scopeNode: SgNode): Map<string, string> {
+function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string, string> {
     const bindings = new Map<string, string>();
     for (const vd of scopeNode.findAll({ rule: { kind: 'variable_declarator' } })) {
         const nameNode = vd.children().find((c: SgNode) => c.kind() === 'identifier');
@@ -590,7 +595,42 @@ function collectBindings(scopeNode: SgNode): Map<string, string> {
             bindings.set(name, typeName);
         }
     }
+    if (isFunctionScope) {
+        seedTSParamBindings(scopeNode, bindings);
+    }
     return bindings;
+}
+
+/**
+ * Walk a function-like node's immediate parameter list and seed each typed
+ * parameter into bindings. Handles `required_parameter` and `optional_parameter`
+ * (TS) and identifier-only patterns inside `formal_parameters` (JS).
+ */
+function seedTSParamBindings(fnNode: SgNode, bindings: Map<string, string>): void {
+    const params =
+        fnNode.field('parameters') ?? fnNode.children().find((c: SgNode) => c.kind() === 'formal_parameters');
+    if (!params) {
+        return;
+    }
+    for (const p of params.children()) {
+        const kind = p.kind();
+        if (kind !== 'required_parameter' && kind !== 'optional_parameter') {
+            continue;
+        }
+        const pattern = p.field('pattern') ?? p.children().find((c: SgNode) => c.kind() === 'identifier');
+        const name = pattern?.kind() === 'identifier' ? pattern.text() : undefined;
+        if (!name) {
+            continue;
+        }
+        const typeAnn = p.children().find((c: SgNode) => c.kind() === 'type_annotation');
+        if (!typeAnn) {
+            continue;
+        }
+        const typeName = typeFromAnnotation(typeAnn);
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    }
 }
 
 function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
@@ -602,7 +642,7 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
     const functionRanges: { node: SgNode; bindings: Map<string, string> }[] = [];
     for (const kind of functionKinds) {
         for (const fn of rootNode.findAll({ rule: { kind } })) {
-            functionRanges.push({ node: fn, bindings: collectBindings(fn) });
+            functionRanges.push({ node: fn, bindings: collectBindings(fn, true) });
         }
     }
     // For each member_expression used as a call receiver, find the innermost

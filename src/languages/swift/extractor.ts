@@ -515,6 +515,43 @@ function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     }
+    // Function/initializer parameters with explicit types — `func handle(repo: Repo)`,
+    // `func handle(_ repo: Repo)`, `init(with repo: Repo)` — become bindings inside
+    // the body. Swift parameters expose `[simple_identifier (label)?, simple_identifier (name), user_type]`
+    // directly; there is no enclosing `type_annotation`.
+    const SWIFT_FN_KINDS = ['function_declaration', 'init_declaration', 'deinit_declaration'];
+    for (const kind of SWIFT_FN_KINDS) {
+        for (const fn of root.findAll({ rule: { kind } })) {
+            for (const p of fn.children()) {
+                if (p.kind() !== 'parameter') {
+                    continue;
+                }
+                const idents = p.children().filter((c: SgNode) => c.kind() === 'simple_identifier');
+                if (idents.length === 0) {
+                    continue;
+                }
+                // Internal name is the last simple_identifier (after an optional external label).
+                const internalName = idents[idents.length - 1].text();
+                const userType = p
+                    .children()
+                    .find((c: SgNode) => c.kind() === 'user_type' || c.kind() === 'type_identifier');
+                if (!userType) {
+                    continue;
+                }
+                const typeName =
+                    userType.kind() === 'user_type'
+                        ? (userType
+                              .children()
+                              .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier')
+                              ?.text() ?? userType.text())
+                        : userType.text();
+                if (internalName && typeName) {
+                    bindings.set(internalName, typeName);
+                }
+            }
+        }
+    }
+
     for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
         const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
         if (!nav) {

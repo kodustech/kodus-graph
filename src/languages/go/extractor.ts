@@ -363,6 +363,60 @@ function extractReceiverTypesGo(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     }
+    // Function/method parameters with explicit types — `func handle(req *Request)` —
+    // and method receivers — `func (s *Server) Handle()` — become bindings.
+    // `*Foo` strips to `Foo` so method dispatch works on both pointer and value
+    // receivers.
+    const seedGoParam = (p: SgNode): void => {
+        if (p.kind() !== 'parameter_declaration') {
+            return;
+        }
+        const name = p
+            .children()
+            .find((c: SgNode) => c.kind() === 'identifier')
+            ?.text();
+        const typeNode =
+            p.field('type') ??
+            p.children().find((c: SgNode) => /_type$/.test(String(c.kind())) || c.kind() === 'type_identifier');
+        if (!name || !typeNode) {
+            return;
+        }
+        let typeName: string | undefined;
+        if (typeNode.kind() === 'pointer_type') {
+            typeName = typeNode
+                .children()
+                .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'qualified_type')
+                ?.text();
+        } else if (typeNode.kind() === 'type_identifier' || typeNode.kind() === 'qualified_type') {
+            typeName = typeNode.text();
+        }
+        if (typeName) {
+            bindings.set(name, typeName);
+        }
+    };
+    for (const fn of root.findAll({ rule: { kind: 'function_declaration' } })) {
+        const params = fn.field('parameters');
+        if (params) {
+            for (const p of params.children()) {
+                seedGoParam(p);
+            }
+        }
+    }
+    for (const md of root.findAll({ rule: { kind: 'method_declaration' } })) {
+        const recv = md.field('receiver');
+        if (recv) {
+            for (const p of recv.children()) {
+                seedGoParam(p);
+            }
+        }
+        const params = md.field('parameters');
+        if (params) {
+            for (const p of params.children()) {
+                seedGoParam(p);
+            }
+        }
+    }
+
     for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
         const fn = ce.field('function');
         if (!fn || fn.kind() !== 'selector_expression') {

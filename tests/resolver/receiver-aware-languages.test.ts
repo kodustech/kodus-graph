@@ -249,6 +249,133 @@ describe('receiver-type inference per language', () => {
         const upd = calls.find((c) => c.callName === 'doWork');
         expect(upd?.receiverType).toBeUndefined();
     });
+
+    // ── Cross-language typed-param bindings (#76) ──
+    // Each test exercises a function/method whose parameter has an explicit type;
+    // a method call on that param inside the body must resolve at the receiver
+    // tier. Mirrors the Java ctor-param coverage from #72.
+
+    it('TypeScript: typed parameter `repo: Repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'TypeScript',
+            'function handle(repo: Repo) { repo.find(); }',
+            'src/h.ts',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('TypeScript: arrow function typed parameter seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'TypeScript',
+            'const handle = (repo: Repo) => { repo.find(); };',
+            'src/h.ts',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('TypeScript: class method typed parameter seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'TypeScript',
+            'class A { handle(repo: Repo): void { repo.find(); } }',
+            'src/A.ts',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Java: regular method typed parameter seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'java',
+            'class A { void handle(Repo repo) { repo.find(); } }',
+            'src/A.java',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Kotlin: typed function parameter `repo: Repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver('kotlin', 'fun handle(repo: Repo) { repo.find() }', 'src/h.kt');
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Go: function parameter `req *Request` seeds receiverType (pointer unwrapped)', async () => {
+        const calls = await extractWithReceiver(
+            'go',
+            'package main\nfunc handle(req *Request) { req.Validate() }',
+            'src/h.go',
+        );
+        const validate = calls.find((c) => c.callName === 'Validate');
+        expect(validate?.receiverType).toBe('Request');
+    });
+
+    it('Go: method receiver `(s *Server)` seeds receiverType for `s` inside body', async () => {
+        const calls = await extractWithReceiver(
+            'go',
+            'package main\nfunc (s *Server) Handle() { s.Run() }',
+            'src/s.go',
+        );
+        const run = calls.find((c) => c.callName === 'Run');
+        expect(run?.receiverType).toBe('Server');
+    });
+
+    it('Rust: typed parameter `repo: &Repo` seeds receiverType (reference unwrapped)', async () => {
+        const calls = await extractWithReceiver('rust', 'fn handle(repo: &Repo) { repo.find(); }', 'src/h.rs');
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('C#: method typed parameter `Repo repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'csharp',
+            'class A { void Handle(Repo repo) { repo.Find(); } }',
+            'src/A.cs',
+        );
+        const find = calls.find((c) => c.callName === 'Find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Scala: def parameter `repo: Repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'scala',
+            'class A { def handle(repo: Repo): Unit = { repo.find() } }',
+            'src/A.scala',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Swift: function parameter `repo: Repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'swift',
+            'class A { func handle(repo: Repo) { repo.find() } }',
+            'src/A.swift',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Swift: function parameter with leading `_` external label binds internal name', async () => {
+        const calls = await extractWithReceiver(
+            'swift',
+            'class A { func handle(_ repo: Repo) { repo.find() } }',
+            'src/A.swift',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
+
+    it('Dart: method parameter `Repo repo` seeds receiverType', async () => {
+        const calls = await extractWithReceiver(
+            'dart',
+            'class A { void handle(Repo repo) { repo.find(); } }',
+            'src/a.dart',
+        );
+        const find = calls.find((c) => c.callName === 'find');
+        expect(find?.receiverType).toBe('Repo');
+    });
 });
 
 // ---------------------------------------------------------------------------

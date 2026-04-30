@@ -286,6 +286,52 @@ function extractReceiverTypesRust(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     }
+    // Function/method parameters with explicit types — `fn handle(repo: &Repo)` —
+    // become bindings inside the body. Reference types (`&Foo`, `&mut Foo`)
+    // unwrap to their referent so method dispatch works on either form.
+    const unwrapRustType = (typeNode: SgNode): string | undefined => {
+        const kind = typeNode.kind();
+        if (kind === 'type_identifier') {
+            return typeNode.text();
+        }
+        if (kind === 'reference_type') {
+            const inner = typeNode
+                .children()
+                .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'generic_type');
+            if (inner) {
+                return unwrapRustType(inner);
+            }
+        }
+        if (kind === 'generic_type') {
+            return typeNode
+                .children()
+                .find((c: SgNode) => c.kind() === 'type_identifier')
+                ?.text();
+        }
+        return undefined;
+    };
+    for (const fn of root.findAll({ rule: { kind: 'function_item' } })) {
+        const params = fn.field('parameters');
+        if (!params) {
+            continue;
+        }
+        for (const p of params.children()) {
+            if (p.kind() !== 'parameter') {
+                continue;
+            }
+            const pattern = p.field('pattern') ?? p.children().find((c: SgNode) => c.kind() === 'identifier');
+            const typeNode = p.field('type');
+            const name = pattern?.kind() === 'identifier' ? pattern.text() : undefined;
+            if (!name || !typeNode) {
+                continue;
+            }
+            const typeName = unwrapRustType(typeNode);
+            if (typeName) {
+                bindings.set(name, typeName);
+            }
+        }
+    }
+
     for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
         const fn = ce.field('function');
         if (!fn || fn.kind() !== 'field_expression') {

@@ -764,6 +764,31 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
         }
     }
 
+    // Function/method parameters with explicit types — `void handle(Repo repo)` —
+    // become bindings inside the body. Dart tree-sitter exposes parameters as
+    // `formal_parameter_list > normal_formal_parameter` nodes.
+    for (const fnList of root.findAll({ rule: { kind: 'formal_parameter_list' } })) {
+        for (const p of fnList.children()) {
+            const k = String(p.kind());
+            // Default-valued params wrap the inner formal_parameter.
+            const inner =
+                k === 'default_formal_parameter'
+                    ? p.children().find((c) => String(c.kind()).endsWith('formal_parameter'))
+                    : p;
+            if (!inner || !String(inner.kind()).endsWith('formal_parameter')) {
+                continue;
+            }
+            const childs = inner.children();
+            const typeNode = childs.find((c) => c.kind() === 'type_identifier');
+            const idents = childs.filter((c) => c.kind() === 'identifier');
+            const name = idents[idents.length - 1]?.text();
+            if (!name || !typeNode) {
+                continue;
+            }
+            bindings.set(name, typeNode.text());
+        }
+    }
+
     // Cross-reference each receiver-qualified call site with its binding.
     // The call-extractor records location at the argument selector's start,
     // so we scan the same shape here to stay in sync.

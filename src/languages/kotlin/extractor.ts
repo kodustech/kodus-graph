@@ -562,6 +562,34 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     }
+    // Function/method parameters with explicit types — `fun handler(repo: Repo)` —
+    // become bindings inside the body so `repo.find()` resolves at the receiver
+    // tier. Kotlin's tree-sitter exposes these as `function_value_parameters >
+    // parameter > [simple_identifier, user_type]`.
+    for (const fn of root.findAll({ rule: { kind: 'function_declaration' } })) {
+        const params = fn.children().find((c: SgNode) => c.kind() === 'function_value_parameters');
+        if (!params) {
+            continue;
+        }
+        for (const p of params.children()) {
+            if (p.kind() !== 'parameter') {
+                continue;
+            }
+            const name = p
+                .children()
+                .find((c: SgNode) => c.kind() === 'simple_identifier')
+                ?.text();
+            const userType = p.children().find((c: SgNode) => c.kind() === 'user_type');
+            const typeName =
+                userType
+                    ?.children()
+                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier')
+                    ?.text() ?? userType?.text();
+            if (name && typeName) {
+                bindings.set(name, typeName);
+            }
+        }
+    }
     for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
         const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
         if (!nav) {
