@@ -259,7 +259,8 @@ export const csharpExtractors: LanguageExtractors = {
                     line_start: range.line_start,
                     line_end: range.line_end,
                     params: node.field('parameters')?.text() || '()',
-                    returnType: node.field('return_type')?.text() || '',
+                    // C# tree-sitter exposes the return type as `returns` field.
+                    returnType: node.field('returns')?.text() || '',
                     kind,
                     ast_kind: String(node.kind()),
                     className,
@@ -349,6 +350,16 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
                             .children()
                             .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'type_identifier')
                             ?.text();
+                }
+                // C# `var x = factory();` — emit deferred `@CALLEE:` marker so
+                // the resolver substitutes the callee's return type cross-file.
+                // Only fires for bare invocation `Foo()` (no receiver).
+                if (!typeName) {
+                    const inv = vd.children().find((c: SgNode) => c.kind() === 'invocation_expression');
+                    const fn = inv?.field('function');
+                    if (fn?.kind() === 'identifier') {
+                        typeName = `@CALLEE:${fn.text()}`;
+                    }
                 }
             }
             if (typeName) {

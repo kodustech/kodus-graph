@@ -472,6 +472,20 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
                 }
             }
         }
+        // Scala `val x = factory()` — emit `@CALLEE:` marker. Only when the
+        // RHS is a bare call_expression with an identifier function (lowercase
+        // factory function). Uppercase identifiers go through the
+        // instance_expression / new path above.
+        if (!typeName) {
+            const call = kids.find((c: SgNode) => c.kind() === 'call_expression');
+            const fn = call?.field('function');
+            if (fn?.kind() === 'identifier') {
+                const fnName = fn.text();
+                if (fnName.length > 0 && fnName[0] === fnName[0].toLowerCase()) {
+                    typeName = `@CALLEE:${fnName}`;
+                }
+            }
+        }
         if (typeName) {
             bindings.set(name, typeName);
         }

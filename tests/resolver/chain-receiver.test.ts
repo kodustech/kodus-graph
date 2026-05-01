@@ -326,6 +326,54 @@ describe('method-chain receiver inference', () => {
         expect(stats.receiver).toBe(0);
     });
 
+    it('C#: `var x = factory()` resolves outer call via factory return type', async () => {
+        const code = [
+            'class User { public string Greet() { return ""; } }',
+            'class A {',
+            '    User Factory() { return new User(); }',
+            '    void Run() {',
+            '        var x = Factory();',
+            '        x.Greet();',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = 'src/A.cs';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('csharp', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'Greet');
+        expect(greetCall?.receiverType).toBe('@CALLEE:Factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'Greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.Greet');
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Scala: `val x = factory()` resolves outer call via factory return type', async () => {
+        const code = [
+            'class User { def greet(): String = "" }',
+            'class A {',
+            '    def factory(): User = new User()',
+            '    def run(): Unit = {',
+            '        val x = factory()',
+            '        x.greet()',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = 'src/A.scala';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('scala', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'greet');
+        expect(greetCall?.receiverType).toBe('@CALLEE:factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.greet');
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
     it('Java 10+ `var x = factory()` resolves outer call via factory return type', async () => {
         // Java's `var` keyword (Java 10+) without explicit type. Without the
         // deferred-callee path, calls on `x` fall to ambiguous. With it,
