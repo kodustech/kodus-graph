@@ -250,6 +250,20 @@ export function extractAll(root: SgRoot, fp: string, lang: string, seen: Set<str
             diMap.set(di.fieldName, di.typeName);
         }
     }
+
+    // ── Module-scope value bindings ──────────────────────────────────────
+    // Aggregate per-file `const x = new Foo()` etc. into a global map so the
+    // resolver can substitute receiverType for imported names.
+    if (result.valueBindings && result.valueBindings.length > 0) {
+        let vb = graph.valueBindings.get(fp);
+        if (!vb) {
+            vb = new Map<string, string>();
+            graph.valueBindings.set(fp, vb);
+        }
+        for (const entry of result.valueBindings) {
+            vb.set(entry.name, entry.type);
+        }
+    }
 }
 
 /**

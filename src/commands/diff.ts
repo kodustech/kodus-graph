@@ -69,6 +69,8 @@ async function buildGraphFromSources(
         reExports: [],
         rawCalls: [],
         diMaps: new Map(),
+
+        valueBindings: new Map(),
     };
     const seen = new Set<string>();
 

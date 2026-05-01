@@ -427,7 +427,15 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
         }
     }
 
-    return { classes, functions, imports, reExports, interfaces, enums, diEntries };
+    // Module-scope value bindings — `export const db = new Database();` lets
+    // a different file resolving `db.query()` look this up cross-file. We use
+    // the file-root scope (no isFunctionScope) so only top-level / module
+    // declarations are captured. Both real types (`Database`) and deferred
+    // markers (`@CALLEE:createDb`) flow through the same map.
+    const fileBindings = collectBindings(rootNode);
+    const valueBindings = Array.from(fileBindings.entries()).map(([name, type]) => ({ name, type }));
+
+    return { classes, functions, imports, reExports, interfaces, enums, diEntries, valueBindings };
 }
 
 // ---------------------------------------------------------------------------
@@ -756,6 +764,14 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
         // isn't a real method, the tier returns null and we fall through.
         if (!typeName && /^[A-Z][A-Za-z0-9_]*$/.test(receiver)) {
             typeName = receiver;
+        }
+        // Cross-file value-binding deferred marker: lowercase identifier with
+        // no scope-local match — likely an imported value like `db` or `cache`.
+        // The resolver looks up the import path and consults the global
+        // valueBindings map for the source file. Falls through gracefully
+        // when the receiver isn't actually imported.
+        if (!typeName && /^[a-z_$][A-Za-z0-9_$]*$/.test(receiver)) {
+            typeName = `@IMPORT:${receiver}`;
         }
         if (!typeName) {
             continue;

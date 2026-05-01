@@ -43,6 +43,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -87,6 +89,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             { source: 'src/a.ts', target: 'src/b.ts::callee', callName: 'callee', line: 3, confidence: 0.85 },
@@ -133,6 +137,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             { source: 'src/a.ts', target: 'src/b.ts::helper', callName: 'helper', line: 15, confidence: 0.85 },
@@ -204,6 +210,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             // Call inside inner function
@@ -255,6 +263,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             // Module-level call (line 3 is before any function)
@@ -315,6 +325,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             // count_hits() called from within get_result at line 157
@@ -381,6 +393,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             { source: 'src/service.ts', target: 'src/db.ts::query', callName: 'query', line: 10, confidence: 0.9 },
@@ -439,6 +453,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -483,6 +499,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
         const callEdges: RawCallEdge[] = [
             // Internal call — should be kept
@@ -533,6 +551,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -564,6 +584,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -595,6 +617,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -626,6 +650,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());
@@ -673,6 +699,8 @@ describe('buildGraphData', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
         };
 
         const result = buildGraphData(raw, [], [], 'src', new Map());

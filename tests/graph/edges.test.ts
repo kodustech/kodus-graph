@@ -42,6 +42,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'User',
@@ -81,6 +83,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'Admin',
@@ -126,6 +130,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'MyComponent',
@@ -153,6 +159,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             tests: [
                 {
                     name: 'test auth',
@@ -194,6 +202,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             tests: [
                 {
                     name: 'validates user',
@@ -234,6 +244,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             tests: [
                 {
                     name: 'test login',
@@ -266,6 +278,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             functions: [
                 {
                     name: 'foo',
@@ -305,6 +319,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'AuthService',
@@ -336,6 +352,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'AuthService',
@@ -375,6 +393,8 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
+
+            valueBindings: new Map(),
             classes: [
                 {
                     name: 'MyService',

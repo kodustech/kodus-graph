@@ -21,6 +21,8 @@ function emptyGraph(): RawGraph {
         reExports: [],
         rawCalls: [],
         diMaps: new Map(),
+
+        valueBindings: new Map(),
     };
 }
 

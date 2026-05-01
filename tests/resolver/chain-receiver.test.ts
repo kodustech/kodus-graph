@@ -29,6 +29,8 @@ async function prepare(lang: string, source: string, fp: string): Promise<Prepar
         reExports: [],
         rawCalls: [] as RawCallSite[],
         diMaps: new Map(),
+
+        valueBindings: new Map(),
     };
     extractFromFile(root, fp, lang, new Set(), graph);
     extractCallsFromFile(root, fp, lang, graph.rawCalls);
@@ -241,6 +243,130 @@ describe('method-chain receiver inference', () => {
         const { stats } = resolveAllCalls(calls, new Map(), symbolTable, createImportMap(), new Map());
         // Receiver tier declined (no factory in symbol table). Stats.receiver=0.
         expect(stats.receiver).toBe(0);
+    });
+
+    it('cross-file value binding: `import { db }; db.query()` resolves via source-file valueBindings', async () => {
+        // Receiver is an unbound lowercase identifier — extractor records
+        // `@IMPORT:db`. Resolver consults importMap → 'src/services.ts' →
+        // valueBindings.get('src/services.ts').get('db') = 'Database'.
+        const calls: RawCallSite[] = [
+            { source: 'src/users.ts', callName: 'query', line: 5, column: 5, receiverType: '@IMPORT:db' },
+        ];
+        const symbolTable = createSymbolTable();
+        symbolTable.add('src/db.ts', 'query', 'src/db.ts::Database.query');
+        const importMap = createImportMap();
+        importMap.add('src/users.ts', 'db', 'src/services.ts');
+        const valueBindings = new Map<string, Map<string, string>>([
+            ['src/services.ts', new Map([['db', 'Database']])],
+        ]);
+
+        const { callEdges, stats } = resolveAllCalls(
+            calls,
+            new Map(),
+            symbolTable,
+            importMap,
+            new Map(),
+            new Map(),
+            valueBindings,
+        );
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].target).toBe('src/db.ts::Database.query');
+        expect(callEdges[0].confidence).toBe(0.95);
+        expect(stats.receiver).toBe(1);
+    });
+
+    it('cross-file value binding: source-file `@CALLEE:` chain resolves transitively', async () => {
+        // Source file declares `export const db = createDb();` — extractor
+        // recorded `db -> @CALLEE:createDb`. Caller imports db. Resolver
+        // follows the chain: @IMPORT:db → @CALLEE:createDb (in source ctx) →
+        // createDb's return type = 'Database'.
+        const calls: RawCallSite[] = [
+            { source: 'src/users.ts', callName: 'query', line: 5, column: 5, receiverType: '@IMPORT:db' },
+        ];
+        const symbolTable = createSymbolTable();
+        symbolTable.add('src/services.ts', 'createDb', 'src/services.ts::createDb');
+        symbolTable.add('src/db.ts', 'query', 'src/db.ts::Database.query');
+        const importMap = createImportMap();
+        importMap.add('src/users.ts', 'db', 'src/services.ts');
+        const valueBindings = new Map<string, Map<string, string>>([
+            ['src/services.ts', new Map([['db', '@CALLEE:createDb']])],
+        ]);
+        const returnTypes = new Map<string, string>([['src/services.ts::createDb', 'Database']]);
+
+        const { callEdges } = resolveAllCalls(
+            calls,
+            new Map(),
+            symbolTable,
+            importMap,
+            returnTypes,
+            new Map(),
+            valueBindings,
+        );
+        expect(callEdges).toHaveLength(1);
+        expect(callEdges[0].target).toBe('src/db.ts::Database.query');
+    });
+
+    it('cross-file value binding: gracefully falls through when receiver not imported', async () => {
+        const calls: RawCallSite[] = [
+            { source: 'src/users.ts', callName: 'query', line: 5, column: 5, receiverType: '@IMPORT:notImported' },
+        ];
+        const symbolTable = createSymbolTable();
+        const importMap = createImportMap();
+        // No import recorded for `notImported` — should fall through.
+        const { callEdges, stats } = resolveAllCalls(
+            calls,
+            new Map(),
+            symbolTable,
+            importMap,
+            new Map(),
+            new Map(),
+            new Map(),
+        );
+        expect(callEdges).toHaveLength(0);
+        expect(stats.receiver).toBe(0);
+    });
+
+    it('TS end-to-end: extractor emits valueBindings + @IMPORT marker, resolver substitutes', async () => {
+        // Same-file end-to-end: extractor's collectBindings includes `db: Database`
+        // at file scope. The receiver-type extractor sees `db.query()` and emits
+        // `@IMPORT:db` (because `db` isn't in any function-scope bindings — it IS
+        // in fileBindings, but the test here exercises the receiver-tier deferred
+        // path where db comes from another module).
+        //
+        // Scenario: services.ts exports a Database const; users.ts imports it.
+        // We simulate by manually constructing valueBindings + importMap.
+        const usersCode = ['function run() {', '    db.query();', '}'].join('\n');
+        const fp = 'src/users.ts';
+        const { rawCalls, symbolTable } = await prepare('TypeScript', usersCode, fp);
+
+        const queryCall = rawCalls.find((c) => c.callName === 'query');
+        expect(queryCall).toBeDefined();
+        // The unbound lowercase identifier `db` triggers the @IMPORT marker.
+        expect(queryCall?.receiverType).toBe('@IMPORT:db');
+
+        // Wire up a synthetic resolution context as if services.ts had been
+        // parsed alongside this file and contributed the db binding.
+        symbolTable.add('src/db.ts', 'query', 'src/db.ts::Database.query');
+        const importMap = createImportMap();
+        importMap.add(fp, 'db', 'src/services.ts');
+        const valueBindings = new Map<string, Map<string, string>>([
+            ['src/services.ts', new Map([['db', 'Database']])],
+        ]);
+
+        const { callEdges, stats } = resolveAllCalls(
+            rawCalls,
+            new Map(),
+            symbolTable,
+            importMap,
+            new Map(),
+            new Map(),
+            valueBindings,
+        );
+        const queryEdge = callEdges.find((e) => e.callName === 'query');
+        expect(queryEdge).toBeDefined();
+        expect(queryEdge?.target).toBe('src/db.ts::Database.query');
+        expect(queryEdge?.confidence).toBe(0.95);
+        expect(stats.receiver).toBe(1);
     });
 
     it('Kotlin extension function `fun Foo.bar()` indexed as Foo.bar — caller resolves at receiver tier', async () => {

@@ -71,6 +71,17 @@ export interface ExtractedDI {
     typeName: string;
 }
 
+export interface ExtractedValueBinding {
+    /** Variable name as declared at module/file scope. */
+    name: string;
+    /**
+     * Inferred type. Either a concrete class name (e.g. `Database`) or a
+     * deferred marker (e.g. `@CALLEE:factory`) that the resolver expands
+     * cross-file.
+     */
+    type: string;
+}
+
 export interface ExtractionResult {
     classes: ExtractedClass[];
     functions: ExtractedFunction[];
@@ -79,6 +90,17 @@ export interface ExtractionResult {
     interfaces: ExtractedInterface[];
     enums: ExtractedEnum[];
     diEntries: ExtractedDI[];
+    /**
+     * Module/file-scope `const x = new Foo()` style bindings. Used by the
+     * resolver to substitute receiverType when a call's receiver is an
+     * imported value: `import { db } from './services'; db.query()` resolves
+     * because services.ts contributed `{ name: 'db', type: 'Database' }` to
+     * the global value-binding map.
+     *
+     * Optional — only populated by extractors that walk module-scope
+     * variable declarations (TS today; Python/Kotlin pending).
+     */
+    valueBindings?: ExtractedValueBinding[];
 }
 
 export interface LanguageExtractors {

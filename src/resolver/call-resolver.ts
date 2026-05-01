@@ -73,6 +73,13 @@ interface ResolverContext {
      * (intra/cross-file factory pattern: `const x = factory(); x.method()`).
      */
     returnTypes: Map<string, string>;
+    /**
+     * Per-file module-level value bindings: `file -> Map<varName, type>`.
+     * Used by the receiver tier when resolving deferred `@IMPORT:varName`
+     * markers — caller imports `db`, source file declares
+     * `export const db = new Database()`, resolver substitutes 'Database'.
+     */
+    valueBindings: Map<string, Map<string, string>>;
 }
 
 /**
@@ -83,6 +90,14 @@ interface ResolverContext {
  * the actual type before tier processing.
  */
 const DEFERRED_CALLEE_PREFIX = '@CALLEE:';
+
+/**
+ * Marker prefix for cross-file value-binding lookup. Written when the
+ * receiver is an unbound lowercase identifier that's likely imported.
+ * Resolver: `importMap.lookup(file, name) → sourceFile`,
+ * `valueBindings.get(sourceFile).get(name) → type`.
+ */
+const DEFERRED_IMPORT_PREFIX = '@IMPORT:';
 
 type StatsKey = keyof CallResolverStats;
 
@@ -116,6 +131,18 @@ const receiverTier: Tier = (call, ctx) => {
     if (call.receiverType.startsWith(DEFERRED_CALLEE_PREFIX)) {
         const calleeName = call.receiverType.slice(DEFERRED_CALLEE_PREFIX.length);
         const resolved = resolveDeferredCallee(calleeName, ctx);
+        if (!resolved) {
+            return null;
+        }
+        call.receiverType = resolved;
+    }
+    // Cross-file imported value: `@IMPORT:db` was set when the receiver was
+    // an unbound identifier (likely an import). Resolve via importMap →
+    // source file's valueBindings. If the source file's binding is itself a
+    // `@CALLEE:` marker, follow that chain too.
+    if (call.receiverType.startsWith(DEFERRED_IMPORT_PREFIX)) {
+        const varName = call.receiverType.slice(DEFERRED_IMPORT_PREFIX.length);
+        const resolved = resolveDeferredImport(varName, ctx);
         if (!resolved) {
             return null;
         }
@@ -181,6 +208,44 @@ function resolveDeferredCallee(calleeName: string, ctx: ResolverContext): string
         return undefined;
     }
     return stripGenerics(returnType);
+}
+
+/**
+ * Resolve a deferred `@IMPORT:varName` receiver type by consulting the
+ * importMap (caller file → source file) and the global valueBindings map
+ * (source file → varName → type). Falls through gracefully when the
+ * receiver isn't actually imported, or when the source file has no
+ * binding for that name.
+ *
+ * If the source binding itself is a `@CALLEE:funcName` (factory pattern
+ * exported and re-imported), follows the callee chain as well — at most
+ * one hop to bound work.
+ */
+function resolveDeferredImport(varName: string, ctx: ResolverContext): string | undefined {
+    const sourceFile = ctx.importMap.lookup(ctx.fp, varName);
+    if (!sourceFile) {
+        return undefined;
+    }
+    const sourceBindings = ctx.valueBindings.get(sourceFile);
+    if (!sourceBindings) {
+        return undefined;
+    }
+    const binding = sourceBindings.get(varName);
+    if (!binding) {
+        return undefined;
+    }
+    // The binding might itself be deferred (`@CALLEE:factory`) — follow once.
+    if (binding.startsWith(DEFERRED_CALLEE_PREFIX)) {
+        const calleeName = binding.slice(DEFERRED_CALLEE_PREFIX.length);
+        // Resolve the callee in the SOURCE file's context (where it was declared).
+        const sourceCtx: ResolverContext = { ...ctx, fp: sourceFile };
+        return resolveDeferredCallee(calleeName, sourceCtx);
+    }
+    // Avoid infinite loops if a binding is `@IMPORT:` (re-export of imported).
+    if (binding.startsWith(DEFERRED_IMPORT_PREFIX)) {
+        return undefined;
+    }
+    return binding;
 }
 
 /**
@@ -367,9 +432,11 @@ export function resolveAllCalls(
     importMap: ImportMap,
     returnTypes?: Map<string, string>,
     classHierarchy?: Map<string, string[]>,
+    valueBindings?: Map<string, Map<string, string>>,
 ): ResolveAllResult {
     const hierarchy = classHierarchy ?? new Map<string, string[]>();
     const returnTypeMap = returnTypes ?? new Map<string, string>();
+    const valueBindingsMap = valueBindings ?? new Map<string, Map<string, string>>();
     const stats: CallResolverStats = {
         di: 0,
         same: 0,
@@ -398,6 +465,7 @@ export function resolveAllCalls(
             totalIndexedFiles,
             classHierarchy: hierarchy,
             returnTypes: returnTypeMap,
+            valueBindings: valueBindingsMap,
         };
         outcomes[i] = runTiers(call, ctx);
     }
@@ -457,6 +525,7 @@ export function resolveAllCalls(
                 totalIndexedFiles,
                 classHierarchy: hierarchy,
                 returnTypes: returnTypeMap,
+                valueBindings: valueBindingsMap,
             };
             const upgraded = runTiers(call, ctx);
             if (upgraded?.kind === 'edge' && upgraded.statsKey === 'receiver') {

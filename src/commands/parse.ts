@@ -176,6 +176,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         importMap,
         returnTypes,
         classHierarchy,
+        rawGraph.valueBindings,
     );
     process.stderr.write(
         `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,

@@ -69,6 +69,8 @@ export async function parseBatch(
         reExports: [],
         rawCalls: [],
         diMaps: new Map(),
+
+        valueBindings: new Map(),
     };
     const seen = new Set<string>();
     let parseErrors = 0;

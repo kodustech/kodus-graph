@@ -389,6 +389,14 @@ export interface RawGraph {
     reExports: RawReExport[];
     rawCalls: RawCallSite[];
     diMaps: Map<string, Map<string, string>>; // file -> Map<fieldName, typeName>
+    /**
+     * Module-level value bindings per file: `file -> Map<varName, type>`.
+     * Cross-file resolution: when a call's receiver is an imported name, the
+     * resolver consults `valueBindings.get(sourceFile).get(varName)` to find
+     * the type. Type may be a concrete name (`Database`) or a deferred
+     * marker (`@CALLEE:foo`).
+     */
+    valueBindings: Map<string, Map<string, string>>;
 }
 
 export interface ParseBatchResult extends RawGraph {
