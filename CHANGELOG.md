@@ -5,6 +5,144 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-01
+
+The "honest receiver tier" release. Two latent extractor bugs were silently
+neutralizing 95% of Java's receiver-tier work; fixing them moved keycloak
+from 0.745 → 0.430 ambiguous ratio. Java promoted from `basic` to `full`.
+Eight new resolver capabilities, cross-file aggregation, and structural
+extractor fixes across multiple languages.
+
+### Highlights
+
+- **Java promoted to full tier 🟢** — keycloak (7657 files) clears the bar:
+  resolved 94.3%, ambig 43.0%, receiver 1620/1k. Was `basic` with 0.745
+  ambig before.
+- **Cross-file aggregation** — receiver type now resolves cross-file via
+  `@CALLEE:` (deferred return type) and `@IMPORT:` (deferred imported
+  binding) markers. Six languages.
+- **Six latent extractor bugs fixed** — Java/Kotlin/C#/Go all had
+  silent `field('return_type')` mismatches that crippled chain-pass +
+  deferred-callee for those languages. Plus Java className via
+  `kind.includes('class')` matched `class_body` first, defeating the
+  receiver tier completely. Plus Kotlin params via wrong field.
+
+### Added — Resolver capabilities
+
+- **Method-chain receiver inference** (`b51c283` + `b4d28a4` + `8b6a447`):
+  `x.a().b()` propagates the inner call's return type as the outer's
+  receiverType. Column convention shifted across 12 languages so chained
+  calls have distinct location keys.
+- **Inheritance-aware lookup** (`8d05c4d`): when `Foo.method` isn't directly
+  indexed but `Foo extends Bar` and `Bar.method` exists, walk the hierarchy.
+  8-deep BFS with cycle protection. Confidence 0.85.
+- **Singleton/factory pattern propagation** (`a04487f`):
+  `Foo.getInstance().method()` propagates the receiver type when the inner
+  call's name matches a known factory (`getInstance`, `instance`, `default`,
+  `shared`, `create`, `of`, `newInstance`).
+- **Deferred-callee `@CALLEE:` marker** (`b0fc447`, `421dcad`, `b782bc4`,
+  `0be7efd`): `const x = factory(); x.method()` resolves cross-file via the
+  function's declared return type. Active in TS, Python, Kotlin, Java
+  (`var`), C#, Scala.
+- **Cross-file value bindings `@IMPORT:` marker** (`39313da`):
+  `import { db } from './services'; db.query()` resolves via the source
+  file's module-level bindings. New `globalValueBindings` map flows from
+  per-file extractor output into the resolver context.
+- **Static method detection** (`434508f`): PascalCase receiver with no
+  scope-local binding is treated as a class reference. `Logger.warn`,
+  `Math.sqrt`, `Console.WriteLine`. Active in 7 languages.
+- **Type cast `as Foo`** (`1bcda3a`): the asserted type seeds the
+  receiver-type binding. TS and Kotlin.
+
+### Added — Per-language
+
+- **Java** — Spring 4.3+ implicit ctor injection (`46ea2ae`); CDI / Jakarta
+  EE / EJB / JAX-RS stereotypes (`@ApplicationScoped`, `@Stateless`, `@Path`,
+  etc.) (`1e9bb8d`); bare typed fields enter `diMap` — catches Lombok
+  `@RequiredArgsConstructor` (`1e9bb8d`); Maven multi-module test source
+  roots + `<sourceDirectory>` overrides + per-repo memoization (`161402f`).
+- **Kotlin** — extension functions `fun Foo.bar()` indexed as `Foo.bar`
+  (`263c6c6`); noise list expanded to 32 entries (`d5a00aa`).
+- **Python** — generic unwrap (`List[Foo]` / `Optional[Foo]` / `Dict[K,V]`)
+  (`76a658e`); factory-method init (`__post_init__`, `setUp`, `asyncSetUp`)
+  (`76a658e`); FastAPI `Depends()` resolution (`76a658e`); re-exports from
+  `__init__.py` barrel files (`9fb99a3`).
+- **TypeScript** — JSX/TSX components emit CALLS edges (`4b8131d`).
+- **C/C++** — bespoke call-extraction walker (the shared `$CALLEE($$$ARGS)`
+  ast-grep pattern returns zero matches for C/C++) (`4104401`); C++ promoted
+  to full tier; out-of-class method definitions register className (`fe60a6b`,
+  `596c58e`).
+- **PHP** — custom call-site walk: laravel/framework went from 10 edges to
+  160k+ (`aca8dd6`); receiver-type from typed properties + PHP 8 promoted
+  ctor properties (`2e5124f`).
+- **Rust** — promoted to full tier with 3-file fixture (`da463b5`).
+- **9 langs** — typed function/method param bindings (TS, Kotlin, Go, Rust,
+  C#, Scala, Swift, Dart, plus Java methods) (`61491c0`).
+
+### Added — Documentation
+
+- New `docs/SCHEMA.md`: full payload reference for every command.
+- `README.md` Features / Schema / Confidence-levels sections refreshed.
+- `docs/NEXT-STEPS.md` rewritten to reflect post-0.4.0 state.
+- `docs/language-support-matrix.md` regenerated; 17 entries.
+
+### Changed
+
+- **Java promoted from `basic` to `full`** in support matrix.
+- **`update.ts`** `tier_distribution` now reflects the merged graph (sum of
+  edge tiers across old + new files), not just the re-parsed slice
+  (`5bd1dd7`).
+- **`context`** resolves slice calls against the full baseline graph (B8 fix
+  in `70e177c`).
+- Extractor registries unified behind `createLanguageRegistry<T>()` factory
+  (`d5e7265`).
+- Resolver tier pipeline restructured as declarative `TIERS = [receiver,
+  noise, di, class, cascade]` array (`c65620c`).
+
+### Fixed
+
+Six latent extractor bugs that were silently producing wrong / empty data:
+
+| Lang | Bug | Impact when fixed |
+|---|---|---|
+| **Java** | `className` via `kind.includes('class')` matched `class_body` BEFORE `class_declaration`. Every method indexed as top-level `file::method` instead of `file::Class.method`. Receiver tier silently failed for all methods. | Receiver hits on keycloak: 42 → 126729 (+301641%). Ambig: 0.745 → 0.430. |
+| **Java** | `returnType` field is `type`, not `return_type`. Chain pass + deferred-callee couldn't propagate any Java return type. | Deferred-callee + chain receiver inference now functional. |
+| **Kotlin** | `returnType` requires structural walk for the `user_type` after `:` token — tree-sitter doesn't expose `field('return_type')`. | Same as Java: enables chain + deferred-callee. |
+| **C#** | `returnType` field is `returns`, not `return_type`. | Same. |
+| **Go** | `returnType` field is `result`, not `return_type`. | Go chain pass + factory deferred now working. |
+| **Kotlin** | `params` via `function_value_parameters` child, not `field('parameters')`. Every Kotlin function had `params: '()'`. | Contract diffs detect parameter changes; prompt format renders signatures correctly. |
+
+Audit complete: TS, Python, Rust, PHP all use field accesses correctly;
+Swift / Scala / Dart use custom helper functions. No further bugs in this
+class.
+
+### Schema
+
+- New `EdgeTier` type: `'receiver' | 'di' | 'same' | 'import' | 'unique' |
+  'ambiguous'`.
+- `GraphEdge` gains optional `tier` field. Backward compatible.
+- `RawGraph` gains `valueBindings: Map<file, Map<varName, type>>` for
+  cross-file deferred resolution.
+- `ExtractionResult` gains optional `valueBindings: ExtractedValueBinding[]`.
+- Schema version remains **2.0** (no breaking changes; only optional
+  additions).
+
+### Validation results (real-repo)
+
+| Repo | Language | Files | Status | Headline |
+|---|---|---|---|---|
+| sentry | Python | 14059 | 🟢 PASS | resolved 74.5%, ambig 27.4%, receiver 75.9/1k |
+| **keycloak** | **Java** | **7657** | **🟢 PASS** | **resolved 94.3%, ambig 43.0%, receiver 1620/1k** (was GAP at 0.745) |
+| kotlinx.coroutines | Kotlin | 1105 | 🟡 GAP | ambig 0.683 → 0.663 (-2pp). Lambda-receiver DSL needs stdlib indexing — out of scope. |
+
+### Memory note
+
+Parsing ~7k Java files with ~400k call sites requires `--max-memory 2048`
+or higher. Default cap (768 MB) and validator-harness cap (1024 MB) OOM
+the resolver phase on keycloak-scale repos.
+
+---
+
 ## [0.3.0] — 2026-04-23
 
 Two-session run: hardcode elimination, receiver-type inference, schema v2.0,
