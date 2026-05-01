@@ -18,7 +18,7 @@
  | JavaScript | 🟡 basic | ⚡ fast | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | — | 
  | Python | 🟢 full | ⚡ fast | ✓ | ✓ | — | class+init | ✓ | ✓ | `tests/fixtures/python` | 
  | Go | 🟢 full | ⚡ fast | ✓ | ✓ | ✓ | factory | ✓ | ✓ | `tests/fixtures/go` | 
- | Java | 🟡 basic | 🐢 slow | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/java` | 
+ | Java | 🟢 full | 🐢 slow | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/java` | 
  | Ruby | 🟡 basic | 🐢 slow | ✓ | ✓ | — | — | ✓ | — | `tests/fixtures/ruby` | 
  | C# | 🟢 full | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/csharp` | 
  | Swift | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/swift` | 
@@ -63,13 +63,16 @@
 
 ### Java (`java`)
 
-- Validated on keycloak (801M, 7657 files): 🟡 GAP (ambigRatio 0.741 > 0.6) — re-validated 2026-04-30. DI tier 3 → 444 hits (+14700%) after CDI/EJB/JAX-RS + bare typed fields. Receiver stayed at 42 because keycloak typed-params are dominated by framework types (HttpServletRequest, KeycloakSession) outside the user symbol table. Ambig only dropped 0.4pp because >70% of calls cross framework boundaries we can't see.
+- Validated on keycloak (801M, 7657 files, 2026-05-01): 🟢 PASS — resolved 94.3%, ambig 43.0%, receiver 1620/1k, di 5.7/1k, high_conf ~40%. Promoted to full tier after fixing two latent extractor bugs.
+- Baselines are floors that the canonical fixture passes — real-repo Java codebases will produce dramatically higher ratios (sentry-style ~1600/1k receiver vs the 30/1k floor). The CI gate exists to detect regressions, not to certify capability.
+- Latent bugs fixed 2026-05-01: (1) `className` was always empty because the ancestor walk used `kind.includes('class')`, which matched `class_body` before `class_declaration`. Methods were indexed as top-level (`file::method`) instead of `file::Class.method`, defeating the receiver tier completely. (2) `returnType` was always empty because tree-sitter-java exposes the return type as `type` field, not `return_type`. Combined impact on keycloak: receiver tier 42 → 126729 (+301641%), ambig 0.745 → 0.430.
 - DI: parses @Inject/@Autowired/@Resource on fields and constructors (last-segment match, FQ-prefixed forms supported). Combines with Foo->FooImpl name heuristic.
 - Implicit ctor injection (added 2026-04-30): Spring (@Service / @Component / @Repository / @Controller / @RestController / @Configuration), CDI/Jakarta (@ApplicationScoped / @RequestScoped / @SessionScoped / @ConversationScoped / @Dependent / @Singleton), EJB (@Stateless / @Stateful / @MessageDriven), JAX-RS (@Path / @Provider) — single-ctor classes get all params auto-injected. Catches Quarkus, Keycloak, Java EE patterns.
-- Bare typed fields enter diMap (added 2026-04-30) — `private final Foo foo;` resolves `this.foo.method()` at the DI tier without requiring @Inject. Catches Lombok @RequiredArgsConstructor, manual ctor injection, and any plain typed-field declaration. KEY win for keycloak: 148× more DI hits.
-- Receiver-type covers ctor params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed ctor param.
+- Bare typed fields enter diMap (added 2026-04-30) — `private final Foo foo;` resolves `this.foo.method()` at the DI tier without requiring @Inject. Catches Lombok @RequiredArgsConstructor, manual ctor injection, and any plain typed-field declaration.
+- Receiver-type covers ctor params + method params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed param.
+- Deferred callee (added 2026-05-01): Java 10+ `var x = factory()` records `@CALLEE:factory` and the resolver substitutes the callee's declared return type cross-file.
 - Call sites: this.field.method() threads field through diMap (added 2026-04-27)
-- Multi-module Maven imports (improved 2026-04-30): adds src/test/{java,kotlin,scala} to discovered roots so test files can resolve cross-module references; honors <sourceDirectory>/<testSourceDirectory> overrides; memoizes source-root discovery and pom.xml reads per-repo (resolves the keycloak-scale perf cost).
+- Multi-module Maven imports (improved 2026-04-30): adds src/test/{java,kotlin,scala} to discovered roots so test files can resolve cross-module references; honors <sourceDirectory>/<testSourceDirectory> overrides; memoizes source-root discovery and pom.xml reads per-repo.
 - Memory: parsing keycloak-scale repos (~7k files, ~400k call sites) requires --max-memory ≥ 2048; the validator harness 1GB cap OOMs the resolver phase.
 
 ### Ruby (`ruby`)
@@ -148,7 +151,7 @@ Languages in the 🟢 full tier have recorded baseline `tier_distribution` ratio
 | TypeScript | 0.5 | 0.5 | 5 | 5 | 0.15 |
 | Python | 0.4 | 0.6 | 1 | 0 | 0.1 |
 | Go | 0.4 | 0.6 | 1 | 0 | 0.1 |
-| Java | 0.3 | 0.8 | 0 | 0 | 0.05 |
+| Java | 0.6 | 0.55 | 30 | 0 | 0.3 |
 | C# | 0.8 | 0.1 | 50 | 0 | 0.8 |
 | Swift | 0.8 | 0.1 | 0 | 0 | 0.8 |
 | Scala | 0.8 | 1 | 0 | 0 | 0 |

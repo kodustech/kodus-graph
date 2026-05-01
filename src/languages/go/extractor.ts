@@ -252,7 +252,10 @@ export const goExtractors: LanguageExtractors = {
                     line_start: range.line_start,
                     line_end: range.line_end,
                     params: node.field('parameters')?.text() || '()',
-                    returnType: node.field('return_type')?.text() || '',
+                    // Go tree-sitter exposes the return type as `result` field,
+                    // not `return_type`. Without this, the chain pass and
+                    // deferred-callee silently couldn't propagate Go return types.
+                    returnType: node.field('result')?.text() || '',
                     kind,
                     ast_kind: String(node.kind()),
                     className,
