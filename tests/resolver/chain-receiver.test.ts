@@ -326,6 +326,33 @@ describe('method-chain receiver inference', () => {
         expect(stats.receiver).toBe(0);
     });
 
+    it('Java 10+ `var x = factory()` resolves outer call via factory return type', async () => {
+        // Java's `var` keyword (Java 10+) without explicit type. Without the
+        // deferred-callee path, calls on `x` fall to ambiguous. With it,
+        // resolver looks up factory's return type and substitutes.
+        const code = [
+            'class User { String greet() { return ""; } }',
+            'class A {',
+            '    User factory() { return new User(); }',
+            '    void run() {',
+            '        var x = factory();',
+            '        x.greet();',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = 'src/A.java';
+        const { rawCalls, symbolTable, importMap, returnTypes } = await prepare('java', code, fp);
+
+        const greetCall = rawCalls.find((c) => c.callName === 'greet');
+        expect(greetCall?.receiverType).toBe('@CALLEE:factory');
+
+        const { callEdges, stats } = resolveAllCalls(rawCalls, new Map(), symbolTable, importMap, returnTypes);
+        const greetEdge = callEdges.find((e) => e.callName === 'greet');
+        expect(greetEdge).toBeDefined();
+        expect(greetEdge?.target).toContain('User.greet');
+        expect(stats.receiver).toBeGreaterThanOrEqual(1);
+    });
+
     it('TS end-to-end: extractor emits valueBindings + @IMPORT marker, resolver substitutes', async () => {
         // Same-file end-to-end: extractor's collectBindings includes `db: Database`
         // at file scope. The receiver-type extractor sees `db.query()` and emits

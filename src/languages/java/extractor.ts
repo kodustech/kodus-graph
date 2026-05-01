@@ -303,9 +303,12 @@ export const javaExtractors: LanguageExtractors = {
                 }
 
                 let className = '';
+                // Match class_declaration exactly — `includes('class')` would
+                // also match `class_body`, which has no `name` field, leaving
+                // className empty even when the method is clearly inside a class.
                 const classAncestor = node.ancestors().find((a: SgNode) => {
                     const k = String(a.kind());
-                    return k.includes('class') || k.includes('struct') || k.includes('impl');
+                    return k === 'class_declaration' || k === 'record_declaration' || k === 'interface_declaration';
                 });
                 if (classAncestor) {
                     className = classAncestor.field('name')?.text() || '';
@@ -337,12 +340,15 @@ export const javaExtractors: LanguageExtractors = {
                     }
                 }
 
+                // Java tree-sitter exposes the return type as `type` field, not
+                // `return_type`. Constructors don't have a return type.
+                const returnTypeText = constructorKindSet.has(funcKind) ? '' : node.field('type')?.text() || '';
                 result.functions.push({
                     name,
                     line_start: range.line_start,
                     line_end: range.line_end,
                     params: node.field('parameters')?.text() || '()',
-                    returnType: node.field('return_type')?.text() || '',
+                    returnType: returnTypeText,
                     kind,
                     ast_kind: String(node.kind()),
                     className,
@@ -590,6 +596,20 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
                 const value = vd.field('value');
                 if (value?.kind() === 'object_creation_expression') {
                     typeName = value.field('type')?.text();
+                }
+                // Java 10+ `var x = factory();` — emit a deferred `@CALLEE:`
+                // marker so the resolver substitutes the callee's return type
+                // cross-file. Mirrors the TS/Python/Kotlin path. Only fires
+                // when the LHS is actually `var` (declaredType === 'var') and
+                // the RHS is a method invocation with a simple identifier callee.
+                if (!typeName && declaredType === 'var' && value?.kind() === 'method_invocation') {
+                    const fnNameNode = value.field('name');
+                    const fnObj = value.field('object');
+                    // Only bare `factory()` calls (no receiver) — `obj.method()`
+                    // would need a different resolution strategy.
+                    if (fnNameNode && !fnObj) {
+                        typeName = `@CALLEE:${fnNameNode.text()}`;
+                    }
                 }
             }
             if (typeName) {
