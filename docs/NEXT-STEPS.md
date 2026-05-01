@@ -1,39 +1,71 @@
 # Next Steps
 
-State snapshot: **38 commits ahead of `origin/main`**, 1037 tests passing, 0 warnings, schema v2.0 enforced.
+State snapshot **2026-05-01**: 32 commits ahead of `origin/main`, 1155 tests passing, 0 warnings, schema v2.0 enforced, working tree clean. Ready for `git push` and v0.4.0 release.
 
-This document tracks everything landed across 2+ sessions plus what's still open. Completed work covers the original hardcode-elimination roadmap, user-reported issues (whitespace FPs, mini-diff rendering, ReviewFocus dedup), P0 resolver consistency, two rounds of real-repo validation on sentry-greptile-test, AND a full CLI+library coverage audit.
-
-### Validation-driven fixes (sentry real-repo)
-
-- **Noise filter ordering** (critical, `99e6012`): extraction-time filter dropped calls before `receiverType` could be assigned, making the Phase 2 receiver-before-noise fix inert. Sentry: `tier_distribution.noise` 0 → 107,422; `receiver` 3,130 → 3,202 (+72 user-domain edges).
-- **`test_gaps` array empty** (`84d757b`): semantic mismatch in `GraphIndex.testedFiles` — count and list disagreed.
-- **XML format empty without changes** (`84d757b`): now mirrors prompt with `<Imports>` + `<Hierarchy>`.
-- **Duplicate imports** (`84d757b`): deduped via Set in both prompt + xml formatters.
-- **`--max-memory` didn't throttle** (`3dc0a36`): floor was 5 (reducer stalled). Fixed to 1 with inter-batch yield and `globalThis.gc()` on shrink.
-- **Max-memory regression** (`84b884a`): yield+gc fired on every hold-at-floor iteration, making discourse 12min. Now only on `shrink`, with grow-back after 3 idle batches.
-- **`diff --base <ref>` compared HEAD↔HEAD** (`c4b7632`): fixed by reading base-ref content via `git show <ref>:<path>`. Sentry HEAD~5: `modified: 0 → 12, added: 0 → 6`.
-- **Python `self.attr` receiver-type** (`76e96fa`): class-level + `__init__`-injection bindings. Sentry receiver 3,202 → 3,544 (+342).
-
-### CLI+library coverage audit fixes (this session)
-
-- **`search --limit` ignored on `--callers-of` / `--callees-of`** (`13bf19c`): command layer fed full results to JSON without slicing. Also added `returned` field so consumers can detect truncation.
-- **Schema version not enforced on `analyze` / `context`** (`4757d8c`): they used their own `GraphInputSchema.safeParse` path that ignored `metadata.schema_version`. Extracted shared `enforceSchemaVersion` helper; both commands now refuse v99.0 with exit 1 and warn on v1.0.
-
-### Full coverage validated on sentry-greptile (14k files, 4 languages)
-
-- All 8 commands (`parse`, `analyze`, `context`, `diff`, `update`, `communities`, `flows`, `search`)
-- All CLI flags including `--files`, `--include`, `--skip-tests`, `--out -`, `--risk-config`, `--diff` hunk file, `--max-prompt-chars`, `--max-functions`, `--file` glob
-- Library API: `executeParse/Analyze/Context`, `loadGraph`, `mergeGraphs`, Zod schemas
-- 3 output formats (json/prompt/xml), `RiskConfig` as object AND as path string
-- 8 edge cases: malformed config (zod `.strict()` catches typos), missing graph, nonexistent repo, invalid search modes, schema version mismatch
-- 99.4% of ambiguous edges carry `alternatives[]`; 100% of functions have `complexity` field
-
-Remaining validation findings below (all non-blocking).
+This document tracks the current session's deliveries, validation results on real repos, and what remains within (and beyond) the syntactic ast-grep + tree-sitter approach.
 
 ---
 
-## Immediate (do these before more code)
+## Shipped this session
+
+### Architectural / refactor
+- Consolidated extension-to-language mapping under `src/languages/language-of-file.ts` (`a08c8de`)
+- Generic `createLanguageRegistry<T>()` factory unifying 5 parallel registries (`d5e7265`)
+- Declarative tier pipeline in `call-resolver.ts` — TIERS array (`c65620c`)
+- `tier` field persisted on every CALLS edge; `update.ts` recomputes `tier_distribution` from merged graph (`5bd1dd7`)
+- B8 fixed: `context` now resolves slice calls against the full baseline graph (`70e177c`)
+- Property-based tests (fast-check) for pure resolver utilities (`ea87dea`)
+
+### Resolver features
+- Method-chain receiver inference `x.a().b()` — column convention shifted across 12 langs (`8b6a447` + `b4d28a4` + `b51c283`)
+- Inheritance-aware lookup: extends + implements + cycle protection at depth ≤ 8 (`8d05c4d`)
+- Singleton / factory pattern propagation in chain pass: `Foo.getInstance().method()` (`a04487f`)
+- Deferred-callee `@CALLEE:funcName` cross-file marker, resolved against global return-types map (TS, Python, Kotlin) (`b0fc447` + `421dcad`)
+
+### Per-language additions
+- **Java**: Spring 4.3+ implicit ctor injection + ctor-param receiver-type (`46ea2ae`)
+- **Java**: CDI / Jakarta / EJB / JAX-RS stereotypes + bare typed fields as DI bindings (`1e9bb8d`)
+- **Java**: Maven multi-module — test source roots + `<sourceDirectory>` overrides + per-repo memoization (`161402f`)
+- **Kotlin**: noise list expanded (preconditions, builders, stdlib helpers) (`d5a00aa`)
+- **Kotlin**: extension functions `fun Foo.bar()` indexed as methods on receiver type (`263c6c6`)
+- **Kotlin**: structural fix for `field('return_type')` — tree-sitter doesn't expose it (in `421dcad`)
+- **Python**: generic unwrap, factory-method init, FastAPI Depends (`76a658e`)
+- **PHP**: receiver-type via typed properties + scope-local bindings (`2e5124f`)
+- **C/C++**: bespoke call-extraction walker (the shared `$CALLEE($$$ARGS)` pattern returns zero matches) (`4104401`)
+- **9 langs**: typed function/method param bindings (TS, Kotlin, Go, Rust, C#, Scala, Swift, Dart, Java methods) (`61491c0`)
+- **7 langs**: PascalCase static method detection (`Logger.warn(...)`) (`434508f`)
+- **TypeScript**: JSX/TSX components emit CALLS edges (`4b8131d`)
+- **TypeScript / Kotlin**: type cast `as Foo` seeds receiver-type bindings (`1bcda3a`)
+
+### Documentation
+- Validation reports for sentry, keycloak, kotlinx.coroutines (`cfaab72`)
+- Support matrix updated with current real-repo status per language
+- README features section, schema reference, confidence levels table refreshed (this commit)
+
+---
+
+## Real-repo validation (2026-04-30)
+
+Three repos representing different language ecosystems were re-validated after this session's work:
+
+| Repo | Language | Status | Headline metric |
+|---|---|---|---|
+| **sentry-greptile-test** | Python (14059 files) | 🟢 PASS | resolved 74.5% / ambig 27.4% / receiver 75.9 per 1k / high_conf 16.8% |
+| **keycloak-greptile-test** | Java (7657 files) | 🟡 GAP | DI hits 3 → **444 (+148×)**; ambig 0.745 → 0.741 |
+| **kotlinx.coroutines** | Kotlin (1105 files) | 🟡 GAP | receiver hits 1061 → **1494 (+40%)**; ambig 0.683 → 0.663 (-2pp) |
+
+Notes:
+
+- **Python clears the full-tier bar comprehensively.** Typed-param + static + deferred-callee + factory-init combine well for the Python ecosystem.
+- **Keycloak has a DI breakthrough** — bare typed fields + CDI/EJB stereotypes turn 3 hits into 444 — but ambiguous ratio dropped only 0.4pp because the codebase is dominated by calls into framework types (HttpServletRequest, KeycloakSession, Realm) that aren't in the user symbol table.
+- **Kotlinx still GAP** because the codebase is dominated by lambda-receiver DSL (`launch { delay(1000) }`) where the implicit `this` is the coroutine scope. Solving that requires lambda-receiver inference — out of scope for a syntactic approach.
+- **Memory:** keycloak-scale parses (7k files, ~400k call sites) need `--max-memory 2048`. The validator harness's 1GB cap OOMs the resolver phase. Library users hitting this should bump the cap.
+
+Reports archived in `docs/language-validation/` (sentry, kotlinx-rerun, keycloak-rerun, keycloak-after).
+
+---
+
+## Immediate next actions
 
 ### 1. Push to origin
 
@@ -41,108 +73,58 @@ Remaining validation findings below (all non-blocking).
 git push origin main
 ```
 
-26 local commits sitting on one machine is unnecessary risk. Before pushing, decide:
-- **Version bump.** `package.json` is at `0.2.19`. `SCHEMA_VERSION` bumped `1.0 → 2.0` (value-level breaking for graph consumers — `GraphNode.language` keys normalized). Conservative: bump `0.3.0` (minor with schema break). If CI publishes to npm automatically, write release notes first.
-- **CHANGELOG.** Don't exist today. If publishing publicly, generate one from the commit log between `523538d` (last pre-session) and `6669155` (current HEAD).
+32 commits sitting locally is unnecessary risk. Before pushing, decide:
 
-### 2. Validate on a real codebase (1-2h)
+- **Version bump**: `package.json` is at `0.3.0`. The schema added a `tier` field on `GraphEdge` (optional for backward compat with pre-2026-04 graphs). Bumping to `0.4.0` documents that consumers can opt into reading `edge.tier`. CI doesn't auto-publish to npm — release notes can be drafted manually from the commit log.
+- **Changelog**: no `CHANGELOG.md` today. The 32 commits between `origin/main` and HEAD are well-scoped — `git log --oneline origin/main..HEAD` gives a reasonable starting point.
 
-Run the full pipeline against `kodus-web` (or any production repo) and compare against a pre-session run. Focus areas:
+### 2. Communicate the schema bump
 
-| Check | How |
-|---|---|
-| `changedFunctions` count dropped | Parse + context on same PR pre/post — expect drop proportional to whitespace-FPs the team generates |
-| `Alternatives considered:` renders cleanly | Inspect a prompt with a known ambiguous call |
-| Capabilities suppression fires for Go | Find a Go PR, confirm no `is_async` lines in prompt |
-| Receiver-tier 0.95 edges appear | Python/Java/Kotlin repos — verify `x.method()` resolves when `x: Foo` is inferable |
-| `tier_distribution` shape matches repo | TS repo should skew `receiver`/`di`/`same`/`import`; Python repo skews higher `ambiguous`/`noise` |
-| Mini-diff renders for long params | Find a PR with a large type change, confirm `+ field` vs blob |
-
-Document surprises. Real-world output reveals cases the test suite doesn't.
+Consumers reading `parse-output.json` will see a new optional `tier` field on every CALLS edge. This is informational (no parser breakage), but downstream tooling that asserts schema can opt to consume it for richer trust calibration.
 
 ---
 
-## Still-open bugs from sentry validation
+## Remaining work (organized by feasibility)
 
-Found in 2026-04-19 validation against `projects-trd/sentry-greptile-test`. B2 and B5 fixed the same day. B4 and B8 remain.
+### Achievable within ast-grep + tree-sitter only (cross-file aggregation refactor)
 
-### ~~B2 — `--max-memory` flag doesn't throttle~~ ✅ fixed in `3dc0a36`
-Floor in batch reducer was 5 (progression stalled at 50→25→12→6→5). Lowered to 1 with inter-batch `setImmediate` yield and best-effort `globalThis.gc()`. Validated on sentry with `--max-memory 512`: RSS capped at 747MB (down from 1872MB previously), progression `50→25→12→6→3→1`, only 5 warnings (was hundreds).
+These are still purely syntactic; they require building global maps from per-file extractor output and threading them into the resolver. None of them needs DFA, alias analysis, or external symbol info.
 
-### ~~B5 — `diff --base <ref>` compared HEAD against HEAD~~ ✅ fixed in `c4b7632`
-The command used to re-parse files from working tree (=HEAD) and compare against graph.json (also HEAD) → by construction, zero differences. Fixed by reading base-ref content via `git show <ref>:<path>`, parsing in-memory, and diffing that against head parse. Validated on sentry `HEAD~5`: `modified: 0 → 12`, `added: 0 → 6`, all with correct `[body]` / `[params]` classifications.
+- **Cross-file value bindings (TS/Python).** `export const db = new Database(); ... import { db }; db.query()` — currently `db` has no `receiverType` in the consumer file. Mechanism: per-file extractor exposes value-bindings map; engine aggregates into `globalValueBindings: Map<file, Map<varName, type>>`; resolver checks it when receiver is an imported name. Same shape as the existing `@CALLEE:` deferred mechanism. Estimated: 4–6h.
+- **Field-of-field chains.** `this.config.db.connect()` (n-hop > 1). Mechanism: per-class field-type map exposed globally, resolver walks the chain consulting it. Estimated: 4h.
+- **Per-class diMap scoping (Java).** Today `diMap` is per-FILE. When two classes in the same file share a field name with different types, last write wins. Refactoring to per-class scope removes the rare collision. Estimated: 2h.
 
-### ~~B4~~ reframed and partially shipped in `76e96fa`
-Python doesn't have DI-style containers (Django/Flask/FastAPI use different patterns). `tier_distribution.di === 0` is **honest** for Python — there's nothing to register. The underlying gap was `self.attr.method()` calls falling to the name-based cascade instead of a high-confidence tier.
+### Speculative but doable
 
-Shipped: Python receiver-type inference now covers (1) class-level type-hinted attributes (`repo: UserRepository`), (2) `__init__` typed params stored on self (`self.cache = cache` after `def __init__(self, cache: Cache)`), (3) annotated self-assignments (`self.cache: Cache = ...`).
+- **Lambda-receiver DSL (Kotlin).** `launch { delay(1000) }` requires reading `launch`'s signature to extract the lambda's receiver type. The signature lives in kotlinx stdlib, *outside* the user repo. Without indexing dependencies, this can only resolve when the receiver-type-providing function is defined in the user code. Partial solution: catalog of common Kotlin DSL builders (kotlinx coroutines, Compose, Spring) with hard-coded receiver types. Maintenance cost.
+- **Builder pattern detection.** `Foo.builder().setX().setY().build()` — propagate `Foo$Builder` through chained setX/setY calls. Risk: false positives on non-builder methods named like setters.
 
-Sentry validation: `tier_distribution.receiver` 3202 → 3544 (+342, +10.7%). Gain modest because sentry inconsistently types its `__init__` params and class attrs.
+### Out of scope (would need symbol info from outside)
 
-**Still not covered (future work):**
-- Generic/parameterized types (`List[Foo]`, `Optional[Foo]`) — only the outer name is extracted today.
-- Factory-method init (`setUp`, `__post_init__`, custom builders).
-- Flow analysis (reassignment, conditional bindings, `isinstance` narrowing).
-- FastAPI `Depends()` resolution (separate pattern, needs dedicated handling if we want it).
-
-### B8 (open, observation): Context re-parse resolves differently from baseline
-`context` re-parses the single specified file to get a fresh extraction, then diffs against baseline. For an UNCHANGED file, result shows `edgesAdded: 24, edgesRemoved: 75` — the single-file parse has a smaller symbol table than the full-repo baseline, so import/unique tiers fall through to ambiguous differently. Results drift between `analyze` (full graph) and `context` (re-parsed slice). Worth either documenting or fixing by always resolving context against the full baseline graph. Architectural.
+- **Framework-type calls (Java/Kotlin/Spring).** `request.getHeader()` resolves only if HttpServletRequest is in the user's symbol table. To resolve calls into JDK / framework types, we'd need to index `*.jar` files or stdlib `.kt` source — invasive and heavy.
+- **Generic instantiation.** `Map<string, User>` — currently only the head identifier is captured. Real generic inference would need type unification, out of scope.
+- **Flow analysis.** `if (cond) x = A() else x = B(); x.method()` resolves to whichever assignment came last, not a union. Requires SSA form / control-flow modeling.
 
 ---
 
-## Next work (only with evidence)
+## Documentation gaps to close
 
-### If validation surfaces new false positives
+These are the places where the docs lag behind the code:
 
-The resolver order + normalization got close but not perfect. Likely next classes to investigate:
-- Method-chain calls: `x.a().b().c()` — does each link get a receiver type? (Today probably only the first.)
-- Generic instantiation: `const x = new Map<string, User>()` — does receiver type capture `Map` or `Map<string, User>`?
-- Destructuring imports: `const { service } = deps` — no receiver-type extracted.
-
-### If you hit perf ceiling on monorepos
-
-**P1 #3: Unify AST walks.** Today each language file is walked 3 times (`extract`, `extractCalls`, `extractReceiverTypes`). One merged traversal per file is 3x faster. Requires redesigning the `LanguageExtractors` contract (breaking for any external consumer of that interface). Medium-scope refactor; 14 extractors need coordinated update.
-
-### If you have a backlog of new fields to add
-
-**P1 #4: `buildExtractedFunction` helper per language.** Each `extractor.ts` has 5-6 sites constructing `ExtractedFunction` (function declarations, methods, arrows, constructors, generators, etc). Adding a new field (e.g. `visibility: 'public'|'private'`) today = ~80 touchpoints (14 languages × 5-6 sites). With the helper = ~14 touchpoints (one per language). Pays off only when 2+ new fields are on the roadmap.
-
-### Feature ideas ready to plan
-
-- **Python deep receiver-type inference.** Today covers constructor + type hints. Flow analysis (`x = factory()` where `factory` return type is known) would close the remaining gap for Python. Requires walking call graph + return type inference.
-- **LSP-assisted resolution tier.** Fetch types from `tsserver` / `pyright` / `gopls` on demand, use them to replace proximity-based ambiguous tier with authoritative type resolution. Highest signal gain; multi-month scope.
-- **Incremental `tier_distribution` merge.** Today `update.ts` emits a slice (changed-file stats only). Consumers wanting full-repo picture must re-run `parse --all`. Merge the slice with the baseline graph's prior distribution to avoid that. Small utility.
-- **Receiver-type inference across method chains.** `x.a().b()` — today `x.a()` gets type via receiver inference, `.b()` doesn't because the intermediate value has no binding. Track return types of resolved calls → use as receiver for chained call. Closes a real gap.
+- ✅ `docs/language-support-matrix.md` — auto-generated; current after `bun run docs:matrix`.
+- ✅ `README.md` Features + Schema + Confidence — refreshed this commit.
+- ⏳ `docs/SCHEMA.md` — full payload reference (input/output for every command). Not present today; consumers rely on TypeScript interfaces in `src/graph/types.ts`.
+- ⏳ `CHANGELOG.md` — does not exist. Useful before publishing v0.4.0.
+- ⏳ Cookbook / recipes — "how to read tier_distribution", "how to filter by confidence", "how to detect blast radius hotspots". Currently scattered across README sections.
 
 ---
 
-## Open tech debt (P2/P3 from senior review)
+## Priority sequence
 
-Not blocking, low individual ROI. Paydown these only when touching the area for another reason:
+1. **Push 32 commits to origin** (15 min).
+2. **Draft v0.4.0 release notes** from `git log` (30 min). Decide whether to ship CHANGELOG.md.
+3. **Run on a fresh production repo** (1–2h). Compare `tier_distribution` and `ambig ratio` against the previous v0.3.x output. Look for surprises in real PRs.
+4. **Sit with it for a week** of LLM review usage. Do prompts feel more grounded? Does the AI reviewer cite resolved targets correctly? Are the `tier` annotations meaningful in downstream tooling?
+5. **Decide between paths from data**: cross-file aggregation refactor (clear win for TS/Java) vs Kotlin DSL catalog (manual maintenance) vs polish (CHANGELOG, docs/SCHEMA.md, examples) vs whatever surfaces from step 3.
 
-- **`createLanguageRegistry<T>()` factory** — 4 parallel registries today (extractor, noise, DI, capabilities, receiver-types). All share the same shape. A 5th would doubly justify the factory.
-- **Declarative tier pipeline in `call-resolver.ts`** — main loop is a chain of `if/continue`. Each new tier is invasive. `TIERS = [receiver, noise, di, class, cascade]; for (tier of TIERS) ...` would be cleaner and document the order explicitly.
-- **Property-based tests** for `pickClosestCandidate`, `tokenizeTopLevel`, `normalizeParams` — pure functions with regular input. Would catch Unicode / Windows-path / edge-char bugs.
-- **Capabilities matrix in AGENTS.md** — a 14-row × 5-column table showing per-language declarations. Discoverability win, zero runtime impact.
-- **Consolidate `language-of-file.ts` vs `src/parser/languages.ts`** — two sources of truth for extension → language mapping. Low-risk dedup.
-- **Test helper for `SymbolTable`** — every resolver test does `new SymbolTable(); table.register(...); table.register(...)`. A `buildSymbolTable([...])` factory would tighten setup.
-- **`update.ts` tier_distribution semantics** — "slice" model works but consumers may expect merged. Document more explicitly OR offer both modes via flag.
-
----
-
-## What NOT to do
-
-- **Don't keep refactoring internal structure without validating.** We've done heavy lifting (per-language registries, canonical keys, loader enforcement, tier reorder). Another internal refactor without production evidence is overengineering.
-- **Don't add new features before pushing + running on real code.** Features on top of unvalidated foundation compound risk.
-- **Don't unify AST walks just because perf concern.** Unless real monorepo shows a problem, the 3-walk cost is paid-for-correctness separation. Architectural "god method" is a real regression.
-
----
-
-## Priority order if you want a prescribed sequence
-
-1. Push `main` to `origin` (30 min, decide version bump)
-2. Run on a real PR in `kodus-web` (1-2h), document wins/surprises
-3. Sit with it for a week while reviewing PRs — observe LLM reviewer quality
-4. Come back with data — decide between feature work (receiver chains, LSP tier) vs dívida estrutural vs more polish
-
-Don't rush 3. A week of real use beats a week of speculation.
+Don't rush 4. A week of real use beats a week of speculation.

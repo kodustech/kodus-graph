@@ -49,10 +49,11 @@
 
 ### Python (`python`)
 
-- Validated on sentry (779M, 6613 .py files)
+- Validated on sentry (779M, 14059 files): 🟢 PASS — resolved 74.5%, ambig 27.4%, receiver 75.9/1k, high_conf 16.8% (re-validated 2026-04-30 after typed-params + static + deferred-callee + factory-init).
 - self.attr receiver-type via class attrs + __init__/setUp/__post_init__ typed params; no flow analysis
 - Generic unwrap (added 2026-04-27): List[Foo]/Optional[Foo]/Dict[K,V] resolve to inner type (last arg wins for Dict; first for Annotated)
 - FastAPI Depends() resolves through `typed_default_parameter` — `svc: Service = Depends(...)` binds svc to Service
+- Deferred callee (added 2026-04-30): `x = factory()` records `@CALLEE:factory` and the resolver substitutes the callee's declared return type cross-file.
 
 ### Go (`go`)
 
@@ -62,11 +63,14 @@
 
 ### Java (`java`)
 
-- Validated on keycloak (801M, 6665 .java files)
+- Validated on keycloak (801M, 7657 files): 🟡 GAP (ambigRatio 0.741 > 0.6) — re-validated 2026-04-30. DI tier 3 → 444 hits (+14700%) after CDI/EJB/JAX-RS + bare typed fields. Receiver stayed at 42 because keycloak typed-params are dominated by framework types (HttpServletRequest, KeycloakSession) outside the user symbol table. Ambig only dropped 0.4pp because >70% of calls cross framework boundaries we can't see.
 - DI: parses @Inject/@Autowired/@Resource on fields and constructors (last-segment match, FQ-prefixed forms supported). Combines with Foo->FooImpl name heuristic.
+- Implicit ctor injection (added 2026-04-30): Spring (@Service / @Component / @Repository / @Controller / @RestController / @Configuration), CDI/Jakarta (@ApplicationScoped / @RequestScoped / @SessionScoped / @ConversationScoped / @Dependent / @Singleton), EJB (@Stateless / @Stateful / @MessageDriven), JAX-RS (@Path / @Provider) — single-ctor classes get all params auto-injected. Catches Quarkus, Keycloak, Java EE patterns.
+- Bare typed fields enter diMap (added 2026-04-30) — `private final Foo foo;` resolves `this.foo.method()` at the DI tier without requiring @Inject. Catches Lombok @RequiredArgsConstructor, manual ctor injection, and any plain typed-field declaration. KEY win for keycloak: 148× more DI hits.
+- Receiver-type covers ctor params (added 2026-04-30) — `repo.findAll()` inside a class body resolves at the receiver tier when `repo` was declared as a typed ctor param.
 - Call sites: this.field.method() threads field through diMap (added 2026-04-27)
-- Multi-module Maven import resolution ~2% (weak)
-- Note: implicit constructor injection (Spring 4.3+ single-constructor auto-wire) not detected — requires @Autowired or @Inject on the constructor
+- Multi-module Maven imports (improved 2026-04-30): adds src/test/{java,kotlin,scala} to discovered roots so test files can resolve cross-module references; honors <sourceDirectory>/<testSourceDirectory> overrides; memoizes source-root discovery and pom.xml reads per-repo (resolves the keycloak-scale perf cost).
+- Memory: parsing keycloak-scale repos (~7k files, ~400k call sites) requires --max-memory ≥ 2048; the validator harness 1GB cap OOMs the resolver phase.
 
 ### Ruby (`ruby`)
 
@@ -102,7 +106,11 @@
 
 ### Kotlin (`kotlin`)
 
-- Validated on kotlinx.coroutines 2026-04-19: 🟡 GAP (ambigRatio 0.683 > 0.6) — same Kotlin method-name-reuse pattern as Java
+- Re-validated on kotlinx.coroutines 2026-04-30: 🟡 GAP (ambigRatio 0.663 > 0.6, was 0.683) — receiver tier 1061 → 1494 hits (+40%) after extension-function fix. Extension functions on generic receivers (e.g. `fun <T> List<T>.foo()`) resolve through the `type_identifier` head of the user_type (List).
+- Extension functions (added 2026-04-30): `fun Foo.bar()` is syntactically top-level but indexed as `Foo.bar` in the symbol table — calls `foo.bar()` where foo: Foo now resolve at the receiver tier instead of falling to ambiguous. Dominant pattern in kotlinx, Compose, Spring Kotlin DSL.
+- Noise list expanded 2026-04-30: added preconditions (check/checkNotNull/requireNotNull/error/assert), stdlib helpers (lazy/lazyOf/repeat/synchronized/TODO/runCatching), and full collection builder family (arrayOf, mutableListOf, hashMapOf, emptyList, etc.). Contributed ~1.3pp ambig reduction.
+- returnType extraction fix (2026-04-30): tree-sitter-kotlin doesn't expose `field('return_type')`; walk children structurally for the `user_type` after `:`. Without this, every Kotlin function had returnType='' and the chain pass / deferred-callee couldn't propagate.
+- Deferred callee (2026-04-30): `val x = factory()` records `@CALLEE:factory`; resolver substitutes the function's declared return type cross-file.
 - DI (added 2026-04-27): parses @Inject/@Autowired/@Resource on properties and primary constructors; bare `repo.method()` and `this.repo.method()` thread `repo` as diField. Reuses Java FooImpl name heuristic.
 
 ### Rust (`rust`)

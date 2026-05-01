@@ -8,16 +8,21 @@ Code graph builder for Kodus code review. Parses source code into structural gra
 
 ## Features
 
-- **Multi-language support.** kodus-graph covers TypeScript, Python, Go, Java, Ruby, and 9 more. Each language has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for the authoritative list and current capability depth per language.
-- **Structural graph** — Functions, classes, interfaces, enums as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS as edges
-- **Call resolution** — 5-tier confidence cascade with DI pattern detection
-- **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits)
-- **Function-level blast radius** — Impact analysis per function, not per file
-- **Smart import resolution** — tsconfig extends/rootDirs/project references, monorepo workspace exports, package.json `#imports`, Webpack/Vite aliases, Go workspaces/vendor, Maven/Gradle multi-module, Cargo workspace path deps
+- **Multi-language support.** 14 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
+- **Structural graph** — Functions, methods, constructors, classes, interfaces, enums, tests as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS as edges. Each node carries `is_exported`, `is_async`, `decorators`, `throws`, `complexity`.
+- **5-tier call resolver** — `receiver` (0.95/0.90) → `noise` filter → `di` (0.90/0.95) → `class` (0.85/0.90) → `cascade` (same/import/unique/ambiguous, 0.85→0.30). Each CALLS edge records its tier and confidence.
+- **Receiver-type inference** — From `new Foo()`, typed parameters, type cast `as Foo`, factory deferred (`const x = factory()` resolved cross-file via the `@CALLEE:` mechanism), method-chain return type, and singleton patterns (`Foo.getInstance()`).
+- **Inheritance-aware lookup** — When `Foo.method` isn't directly indexed but Foo extends Bar (or implements an interface) where the method exists, walks the hierarchy with cycle protection.
+- **DI detection** — Java/Kotlin: `@Inject`/`@Autowired`/`@Resource` on fields and constructors. Java implicit ctor injection covers Spring 4.3+ stereotypes (`@Service`, `@Component`, `@Repository`, `@Controller`, `@RestController`, `@Configuration`), CDI/Jakarta (`@ApplicationScoped`, `@RequestScoped`, etc.), EJB (`@Stateless`, etc.), JAX-RS (`@Path`, `@Provider`). Bare typed fields (`private final Foo foo;`) also feed the DI map.
+- **Kotlin extension functions** — `fun Foo.bar()` is indexed as `Foo.bar`, so `foo.bar()` resolves at the receiver tier.
+- **JSX/TSX components as calls** — `<UserCard />` becomes a CALLS edge to the component function/class.
+- **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits).
+- **Function-level blast radius** — Impact analysis per function, not per file.
+- **Smart import resolution** — tsconfig extends/rootDirs/project references, monorepo workspace exports, package.json `#imports`, Webpack/Vite aliases, Go workspaces/vendor, Maven/Gradle multi-module (with test source roots and `<sourceDirectory>` overrides), Cargo workspace path deps.
 - **External package detection** — Distinguishes internal code from npm, pip, Maven, Cargo, etc.
-- **Composable extractors** — Dedicated per-language extractor files for easy extension
-- **Incremental parsing** — Content hashing skips unchanged files
-- **Streaming JSON** — Memory-efficient output for large codebases
+- **Composable extractors** — Per-language extractor files behind generic `createLanguageRegistry<T>()` factory; same shape for extractors, noise, DI heuristics, capabilities, receiver-types.
+- **Incremental parsing + merge** — `update` re-parses only files whose content hash changed, then merges; `tier_distribution` is recomputed from the merged graph (each edge persists its tier).
+- **Streaming JSON** — Memory-efficient output for large codebases.
 
 ## Requirements
 
@@ -242,6 +247,8 @@ kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 
 ## Graph Schema
 
+A summary follows; see [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full payload reference covering every command's input and output.
+
 ### Nodes
 
 | Field | Type | Description |
@@ -265,17 +272,26 @@ kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 | `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS |
 | `source_qualified` | `string` | Caller/parent node |
 | `target_qualified` | `string` | Callee/child node |
-| `confidence` | `number` | 0.0–1.0 (for CALLS edges) |
+| `file_path` | `string` | File where the edge originates |
+| `line` | `number` | Source line of the call |
+| `confidence` | `number` | 0.0–1.0 (CALLS edges only) |
+| `tier` | `EdgeTier` | Resolver tier that produced this edge: `receiver` / `di` / `same` / `import` / `unique` / `ambiguous` (CALLS only) |
+| `alternatives` | `string[]` | Candidates considered but not picked, sorted (CALLS at the ambiguous tier) |
 
 ### Confidence Levels
 
-| Source | Confidence | Description |
+The 5-tier resolver runs in priority order; the first tier that produces an outcome wins. Each edge records its `tier` and a numeric `confidence`:
+
+| Tier | Confidence | When it fires |
 |---|---|---|
-| DI injection | 0.90–0.95 | Constructor/property injection patterns |
-| Same file | 0.85 | Call within the same file |
-| Import resolved | 0.70–0.90 | Cross-file call via import |
-| Unique match | 0.50 | Only one candidate across codebase |
-| Ambiguous | 0.30 | Multiple candidates found |
+| `receiver` | 0.95 / 0.90 / 0.85 | Receiver type known via local binding, typed param, factory chain, singleton, or inheritance walk |
+| `di` | 0.95 / 0.90 | `this.field.method()` where field is in the DI map (annotated, ctor-injected, or bare typed) |
+| `same` | 0.85 / 0.90 | Same-file declaration (also used by `self`/`super` class lookup) |
+| `import` | 0.90 / 0.85 / 0.70 | Cross-file via import (high if symbol is in target file's symbol table; lower if only the import path is known) |
+| `unique` | 0.60 / 0.50 | Only one candidate across the codebase (boost when same directory) |
+| `ambiguous` | 0.30 | Multiple candidates; `alternatives[]` is populated, target is the closest by path proximity |
+
+`noise` and `ambiguousNoise` are *drop* outcomes (no edge). They appear in `metadata.tier_distribution` but never on edges.
 
 #### `metadata.tier_distribution` (optional)
 
