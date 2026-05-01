@@ -1450,6 +1450,39 @@ describe('new fields – TypeScript', () => {
     });
 });
 
+describe('Python re-exports (__init__.py barrel pattern)', () => {
+    test('relative `from .x import y` in __init__.py produces a re-export entry', async () => {
+        const code = 'from .auth import authenticate\nfrom .db import query';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'utils/__init__.py', 'python', new Set(), graph);
+
+        expect(graph.reExports).toHaveLength(2);
+        expect(graph.reExports[0]).toMatchObject({ module: '.auth', file: 'utils/__init__.py' });
+        expect(graph.reExports[1]).toMatchObject({ module: '.db', file: 'utils/__init__.py' });
+    });
+
+    test('relative imports in non-__init__ files do NOT become re-exports', async () => {
+        const code = 'from .auth import authenticate';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'utils/api.py', 'python', new Set(), graph);
+
+        expect(graph.reExports).toHaveLength(0);
+        // Still extracted as a regular import.
+        expect(graph.imports.find((i) => i.module === '.auth')).toBeDefined();
+    });
+
+    test('absolute imports in __init__.py are NOT re-exports (sibling deps, not flow-through)', async () => {
+        const code = 'from typing import List\nimport os';
+        const root = await parseAsync('python', code);
+        const graph = emptyGraph();
+        extractFromFile(root, 'pkg/__init__.py', 'python', new Set(), graph);
+
+        expect(graph.reExports).toHaveLength(0);
+    });
+});
+
 describe('new fields – Python', () => {
     test('public function (no underscore) has is_exported=true', async () => {
         const code = 'def get_user():\n    pass';

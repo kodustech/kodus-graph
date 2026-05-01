@@ -7,7 +7,14 @@ import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
-import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
+import type {
+    ExtractedClass,
+    ExtractedFunction,
+    ExtractedImport,
+    ExtractedReExport,
+    ExtractionResult,
+    LanguageExtractors,
+} from '../spec';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -121,6 +128,12 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
         });
     }
 
+    // Re-exports happen in `__init__.py` files when `from .x import y` is
+    // used as a barrel pattern. Treat ALL relative imports in __init__.py as
+    // re-exports — symbols imported there typically flow through to consumers.
+    const isInitFile = fp.endsWith('/__init__.py') || fp === '__init__.py';
+    const reExports: ExtractedReExport[] = [];
+
     // ── Imports (from X import Y) ──
     for (const node of rootNode.findAll({ rule: { kind: kinds.import } })) {
         const modNode = node
@@ -146,6 +159,17 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
             names,
             lang: 'python',
         });
+
+        // Same statement also acts as a re-export when it's inside __init__.py
+        // and the module path is relative (`.` prefix). Absolute imports in
+        // __init__.py are less likely to be re-exports — they could be sibling
+        // dependencies. Conservative: relative-only.
+        if (isInitFile && modNode?.kind() === 'relative_import') {
+            reExports.push({
+                module: modulePath,
+                line: node.range().start.line,
+            });
+        }
     }
 
     // ── Regular imports (import X) ──
@@ -165,7 +189,7 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
         classes,
         functions,
         imports,
-        reExports: [],
+        reExports,
         interfaces: [],
         enums: [],
         diEntries: [],

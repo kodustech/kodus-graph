@@ -12,6 +12,7 @@
  */
 
 import { relative, resolve } from 'path';
+import { languageOfFile } from '../languages/language-of-file';
 import { resolveImport } from './import-resolver';
 
 interface RawReExport {
@@ -34,7 +35,11 @@ export function buildReExportMap(
 
     for (const re of reExports) {
         const absFrom = resolve(repoDir, re.file);
-        const resolved = resolveImport(absFrom, re.module, 'typescript', repoDir, tsconfigAliases);
+        // Use the re-export file's language so Python `from .x import y` in
+        // __init__.py resolves via the Python resolver, not TS. Fall back to
+        // 'typescript' for unknown extensions (preserves prior behavior).
+        const lang = languageOfFile(re.file) ?? 'typescript';
+        const resolved = resolveImport(absFrom, re.module, lang, repoDir, tsconfigAliases);
         if (!resolved) {
             continue;
         }
