@@ -3,13 +3,15 @@
  * Smoke-validation harness for Fase D.
  *
  * Usage:
- *   bun run scripts/validate-language.ts --repo <clone-path> --lang <key> --out <report-path>
+ *   bun run scripts/validate-language.ts --repo <clone-path> --lang <key> --out <report-path> [--max-memory MB]
  *
  * Runs kodus-graph `parse --all` on the repo, extracts tier_distribution,
  * language breakdown, alternatives coverage, complexity coverage, high-conf
  * edge count. Writes a markdown report. Deletes the intermediate graph JSON.
  *
- * Always uses `--max-memory 1024` so large repos don't thrash.
+ * Default `--max-memory 1024`. Bump to 4096+ for keycloak/spring-boot/
+ * elasticsearch-scale Java repos (~7k+ files; the resolver phase OOMs at
+ * the default cap).
  * Excludes node_modules / vendor / target / .git / build / dist / __pycache__ / venv.
  */
 import { existsSync, rmSync } from 'fs';
@@ -19,25 +21,29 @@ interface Args {
     repo: string;
     lang: string;
     out: string;
+    maxMemory: string;
 }
 
 function parseArgs(): Args {
-    const args: Partial<Args> = {};
+    const args: Partial<Args> = { maxMemory: '1024' };
     for (let i = 2; i < process.argv.length; i += 2) {
         const key = process.argv[i];
         const value = process.argv[i + 1];
         if (key === '--repo') args.repo = value;
         if (key === '--lang') args.lang = value;
         if (key === '--out') args.out = value;
+        if (key === '--max-memory') args.maxMemory = value;
     }
     if (!args.repo || !args.lang || !args.out) {
-        throw new Error('Usage: validate-language --repo <path> --lang <key> --out <report-path>');
+        throw new Error(
+            'Usage: validate-language --repo <path> --lang <key> --out <report-path> [--max-memory MB]',
+        );
     }
     return args as Args;
 }
 
 async function main(): Promise<void> {
-    const { repo, lang, out } = parseArgs();
+    const { repo, lang, out, maxMemory } = parseArgs();
     if (!existsSync(repo)) {
         throw new Error(`repo not found: ${repo}`);
     }
@@ -57,7 +63,7 @@ async function main(): Promise<void> {
             '--out',
             tmpGraph,
             '--max-memory',
-            '1024',
+            maxMemory,
             '--exclude',
             '**/node_modules/**',
             '**/vendor/**',
