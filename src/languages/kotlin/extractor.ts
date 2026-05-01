@@ -463,11 +463,15 @@ export const kotlinExtractors: LanguageExtractors = {
                     }
                 }
             }
+            // Kotlin tree-sitter exposes parameters as a `function_value_parameters`
+            // child, NOT via `field('parameters')`. Without this, every Kotlin
+            // function had params='()' regardless of actual signature.
+            const paramsNode = node.children().find((c: SgNode) => c.kind() === 'function_value_parameters');
             result.functions.push({
                 name,
                 line_start: range.line_start,
                 line_end: range.line_end,
-                params: node.field('parameters')?.text() || '()',
+                params: paramsNode?.text() || '()',
                 returnType,
                 kind,
                 ast_kind: String(node.kind()),
