@@ -341,6 +341,60 @@ describe('receiver-type inference per language', () => {
         expect(find?.receiverType).toBe('Repo');
     });
 
+    it('C#: bare field access `_repo.Find()` resolves through field binding', async () => {
+        // The dominant .NET pattern: ctor-assigned private readonly field,
+        // accessed bare without `this.`. Was falling through to cascade
+        // before the field-as-binding extension.
+        const calls = await extractWithReceiver(
+            'csharp',
+            [
+                'class UserService {',
+                '    private readonly IUserRepository _repo;',
+                '    public UserService(IUserRepository repo) { _repo = repo; }',
+                '    public void List() { _repo.FindAll(); }',
+                '}',
+            ].join('\n'),
+            'src/UserService.cs',
+        );
+        const findAll = calls.find((c) => c.callName === 'FindAll');
+        expect(findAll?.receiverType).toBe('IUserRepository');
+    });
+
+    it('C#: auto-property `Repo.Find()` resolves through property binding', async () => {
+        const calls = await extractWithReceiver(
+            'csharp',
+            [
+                'class UserPage {',
+                '    public IUserRepository Repo { get; set; }',
+                '    public void Render() { Repo.FindAll(); }',
+                '}',
+            ].join('\n'),
+            'src/UserPage.cs',
+        );
+        const findAll = calls.find((c) => c.callName === 'FindAll');
+        expect(findAll?.receiverType).toBe('IUserRepository');
+    });
+
+    it('C#: primary-constructor param resolves bare inside class body', async () => {
+        const calls = await extractWithReceiver(
+            'csharp',
+            'public class UserService(IUserRepository repo) { public void Run() => repo.FindAll(); }',
+            'src/UserService.cs',
+        );
+        const findAll = calls.find((c) => c.callName === 'FindAll');
+        expect(findAll?.receiverType).toBe('IUserRepository');
+    });
+
+    it('C#: record primary-constructor param resolves bare inside body', async () => {
+        const calls = await extractWithReceiver(
+            'csharp',
+            'public record UserService(IUserRepository Repo) { public void Run() => Repo.FindAll(); }',
+            'src/UserService.cs',
+        );
+        const findAll = calls.find((c) => c.callName === 'FindAll');
+        expect(findAll?.receiverType).toBe('IUserRepository');
+    });
+
     it('Scala: def parameter `repo: Repo` seeds receiverType', async () => {
         const calls = await extractWithReceiver(
             'scala',

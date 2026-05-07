@@ -726,6 +726,119 @@ describe('extractGeneric – C#', () => {
 
         expect(graph.tests.length).toBeGreaterThanOrEqual(1);
     });
+
+    test('typed instance field → diMap (mirrors .NET ctor-assigned field pattern)', async () => {
+        const code = [
+            'public class UserService {',
+            '    private readonly IUserRepository _repo;',
+            '    private readonly ILogger _logger;',
+            '    public UserService(IUserRepository repo, ILogger logger) {',
+            '        _repo = repo;',
+            '        _logger = logger;',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('_repo')).toBe('IUserRepository');
+        expect(diMap!.get('_logger')).toBe('ILogger');
+        expect(diMap!.get('repo')).toBe('IUserRepository');
+        expect(diMap!.get('logger')).toBe('ILogger');
+    });
+
+    test('[Inject] property (Blazor) → diMap', async () => {
+        const code = [
+            'public class UserPage {',
+            '    [Inject]',
+            '    public IUserRepository Repo { get; set; }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserPage.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('Repo')).toBe('IUserRepository');
+    });
+
+    test('primary constructor on class (C# 12+) → diMap', async () => {
+        const code = [
+            'public class UserService(IUserRepository repo, ILogger logger) {',
+            '    public void Run() => repo.FindAll();',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('IUserRepository');
+        expect(diMap!.get('logger')).toBe('ILogger');
+    });
+
+    test('record primary constructor → diMap', async () => {
+        const code = [
+            'public record UserService(IUserRepository Repo, ILogger Logger) {',
+            '    public void Run() => Repo.FindAll();',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('Repo')).toBe('IUserRepository');
+        expect(diMap!.get('Logger')).toBe('ILogger');
+    });
+
+    test('class with two ctors → no implicit ctor injection (only field injection)', async () => {
+        // Two ctors → ambiguous which one is the DI ctor; .NET requires a
+        // single ctor (or [ActivatorUtilitiesConstructor]). We mirror that
+        // by NOT auto-injecting params when count != 1. Fields still go in.
+        const code = [
+            'public class UserService {',
+            '    private readonly IUserRepository _repo;',
+            '    public UserService() { }',
+            '    public UserService(IUserRepository repo, ILogger logger) {',
+            '        _repo = repo;',
+            '    }',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('_repo')).toBe('IUserRepository');
+        // ctor params NOT injected because there are two ctors
+        expect(diMap!.get('logger')).toBeUndefined();
+    });
+
+    test('predefined types (int/string) excluded from primary-ctor diMap', async () => {
+        const code = ['public record Point(int X, int Y);'].join('\n');
+        const fp = '/virt/Point.cs';
+        const root = await parseAsync('csharp', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'csharp', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        // diMap may exist for fields but should not contain int/string params
+        expect(diMap?.get('X')).toBeUndefined();
+        expect(diMap?.get('Y')).toBeUndefined();
+    });
 });
 
 // ---------------------------------------------------------------------------

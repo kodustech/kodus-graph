@@ -142,6 +142,98 @@ const ANNOTATION_KIND = 'attribute';
 const ANNOTATION_NAMES = ['TestMethod', 'Fact', 'Test', 'Theory'];
 
 // ---------------------------------------------------------------------------
+// DI extraction helpers
+// ---------------------------------------------------------------------------
+
+// Class declaration kinds where a primary constructor may live (C# 12+ for
+// classes; records since C# 9). The resolver treats every class member with a
+// matching field/property name as a DI binding so `this.Repo.FindAll()`
+// resolves through the DI tier.
+const CSHARP_CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration', 'struct_declaration']);
+
+// Primitive C# types we deliberately exclude from DI bindings — they are not
+// services and would only add noise to the diMap.
+const CSHARP_PRIMITIVE_KINDS = new Set(['predefined_type']);
+
+/**
+ * Extract a (typeName, declaratorName) pair from a tree-sitter `parameter`
+ * node. C# represents `IFoo foo` as two consecutive `identifier` children
+ * (no field name on the type), so we read positionally.
+ */
+function csharpParamTypeAndName(p: SgNode): { typeName: string; name: string } | null {
+    if (p.kind() !== 'parameter') {
+        return null;
+    }
+    let typeNode: SgNode | undefined;
+    let nameNode: SgNode | undefined;
+    for (const c of p.children()) {
+        const k = c.kind();
+        if (k === 'attribute_list' || k === 'modifier' || k === 'parameter_modifier') {
+            continue;
+        }
+        if (
+            k === 'identifier' ||
+            k === 'generic_name' ||
+            k === 'qualified_name' ||
+            k === 'predefined_type' ||
+            k === 'nullable_type' ||
+            k === 'array_type'
+        ) {
+            if (!typeNode) {
+                typeNode = c;
+            } else if (!nameNode) {
+                nameNode = c;
+            }
+        }
+    }
+    if (!typeNode || !nameNode || CSHARP_PRIMITIVE_KINDS.has(String(typeNode.kind()))) {
+        return null;
+    }
+    const typeName = unwrapCsharpType(typeNode);
+    return typeName ? { typeName, name: nameNode.text() } : null;
+}
+
+/** Unwrap `IFoo<Bar>` → `IFoo`, `IFoo?` → `IFoo`, `IFoo` → `IFoo`. */
+function unwrapCsharpType(typeNode: SgNode): string {
+    const k = typeNode.kind();
+    if (k === 'generic_name') {
+        return (
+            typeNode
+                .children()
+                .find((c) => c.kind() === 'identifier')
+                ?.text() ?? typeNode.text()
+        );
+    }
+    if (k === 'nullable_type') {
+        const inner = typeNode.children().find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name');
+        return inner ? unwrapCsharpType(inner) : typeNode.text();
+    }
+    if (k === 'array_type') {
+        return typeNode.text();
+    }
+    return typeNode.text();
+}
+
+/**
+ * Iterate constructor declarations inside a class/record body. Used to
+ * gate "single-ctor implicit DI" — every typed param of the sole ctor in a
+ * managed class becomes a diEntry, mirroring how Microsoft.Extensions.DI
+ * resolves ctor params at runtime.
+ */
+function csharpConstructorsIn(classNode: SgNode): SgNode[] {
+    const body = classNode.children().find((c) => c.kind() === 'declaration_list');
+    if (!body) {
+        return [];
+    }
+    return body.children().filter((c) => c.kind() === 'constructor_declaration');
+}
+
+/** Find the immediate `parameter_list` child of a class/record (primary ctor). */
+function csharpPrimaryCtorParams(classNode: SgNode): SgNode | null {
+    return classNode.children().find((c) => c.kind() === 'parameter_list') ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // C# extractor
 // ---------------------------------------------------------------------------
 
@@ -273,6 +365,106 @@ export const csharpExtractors: LanguageExtractors = {
                     throws: extractThrows(node, ['throw_statement']),
                     complexity: computeCyclomatic(node, CSHARP_BRANCH_KINDS),
                 });
+            }
+        }
+
+        // ── DI: typed fields, properties, ctor params ───────────────────
+        // .NET DI is implicit-by-default: Microsoft.Extensions.DependencyInjection
+        // resolves every ctor param against the registered IServiceCollection.
+        // Mirroring that, we treat typed instance fields, typed properties,
+        // single-ctor params, and primary-ctor params as DI bindings — the
+        // graph then routes `this.Repo.FindAll()` and analogous patterns
+        // through the DI tier (0.9) instead of falling to cascade.
+        //
+        // Why everything-typed (not just `[Inject]`-annotated): real-world
+        // .NET code rarely annotates fields. Lombok-style "all fields are
+        // injected" is the common shape — assign in ctor, mark as readonly,
+        // never use `[Inject]`. Indexing all typed fields catches that path
+        // at the cost of indexing non-DI fields too, which is harmless: the
+        // resolver only consults diMap when the call shape is `this.field.method()`.
+
+        // Field injection
+        for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
+            const vd = fd.children().find((c) => c.kind() === 'variable_declaration');
+            if (!vd) {
+                continue;
+            }
+            const typeNode = vd
+                .children()
+                .find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name' || c.kind() === 'qualified_name');
+            if (!typeNode) {
+                continue;
+            }
+            const typeName = unwrapCsharpType(typeNode);
+            for (const decl of vd.children()) {
+                if (decl.kind() !== 'variable_declarator') {
+                    continue;
+                }
+                const fieldName = decl
+                    .children()
+                    .find((c) => c.kind() === 'identifier')
+                    ?.text();
+                if (!fieldName) {
+                    continue;
+                }
+                result.diEntries.push({ fieldName, typeName });
+            }
+        }
+
+        // Property injection (Blazor `[Inject]` and conventional auto-props)
+        for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+            const ids: SgNode[] = [];
+            for (const c of pd.children()) {
+                const k = c.kind();
+                if (k === 'identifier' || k === 'generic_name' || k === 'qualified_name') {
+                    ids.push(c);
+                }
+            }
+            if (ids.length < 2) {
+                continue;
+            }
+            const typeName = unwrapCsharpType(ids[0]);
+            const propertyName = ids[1].text();
+            if (typeName) {
+                result.diEntries.push({ fieldName: propertyName, typeName });
+            }
+        }
+
+        // Constructor injection: when a class has exactly ONE ctor, every typed
+        // param is treated as an injected dependency. Mirrors the .NET DI
+        // container's runtime behavior — and matches the Java Spring 4.3+ rule.
+        for (const cls of root.findAll({ rule: { kind: 'class_declaration' } })) {
+            const ctors = csharpConstructorsIn(cls);
+            if (ctors.length !== 1) {
+                continue;
+            }
+            const params = ctors[0].field('parameters');
+            if (!params) {
+                continue;
+            }
+            for (const p of params.children()) {
+                const pair = csharpParamTypeAndName(p);
+                if (pair) {
+                    result.diEntries.push({ fieldName: pair.name, typeName: pair.typeName });
+                }
+            }
+        }
+
+        // Primary constructor (C# 12+ for classes; C# 9+ for records). The
+        // params are auto-promoted to compiler-generated fields/properties
+        // accessible inside the body — semantically identical to ctor injection.
+        for (const k of ['class_declaration', 'record_declaration']) {
+            for (const cls of root.findAll({ rule: { kind: k } })) {
+                const params = csharpPrimaryCtorParams(cls);
+                if (!params) {
+                    continue;
+                }
+                for (const p of params.children()) {
+                    const pair = csharpParamTypeAndName(p);
+                    if (pair) {
+                        result.diEntries.push({ fieldName: pair.name, typeName: pair.typeName });
+                    }
+                }
             }
         }
 
@@ -419,6 +611,73 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
             }
             for (const p of params.children()) {
                 seedCsParam(p);
+            }
+        }
+    }
+
+    // Field-as-binding: `_repo.FindAll()` (the dominant .NET pattern is bare
+    // access without `this.`). Without this, every field-driven member call
+    // falls through to cascade. Mirrors the choice we made in Java DI for
+    // bare typed fields — and complements the diEntries pass above so both
+    // `this.Repo.X` AND `_repo.X` resolve at high-conf tiers.
+    for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
+        const vd = fd.children().find((c) => c.kind() === 'variable_declaration');
+        if (!vd) {
+            continue;
+        }
+        const typeNode = vd
+            .children()
+            .find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name' || c.kind() === 'qualified_name');
+        if (!typeNode) {
+            continue;
+        }
+        const typeName = unwrapCsharpType(typeNode);
+        for (const decl of vd.children()) {
+            if (decl.kind() !== 'variable_declarator') {
+                continue;
+            }
+            const fieldName = decl
+                .children()
+                .find((c) => c.kind() === 'identifier')
+                ?.text();
+            if (fieldName) {
+                bindings.set(fieldName, typeName);
+            }
+        }
+    }
+    // Properties: same rationale — `Repo.FindAll()` (auto-prop) is bare-access.
+    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+        const ids: SgNode[] = [];
+        for (const c of pd.children()) {
+            const k = c.kind();
+            if (k === 'identifier' || k === 'generic_name' || k === 'qualified_name') {
+                ids.push(c);
+            }
+        }
+        if (ids.length < 2) {
+            continue;
+        }
+        const typeName = unwrapCsharpType(ids[0]);
+        const propertyName = ids[1].text();
+        if (typeName) {
+            bindings.set(propertyName, typeName);
+        }
+    }
+    // Primary-ctor params (C# 12+ classes, records since C# 9). The params
+    // are visible bare inside every method of the class, so they deserve a
+    // binding entry. We seed them at file scope; intra-file namespace clashes
+    // between sibling classes are rare enough to ignore.
+    for (const k of ['class_declaration', 'record_declaration']) {
+        for (const cls of root.findAll({ rule: { kind: k } })) {
+            const params = cls.children().find((c) => c.kind() === 'parameter_list');
+            if (!params) {
+                continue;
+            }
+            for (const p of params.children()) {
+                const pair = csharpParamTypeAndName(p);
+                if (pair) {
+                    bindings.set(pair.name, pair.typeName);
+                }
             }
         }
     }
