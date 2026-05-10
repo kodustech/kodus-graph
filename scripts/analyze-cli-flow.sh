@@ -52,7 +52,7 @@ done
 mkdir -p "$REPORTS_DIR" "$SCRATCH_DIR"
 
 # Repo definitions. Format:
-#   slug | url | language-key | file-glob | memory-mb
+#   slug | url | language-key | file-glob | memory-mb | extra-excludes
 #
 # - slug: directory + report filename
 # - url: shallow-clone source
@@ -60,15 +60,19 @@ mkdir -p "$REPORTS_DIR" "$SCRATCH_DIR"
 # - file-glob: pattern (relative to repo root) to find a source file for
 #   --files-driven commands (analyze, context, diff). First match used.
 # - memory-mb: --max-memory cap
+# - extra-excludes: comma-separated repo-specific glob excludes (`-` for none).
+#   Quarkus needs `tcks/`, `integration-tests/`, `docs/` excluded — they push
+#   the symbol-table past the GC ceiling even with 6GB cap. Without this the
+#   parse goes ~30 min then OOMs.
 REPOS=(
-    "spring-boot|https://github.com/spring-projects/spring-boot|java|spring-boot-project/spring-boot/src/main/java/**/*.java|4096"
-    "nestjs-nest|https://github.com/nestjs/nest|TypeScript|packages/core/**/*.ts|2048"
-    "quarkus|https://github.com/quarkusio/quarkus|java|core/runtime/src/main/java/**/*.java|4096"
-    "ktor|https://github.com/ktorio/ktor|kotlin|ktor-server/ktor-server-core/**/*.kt|2048"
-    "fastapi|https://github.com/tiangolo/fastapi|python|fastapi/**/*.py|2048"
-    "django|https://github.com/django/django|python|django/**/*.py|2048"
-    "rails|https://github.com/rails/rails|ruby|activerecord/lib/**/*.rb|2048"
-    "aspnetcore|https://github.com/dotnet/aspnetcore|csharp|src/**/*.cs|4096"
+    "spring-boot|https://github.com/spring-projects/spring-boot|java|spring-boot-project/spring-boot/src/main/java/**/*.java|4096|-"
+    "nestjs-nest|https://github.com/nestjs/nest|TypeScript|packages/core/**/*.ts|2048|-"
+    "quarkus|https://github.com/quarkusio/quarkus|java|core/runtime/src/main/java/**/*.java|6144|**/tcks/**,**/integration-tests/**,**/docs/**,**/devtools/**"
+    "ktor|https://github.com/ktorio/ktor|kotlin|ktor-server/ktor-server-core/**/*.kt|2048|-"
+    "fastapi|https://github.com/tiangolo/fastapi|python|fastapi/**/*.py|2048|-"
+    "django|https://github.com/django/django|python|django/**/*.py|2048|-"
+    "rails|https://github.com/rails/rails|ruby|activerecord/lib/**/*.rb|2048|-"
+    "aspnetcore|https://github.com/dotnet/aspnetcore|csharp|src/**/*.cs|4096|-"
 )
 
 # Filter to --only list if provided.
@@ -142,7 +146,7 @@ find_target_file() {
 # Process one repo end-to-end. ───────────────────────────────────────────────
 process_repo() {
     local entry="$1"
-    IFS='|' read -r slug url lang file_glob mem <<< "$entry"
+    IFS='|' read -r slug url lang file_glob mem extra_excludes <<< "$entry"
     local report="$REPORTS_DIR/$slug.md"
     local clone_dir="$SCRATCH_DIR/$slug"
     local graph_path="$SCRATCH_DIR/$slug-graph.json"
@@ -189,15 +193,27 @@ process_repo() {
     local cmd_names=(parse analyze context_prompt context_json diff search communities flows update)
     local cmd_results=()
 
+    # Compose exclude list. Base excludes always apply; per-repo extras
+    # extend them (used to keep Quarkus from blowing past the GC ceiling).
+    local -a parse_excludes=(
+        '**/node_modules/**' '**/vendor/**' '**/.git/**'
+        '**/target/**' '**/build/**' '**/dist/**'
+        '**/__pycache__/**' '**/venv/**' '**/.venv/**'
+    )
+    if [[ -n "$extra_excludes" && "$extra_excludes" != "-" ]]; then
+        IFS=',' read -ra extra_arr <<< "$extra_excludes"
+        for ex in "${extra_arr[@]}"; do
+            parse_excludes+=("$ex")
+        done
+    fi
+
     echo "[$slug] parse ..."
     cmd_results+=("$(run_step "$slug-parse" "$graph_path" \
         bun run src/cli.ts parse --all \
             --repo-dir "$clone_dir" \
             --out "$graph_path" \
             --max-memory "$mem" \
-            --exclude '**/node_modules/**' '**/vendor/**' '**/.git/**' \
-                      '**/target/**' '**/build/**' '**/dist/**' \
-                      '**/__pycache__/**' '**/venv/**' '**/.venv/**')")
+            --exclude "${parse_excludes[@]}")")
 
     if [[ -n "$target_rel" && -f "$graph_path" ]]; then
         echo "[$slug] analyze ..."
@@ -269,16 +285,19 @@ process_repo() {
         cmd_results+=("skip|0|0|0" "skip|0|0|0" "skip|0|0|0" "skip|0|0|0")
     fi
 
-    # Phase 4: extract metadata from graph for the report
-    local td_summary=""
-    local repo_files=""
-    local repo_nodes=""
-    local repo_edges=""
+    # Phase 4: extract metadata from graph for the report.
+    # When parse fails (graph_path absent), use FAIL placeholder so SUMMARY's
+    # awk doesn't grab the literal label as the value (the bug that produced
+    # `files_parsed:` in the quarkus row of SUMMARY.md).
+    local td_summary="FAIL"
+    local repo_files="FAIL"
+    local repo_nodes="FAIL"
+    local repo_edges="FAIL"
     if [[ -f "$graph_path" ]]; then
-        repo_files=$(jq -r '.metadata.files_parsed' "$graph_path" 2>/dev/null || echo '?')
-        repo_nodes=$(jq -r '.metadata.total_nodes' "$graph_path" 2>/dev/null || echo '?')
-        repo_edges=$(jq -r '.metadata.total_edges' "$graph_path" 2>/dev/null || echo '?')
-        td_summary=$(jq -r '.metadata.tier_distribution | "receiver=\(.receiver) di=\(.di) same=\(.same) import=\(.import) unique=\(.unique) ambig=\(.ambiguous) noise=\(.noise)"' "$graph_path" 2>/dev/null || echo '?')
+        repo_files=$(jq -r '.metadata.files_parsed // "FAIL"' "$graph_path" 2>/dev/null || echo 'FAIL')
+        repo_nodes=$(jq -r '.metadata.total_nodes // "FAIL"' "$graph_path" 2>/dev/null || echo 'FAIL')
+        repo_edges=$(jq -r '.metadata.total_edges // "FAIL"' "$graph_path" 2>/dev/null || echo 'FAIL')
+        td_summary=$(jq -r '.metadata.tier_distribution | "receiver=\(.receiver) di=\(.di) same=\(.same) import=\(.import) unique=\(.unique) ambig=\(.ambiguous) noise=\(.noise)"' "$graph_path" 2>/dev/null || echo 'FAIL')
     fi
 
     # Phase 5: write per-repo report
@@ -360,12 +379,16 @@ SUMMARY="$REPORTS_DIR/SUMMARY.md"
     echo "| Repo | Lang | Files | Nodes | Edges | Parse(s) | Failed cmds |"
     echo "|---|---|---|---|---|---|---|"
     for entry in "${TARGETS[@]}"; do
-        IFS='|' read -r slug url lang file_glob mem <<< "$entry"
+        IFS='|' read -r slug url lang file_glob mem extra_excludes <<< "$entry"
         local_report="$REPORTS_DIR/$slug.md"
         [[ -f "$local_report" ]] || continue
-        local_files=$(grep -m1 'files_parsed:' "$local_report" | awk '{print $NF}')
-        local_nodes=$(grep -m1 'total_nodes:' "$local_report" | awk '{print $NF}')
-        local_edges=$(grep -m1 'total_edges:' "$local_report" | awk '{print $NF}')
+        # Extract values after `:` and trim. Fall back to `?` when missing —
+        # don't let the label leak into the value (old bug printed
+        # `files_parsed:` literally when parse failed).
+        extract() { sed -n "s/^- $1: \(.*\)$/\1/p" "$local_report" | head -1; }
+        local_files=$(extract files_parsed); [[ -z "$local_files" ]] && local_files='?'
+        local_nodes=$(extract total_nodes);  [[ -z "$local_nodes" ]] && local_nodes='?'
+        local_edges=$(extract total_edges);  [[ -z "$local_edges" ]] && local_edges='?'
         local_parse_dur=$(grep -m1 '| parse |' "$local_report" | awk -F'|' '{gsub(/ /,"",$4); print $4}')
         # Count rows where exit != 0 and != skip
         local_failed=$(awk -F'|' '/^\| (parse|analyze|context_|diff|search|communities|flows|update) /{gsub(/ /,"",$3); if ($3 != "0" && $3 != "skip") count++} END {print count+0}' "$local_report")
