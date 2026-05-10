@@ -1131,6 +1131,77 @@ describe('extractGeneric – Kotlin', () => {
         const testFunc = graph.tests.find((t) => t.name === 'testGetName');
         expect(testFunc).toBeDefined();
     });
+
+    test('Kotlin primary ctor `val`/`var` params → diMap (idiomatic Kotlin)', async () => {
+        // The dominant Kotlin DI pattern: plain class with val/var primary
+        // ctor params, no annotation. Captures Koin and manual ctor injection.
+        const code = [
+            'class UserService(val repo: UserRepository, var logger: Logger) {',
+            '    fun list() = repo.findAll()',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+    });
+
+    test('Kotlin primary ctor params WITHOUT val/var are NOT diMap entries', async () => {
+        // `class Foo(repo: Repo)` — repo is ctor-local, not a property. Adding
+        // it to diMap would let unrelated method-body resolution incorrectly
+        // pick it up; we explicitly skip such params.
+        const code = ['class UserService(repo: UserRepository) {', '    private val r = repo', '}'].join('\n');
+        const fp = '/virt/UserService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap?.get('repo')).toBeUndefined();
+    });
+
+    test('Spring @Service on Kotlin class → primary ctor params injected', async () => {
+        // Kotlin reuses Java's Spring stereotypes verbatim. The class-level
+        // annotation gates `@Service` + single primary ctor → all params
+        // become diMap entries (independent of val/var, by stereotype rule).
+        const code = [
+            '@Service',
+            'class UserService(private val repo: UserRepository, val logger: Logger) {',
+            '    fun list() = repo.findAll()',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+        expect(diMap!.get('logger')).toBe('Logger');
+    });
+
+    test('Hilt @HiltViewModel on Kotlin class → primary ctor injected', async () => {
+        const code = [
+            '@HiltViewModel',
+            'class UserVM @Inject constructor(val repo: UserRepository) {',
+            '    fun load() = repo.findAll()',
+            '}',
+        ].join('\n');
+        const fp = '/virt/UserVM.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('repo')).toBe('UserRepository');
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -1439,14 +1510,34 @@ describe('new fields – Kotlin', () => {
         expect(diMap!.get('logger')).toBe('Logger');
     });
 
-    test('primary constructor without @Inject does NOT populate diMap', async () => {
+    test('primary constructor val/var params populate diMap (idiomatic Kotlin)', async () => {
+        // Behavior change: bare `val`/`var` primary ctor params populate
+        // diMap even without `@Inject`, mirroring Java's bare-typed-fields
+        // decision. Catches Koin and manual ctor injection where annotations
+        // aren't present. Params WITHOUT val/var stay excluded (test below).
         const code = ['class OtherService(private val plain: NotInjected) { }'].join('\n');
         const fp = '/virt/OtherService.kt';
         const root = await parseAsync('kotlin', code);
         const graph = emptyGraph();
         extractFromFile(root, fp, 'kotlin', new Set(), graph);
 
-        expect(graph.diMaps.get(fp)).toBeUndefined();
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap).toBeDefined();
+        expect(diMap!.get('plain')).toBe('NotInjected');
+    });
+
+    test('primary constructor params without val/var stay out of diMap', async () => {
+        // `class Foo(plain: NotInjected)` — `plain` is ctor-local, not a
+        // property. We deliberately skip these to avoid false positives
+        // when method bodies reference unrelated names that happen to match.
+        const code = ['class OtherService(plain: NotInjected) { }'].join('\n');
+        const fp = '/virt/OtherService.kt';
+        const root = await parseAsync('kotlin', code);
+        const graph = emptyGraph();
+        extractFromFile(root, fp, 'kotlin', new Set(), graph);
+
+        const diMap = graph.diMaps.get(fp);
+        expect(diMap?.get('plain')).toBeUndefined();
     });
 
     test('field.method() and this.field.method() set diField', async () => {

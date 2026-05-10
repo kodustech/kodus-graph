@@ -585,6 +585,64 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
     return selfAttrs;
 }
 
+/**
+ * Collect module-level bindings: `db = Database()`, `logger = getLogger(...)`,
+ * `client: HttpClient = ...`. Django/FastAPI codebases lean heavily on this
+ * pattern (singletons defined at import time), so without it bare receivers
+ * like `db.query(...)` at function scope fall through to cascade.
+ *
+ * We walk only direct children of the module root; nested assignments inside
+ * functions/classes are already covered by `collectPythonBindings`.
+ *
+ * Rules mirror the function-local pass: typed annotation wins, then PascalCase
+ * constructor, then `@CALLEE:` deferred marker for lowercase factories. First
+ * binding wins (no flow-sensitive tracking).
+ */
+function collectPythonModuleBindings(root: SgNode): Map<string, string> {
+    const bindings = new Map<string, string>();
+    for (const stmt of root.children()) {
+        if (stmt.kind() !== 'expression_statement') {
+            continue;
+        }
+        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+        if (!assign) {
+            continue;
+        }
+        const kids = assign.children();
+        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        if (!lhs) {
+            continue;
+        }
+        const name = lhs.text();
+        if (bindings.has(name)) {
+            continue;
+        }
+        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        if (typeNode) {
+            const typeName = typeNameFromTypeNode(typeNode);
+            if (typeName) {
+                bindings.set(name, typeName);
+            }
+            continue;
+        }
+        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        if (!rhs) {
+            continue;
+        }
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        if (!fnIdent) {
+            continue;
+        }
+        const ctor = fnIdent.text();
+        if (isLikelyClassName(ctor)) {
+            bindings.set(name, ctor);
+            continue;
+        }
+        bindings.set(name, `@CALLEE:${ctor}`);
+    }
+    return bindings;
+}
+
 function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
 
@@ -595,6 +653,10 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
     for (const fn of root.findAll({ rule: { kind: 'function_definition' } })) {
         fnScopes.push({ node: fn, bindings: collectPythonBindings(fn) });
     }
+
+    // Module-level bindings (consulted last as a fallback for bare receivers
+    // that no enclosing function scope explains).
+    const moduleBindings = collectPythonModuleBindings(root);
 
     // Collect per-class self.attr → type maps for `self.X.Y()` resolution.
     const classScopes: { node: SgNode; selfAttrs: Map<string, string> }[] = [];
@@ -663,6 +725,12 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
                     typeName = bindings.get(receiverName);
                     bestSize = size;
                 }
+            }
+            // Module-scope fallback: when no enclosing function binds the
+            // name, consult module-level assignments (`db = Database()`).
+            // This is what unlocks Django/FastAPI receiver-tier resolution.
+            if (!typeName && moduleBindings.has(receiverName)) {
+                typeName = moduleBindings.get(receiverName);
             }
             // Static / classmethod call heuristic: PascalCase receiver with no
             // binding match — `Logger.warn(...)` → receiverType='Logger'.

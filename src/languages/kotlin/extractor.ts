@@ -36,7 +36,44 @@ const KOTLIN_BRANCH_KINDS = [
 
 const DI_ANNOTATION_NAMES = new Set(['Inject', 'Autowired', 'Resource']);
 
-function hasKotlinDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+// Class-level annotations that mark a Kotlin type as a managed bean. Each of
+// these triggers the same single-primary-ctor implicit injection rule we use
+// for Java Spring 4.3+ — when the class is annotated, every val/var primary
+// ctor param is auto-injected. Covers Spring (Kotlin reuses Java's stereotype
+// annotations directly), Jakarta CDI, Dagger/Hilt module entry points, and
+// Micronaut. Koin doesn't annotate classes (DI lives in module DSL), so for
+// Koin we fall through to the val/var-class-parameter heuristic below.
+const KOTLIN_DI_STEREOTYPE_NAMES = new Set([
+    // Spring (Kotlin reuses Java annotations directly)
+    'Service',
+    'Component',
+    'Repository',
+    'Controller',
+    'RestController',
+    'Configuration',
+    // Hilt / Dagger
+    'AndroidEntryPoint',
+    'HiltAndroidApp',
+    'HiltViewModel',
+    'HiltWorker',
+    'Module',
+    // Jakarta CDI
+    'ApplicationScoped',
+    'RequestScoped',
+    'SessionScoped',
+    'Dependent',
+    // Micronaut
+    'Singleton',
+    'Prototype',
+    'Context',
+]);
+
+function annotationLastSegment(c: SgNode): string {
+    const head = c.text().split('(')[0].trim().replace(/^@/, '');
+    return head.split('.').pop() ?? '';
+}
+
+function hasKotlinAnnotationFrom(modifiersNode: SgNode | undefined, names: ReadonlySet<string>): boolean {
     if (!modifiersNode) {
         return false;
     }
@@ -44,13 +81,43 @@ function hasKotlinDIAnnotation(modifiersNode: SgNode | undefined): boolean {
         if (c.kind() !== 'annotation') {
             continue;
         }
-        const head = c.text().split('(')[0].trim().replace(/^@/, '');
-        const last = head.split('.').pop() ?? '';
-        if (DI_ANNOTATION_NAMES.has(last)) {
+        if (names.has(annotationLastSegment(c))) {
             return true;
         }
     }
     return false;
+}
+
+function hasKotlinDIAnnotation(modifiersNode: SgNode | undefined): boolean {
+    return hasKotlinAnnotationFrom(modifiersNode, DI_ANNOTATION_NAMES);
+}
+
+function hasKotlinStereotypeAnnotation(modifiersNode: SgNode | undefined): boolean {
+    return hasKotlinAnnotationFrom(modifiersNode, KOTLIN_DI_STEREOTYPE_NAMES);
+}
+
+/**
+ * Test whether a Kotlin `class_parameter` node carries `val` or `var` —
+ * meaning it doubles as a property and is accessible from method bodies.
+ * Plain `(repo: Repo)` (no val/var) is ctor-local and is intentionally
+ * excluded from DI bindings.
+ */
+function isKotlinPropertyClassParameter(cp: SgNode): boolean {
+    return cp.children().some((c) => c.kind() === 'binding_pattern_kind');
+}
+
+/**
+ * Find the user_type node carrying the parameter's declared type. Walks
+ * children directly so generic types like `List<Foo>` are surfaced; the
+ * inner `type_identifier` is preferred when present.
+ */
+function kotlinParamTypeName(cp: SgNode): string | undefined {
+    const userType = cp.children().find((c) => c.kind() === 'user_type');
+    if (!userType) {
+        return undefined;
+    }
+    const ti = userType.children().find((c) => c.kind() === 'type_identifier');
+    return ti?.text() ?? userType.text();
 }
 
 /**
@@ -511,29 +578,50 @@ export const kotlinExtractors: LanguageExtractors = {
             }
         }
 
-        // Constructor injection: `class Foo @Inject constructor(val a: A, val b: B)` —
-        // every `class_parameter` becomes a DI binding. In Kotlin a class parameter
-        // with `val`/`var` doubles as a property, so referencing `a.x()` from a
-        // method threads through diMap.
+        // Constructor injection: covers three patterns with one walk:
+        //   1. Explicit `@Inject constructor(...)` (Hilt/Dagger).
+        //   2. Class-level stereotype annotation (`@Service`, `@HiltViewModel`,
+        //      `@Singleton`, …) on a class with a single primary ctor — Spring
+        //      Kotlin and Hilt's dominant pattern.
+        //   3. Bare `val`/`var` class params — the standard Kotlin idiom.
+        //      In Kotlin a class_parameter with val/var doubles as a property,
+        //      so it's accessible from any method body; safe to bind even
+        //      without DI annotations (mirrors Java's "all bare typed fields"
+        //      decision in commit 1e9bb8d). Catches Koin and manual ctor DI.
+        // Params WITHOUT val/var are ctor-local and intentionally skipped —
+        // they cannot be referenced from method bodies, so adding them as DI
+        // bindings would introduce false positives.
         for (const pc of root.findAll({ rule: { kind: 'primary_constructor' } })) {
-            const mods = pc.children().find((c) => c.kind() === 'modifiers');
-            if (!hasKotlinDIAnnotation(mods)) {
-                continue;
+            const ctorMods = pc.children().find((c) => c.kind() === 'modifiers');
+            const explicitDI = hasKotlinDIAnnotation(ctorMods);
+            // Stereotype check — walk to enclosing class and check its modifiers.
+            let stereotypeDI = false;
+            if (!explicitDI) {
+                const enclosingClass = pc.ancestors().find((a) => {
+                    const k = String(a.kind());
+                    return k === 'class_declaration' || k === 'object_declaration';
+                });
+                if (enclosingClass) {
+                    const classMods = enclosingClass.children().find((c) => c.kind() === 'modifiers');
+                    stereotypeDI = hasKotlinStereotypeAnnotation(classMods);
+                }
             }
             for (const cp of pc.children()) {
                 if (cp.kind() !== 'class_parameter') {
+                    continue;
+                }
+                // val/var is always sufficient on its own; explicit/stereotype
+                // gates only matter for params without val/var (rare in practice).
+                if (!explicitDI && !stereotypeDI && !isKotlinPropertyClassParameter(cp)) {
                     continue;
                 }
                 const name = cp
                     .children()
                     .find((c) => c.kind() === 'simple_identifier')
                     ?.text();
-                const type = cp
-                    .children()
-                    .find((c) => c.kind() === 'user_type')
-                    ?.text();
-                if (name && type) {
-                    result.diEntries.push({ fieldName: name, typeName: type });
+                const typeName = kotlinParamTypeName(cp);
+                if (name && typeName) {
+                    result.diEntries.push({ fieldName: name, typeName });
                 }
             }
         }
@@ -646,6 +734,28 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
         }
         if (typeName) {
             bindings.set(name, typeName);
+        }
+    }
+    // Primary-ctor val/var class params seed bindings so bare `repo.find()`
+    // inside method bodies resolves at the receiver tier (0.95). Without
+    // this, every Kotlin class with the dominant `class Foo(val repo: Repo)`
+    // shape was falling through to cascade for member calls on `repo`.
+    for (const pc of root.findAll({ rule: { kind: 'primary_constructor' } })) {
+        for (const cp of pc.children()) {
+            if (cp.kind() !== 'class_parameter') {
+                continue;
+            }
+            if (!isKotlinPropertyClassParameter(cp)) {
+                continue;
+            }
+            const name = cp
+                .children()
+                .find((c: SgNode) => c.kind() === 'simple_identifier')
+                ?.text();
+            const typeName = kotlinParamTypeName(cp);
+            if (name && typeName) {
+                bindings.set(name, typeName);
+            }
         }
     }
     // Function/method parameters with explicit types — `fun handler(repo: Repo)` —
