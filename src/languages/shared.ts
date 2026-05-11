@@ -78,11 +78,21 @@ export function hasTestAnnotation(node: SgNode, annotationKind: string, names: s
         return names.some((name) => text.includes(name));
     }
 
-    // Check previous siblings for annotation nodes
+    // Check previous siblings for annotation nodes. Same break-early
+    // discipline as extractDecorators — annotations come consecutively
+    // immediately before the declaration; once we hit a non-annotation
+    // (the previous sibling declaration, etc.) there can be none above.
+    // Without the break this is O(siblings) per call → O(M^2) on dense
+    // class bodies (Spring-boot autoconfig).
     for (const sibling of node.prevAll()) {
-        if (sibling.kind() === annotationKind && textMatchesAnnotation(sibling.text())) {
+        const sk = String(sibling.kind());
+        if (sk === annotationKind && textMatchesAnnotation(sibling.text())) {
             return true;
         }
+        if (sk === annotationKind || sk === 'comment' || sk === 'line_comment' || sk === 'block_comment') {
+            continue;
+        }
+        break;
     }
 
     // Check inside modifiers or attribute_list children of the function node
@@ -184,18 +194,41 @@ export function extractDecorators(node: SgNode, decoratorKinds: string[]): strin
         return decorators;
     }
 
-    // Check previous siblings (TS/Python decorators come before the declaration)
+    // Check previous siblings (TS/Python decorators come before the declaration).
+    //
+    // Critical perf note: `prevAll()` returns EVERY preceding sibling in the
+    // parent's child list — for the Nth function in a class body, that's N-1
+    // siblings. Iterating them all turned this helper into the dominant
+    // O(M^2) hot path for any file with many sibling declarations (Spring-boot
+    // autoconfig classes with 500+ methods spent ~80% of extract time here).
+    //
+    // Decorators are syntactically *consecutive* immediately before the
+    // declaration — once we hit a non-decorator (the previous declaration,
+    // a comment, etc.) there can be no more decorators above. Break early.
+    const decoratorKindSet = new Set(decoratorKinds);
     for (const sib of node.prevAll()) {
-        if (decoratorKinds.includes(String(sib.kind()))) {
+        if (decoratorKindSet.has(String(sib.kind()))) {
             decorators.push(sib.text());
+            continue;
         }
+        // Not a decorator AND not whitespace/comment — done.
+        const k = String(sib.kind());
+        if (k === 'comment' || k === 'line_comment' || k === 'block_comment') {
+            continue;
+        }
+        break;
     }
 
-    // Check parent for decorated_definition (Python) or annotation containers
+    // Check parent for `decorated_definition` (Python's wrapper kind for
+    // `@decorator\ndef foo(): ...`). Only fires when the parent IS that
+    // wrapper — otherwise the parent is a class_body / declaration_list
+    // with O(siblings) children, and walking all of them per node turns
+    // this into the dominant O(M^2) hot path on dense files (Spring-boot
+    // autoconfig: 500+ methods in a single class body).
     const parent = node.parent();
-    if (parent) {
+    if (parent && String(parent.kind()) === 'decorated_definition') {
         for (const child of parent.children()) {
-            if (decoratorKinds.includes(String(child.kind())) && child !== node) {
+            if (decoratorKindSet.has(String(child.kind())) && child !== node) {
                 decorators.push(child.text());
             }
         }
