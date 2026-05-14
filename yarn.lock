@@ -220,11 +220,11 @@
   integrity sha512-yMckRzTyZ83hkk8iDFWswqSdU8tvZxspJKnYNh7JZr/zhZNOlzH13k4ecboU6MurKExCe2HUkH75pGI/O2JwGA==
 
 "@types/bun@^1.3.12":
-  version "1.3.12"
-  resolved "https://registry.npmjs.org/@types/bun/-/bun-1.3.12.tgz#2828351500d21fd656ccd1fc41579a35303df6f6"
-  integrity sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A==
+  version "1.3.14"
+  resolved "https://registry.yarnpkg.com/@types/bun/-/bun-1.3.14.tgz#bd8b440919a2587adde311a617a9204f34b8a8c2"
+  integrity sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw==
   dependencies:
-    bun-types "1.3.12"
+    bun-types "1.3.14"
 
 "@types/node@*":
   version "25.5.2"
@@ -233,10 +233,10 @@
   dependencies:
     undici-types "~7.18.0"
 
-bun-types@1.3.12:
-  version "1.3.12"
-  resolved "https://registry.npmjs.org/bun-types/-/bun-types-1.3.12.tgz#236445836414b1a328453da8b571e2ed4d257c9f"
-  integrity sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA==
+bun-types@1.3.14:
+  version "1.3.14"
+  resolved "https://registry.yarnpkg.com/bun-types/-/bun-types-1.3.14.tgz#a8fe2539fc5c59ae45f1fdc18dfc9f8d5eabbaf4"
+  integrity sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ==
   dependencies:
     "@types/node" "*"
 
@@ -244,6 +244,18 @@ commander@^14.0.3:
   version "14.0.3"
   resolved "https://registry.npmjs.org/commander/-/commander-14.0.3.tgz#425d79b48f9af82fcd9e4fc1ea8af6c5ec07bbc2"
   integrity sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==
+
+fast-check@^4.7.0:
+  version "4.8.0"
+  resolved "https://registry.yarnpkg.com/fast-check/-/fast-check-4.8.0.tgz#75687d3c8059441fee4a58a8acc9be09b85aff78"
+  integrity sha512-GOJ158CUMnN6cSahsv4+ExARvIDuzzinFjkp0E9WtiBa5zcVeLozVkWaE4IzFcc+Y48Wp1EDlUZsXRyAztQcSg==
+  dependencies:
+    pure-rand "^8.0.0"
+
+pure-rand@^8.0.0:
+  version "8.4.0"
+  resolved "https://registry.yarnpkg.com/pure-rand/-/pure-rand-8.4.0.tgz#1d9e26e9c0555486e08ae300d02796af8dec1cd0"
+  integrity sha512-IoM8YF/jY0hiugFo/wOWqfmarlE6J0wc6fDK1PhftMk7MGhVZl88sZimmqBBFomLOCSmcCCpsfj7wXASCpvK9A==
 
 typescript@^6.0.2:
   version "6.0.2"
