@@ -75,7 +75,7 @@
     "@ast-grep/lang-rust": "^0.0.7",
     "@ast-grep/lang-scala": "^0.0.7",
     "@ast-grep/lang-swift": "^0.0.8",
-    "@ast-grep/napi": "^0.42.3",
+    "@ast-grep/napi": "^0.43.0",
     "commander": "^14.0.3",
     "zod": "^4.4.3"
   },
