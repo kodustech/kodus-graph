@@ -5,7 +5,13 @@ import { computeContentHash } from '../../shared/file-hash';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
-import { locationKey, type ReceiverTypeMap } from '../receiver-types';
+import {
+    buildScopeIndex,
+    locationKey,
+    type RangedScope,
+    type ReceiverTypeMap,
+    resolveReceiverScope,
+} from '../receiver-types';
 import { extractDecorators, extractModifiers, extractThrows, isAsync, isExported } from '../shared';
 import type {
     ExtractedClass,
@@ -744,12 +750,16 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
         TS_KINDS.arrowFunction,
         TS_KINDS.functionExpression,
     ];
-    const functionRanges: { node: SgNode; bindings: Map<string, string> }[] = [];
+    const scopes: RangedScope[] = [];
     for (const kind of functionKinds) {
         for (const fn of rootNode.findAll({ rule: { kind } })) {
-            functionRanges.push({ node: fn, bindings: collectBindings(fn, true) });
+            const r = fn.range();
+            scopes.push({ start: r.start.index, end: r.end.index, bindings: collectBindings(fn, true) });
         }
     }
+    // Index the scopes once so each call resolves its innermost enclosing
+    // binding without re-scanning every scope (see buildScopeIndex).
+    const scopeIndex = buildScopeIndex(scopes);
     // For each member_expression used as a call receiver, find the innermost
     // enclosing function whose binding matches `x`. Fall back to file scope.
     for (const ce of rootNode.findAll({ rule: { kind: TS_KINDS.callExpression } })) {
@@ -762,25 +772,10 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
             continue;
         }
         const receiver = objectNode.text();
-        // Walk function ranges inside-out using node ranges as a cheap scope test.
         const callRange = ce.range();
-        let typeName: string | undefined;
-        // Prefer the innermost function — iterate in reverse of discovery order
-        // where innermost functions are encountered after their outer parent.
-        // Since ast-grep findAll is document-order, innermost shows up later
-        // ONLY for siblings; for nesting we need containment test.
-        let bestSize = Infinity;
-        for (const { node, bindings } of functionRanges) {
-            const nr = node.range();
-            if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
-                continue;
-            }
-            const size = nr.end.index - nr.start.index;
-            if (size < bestSize && bindings.has(receiver)) {
-                typeName = bindings.get(receiver);
-                bestSize = size;
-            }
-        }
+        // Innermost enclosing scope that binds the receiver (byte-identical to
+        // the previous min-size containment scan, just indexed).
+        let typeName = resolveReceiverScope(scopeIndex, callRange.start.index, callRange.end.index, receiver);
         if (!typeName) {
             typeName = fileBindings.get(receiver);
         }

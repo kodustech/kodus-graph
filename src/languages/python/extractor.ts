@@ -4,7 +4,13 @@ import { type CallExtractionConfig, extractCalls } from '../../shared/extract-ca
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
-import { locationKey, type ReceiverTypeMap } from '../receiver-types';
+import {
+    buildScopeIndex,
+    locationKey,
+    type RangedScope,
+    type ReceiverTypeMap,
+    resolveReceiverScope,
+} from '../receiver-types';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type {
     ExtractedClass,
@@ -657,20 +663,24 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
     // Collect (function node, bindings) pairs for all function scopes.
     // Python's tree-sitter grammar uses `function_definition` for both sync
     // and async (the `async` keyword is a leading child, not a distinct kind).
-    const fnScopes: { node: SgNode; bindings: Map<string, string> }[] = [];
+    const fnScopeList: RangedScope[] = [];
     for (const fn of root.findAll({ rule: { kind: PYTHON_KINDS.functionDefinition } })) {
-        fnScopes.push({ node: fn, bindings: collectPythonBindings(fn) });
+        const r = fn.range();
+        fnScopeList.push({ start: r.start.index, end: r.end.index, bindings: collectPythonBindings(fn) });
     }
+    const fnScopeIndex = buildScopeIndex(fnScopeList);
 
     // Module-level bindings (consulted last as a fallback for bare receivers
     // that no enclosing function scope explains).
     const moduleBindings = collectPythonModuleBindings(root);
 
     // Collect per-class self.attr → type maps for `self.X.Y()` resolution.
-    const classScopes: { node: SgNode; selfAttrs: Map<string, string> }[] = [];
+    const classScopeList: RangedScope[] = [];
     for (const cls of root.findAll({ rule: { kind: PYTHON_KINDS.classDefinition } })) {
-        classScopes.push({ node: cls, selfAttrs: collectPythonSelfAttrs(cls) });
+        const r = cls.range();
+        classScopeList.push({ start: r.start.index, end: r.end.index, bindings: collectPythonSelfAttrs(cls) });
     }
+    const classScopeIndex = buildScopeIndex(classScopeList);
 
     // For each method call (`call` whose function is an `attribute` with an
     // identifier receiver), find the innermost enclosing function scope and
@@ -694,18 +704,7 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
             const innerAttrIds = innerKids.filter((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
             if (innerRecv && innerRecv.text() === 'self' && innerAttrIds.length >= 2) {
                 const attrName = innerAttrIds[1]!.text();
-                let bestSize = Infinity;
-                for (const { node, selfAttrs } of classScopes) {
-                    const nr = node.range();
-                    if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
-                        continue;
-                    }
-                    const size = nr.end.index - nr.start.index;
-                    if (size < bestSize && selfAttrs.has(attrName)) {
-                        typeName = selfAttrs.get(attrName);
-                        bestSize = size;
-                    }
-                }
+                typeName = resolveReceiverScope(classScopeIndex, callRange.start.index, callRange.end.index, attrName);
             }
         }
 
@@ -722,18 +721,7 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
             if (receiverName === 'self') {
                 continue;
             }
-            let bestSize = Infinity;
-            for (const { node, bindings } of fnScopes) {
-                const nr = node.range();
-                if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
-                    continue;
-                }
-                const size = nr.end.index - nr.start.index;
-                if (size < bestSize && bindings.has(receiverName)) {
-                    typeName = bindings.get(receiverName);
-                    bestSize = size;
-                }
-            }
+            typeName = resolveReceiverScope(fnScopeIndex, callRange.start.index, callRange.end.index, receiverName);
             // Module-scope fallback: when no enclosing function binds the
             // name, consult module-level assignments (`db = Database()`).
             // This is what unlocks Django/FastAPI receiver-tier resolution.
