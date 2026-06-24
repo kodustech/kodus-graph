@@ -1,12 +1,21 @@
 # Next Steps
 
-State snapshot **2026-05-01**: 32 commits ahead of `origin/main`, 1155 tests passing, 0 warnings, schema v2.0 enforced, working tree clean. Ready for `git push` and v0.4.0 release.
+State snapshot **2026-06-24** (v0.5.0): merged to `main`, **1218 tests passing**,
+`@ast-grep/napi` 0.44, test gate stable (the fs-timeout flake is fixed). The
+"grammar-drift guard" release shipped: 14 per-language `kinds.ts` modules +
+sanity tests, dead cross-language code removed, the `outline` command (with
+cross-file CALLS/blast-radius enrichment), a ~20% receiver-type speedup, and a
+single-package-manager (Bun) toolchain. See `CHANGELOG.md` `[0.5.0]` for the
+full list.
 
-This document tracks the current session's deliveries, validation results on real repos, and what remains within (and beyond) the syntactic ast-grep + tree-sitter approach.
+This document tracks what remains within (and beyond) the syntactic ast-grep +
+tree-sitter approach. The "Remaining work" and "Priority sequence" sections
+below are the live roadmap; the "Shipped" / "Real-repo validation" sections are
+the historical record from the v0.4.0 session.
 
 ---
 
-## Shipped this session
+## Shipped (v0.4.0 session — historical)
 
 ### Architectural / refactor
 - Consolidated extension-to-language mapping under `src/languages/language-of-file.ts` (`a08c8de`)
@@ -44,7 +53,7 @@ This document tracks the current session's deliveries, validation results on rea
 
 ---
 
-## Real-repo validation (2026-04-30)
+## Real-repo validation (2026-04-30 — v0.4.0 session, historical)
 
 Three repos representing different language ecosystems were re-validated after this session's work:
 
@@ -65,7 +74,7 @@ Reports archived in `docs/language-validation/` (sentry, kotlinx-rerun, keycloak
 
 ---
 
-## Immediate next actions
+## Immediate next actions (v0.4.0 session — historical, done)
 
 ### 1. Push to origin
 
@@ -114,17 +123,30 @@ These are the places where the docs lag behind the code:
 - ✅ `docs/language-support-matrix.md` — auto-generated; current after `bun run docs:matrix`.
 - ✅ `README.md` Features + Schema + Confidence — refreshed this commit.
 - ⏳ `docs/SCHEMA.md` — full payload reference (input/output for every command). Not present today; consumers rely on TypeScript interfaces in `src/graph/types.ts`.
-- ⏳ `CHANGELOG.md` — does not exist. Useful before publishing v0.4.0.
+- ✅ `CHANGELOG.md` — created; `[0.5.0]` documents this release (Keep a Changelog format).
 - ⏳ Cookbook / recipes — "how to read tier_distribution", "how to filter by confidence", "how to detect blast radius hotspots". Currently scattered across README sections.
 
 ---
 
-## Priority sequence
+## Priority sequence (from v0.5.0)
 
-1. **Push 32 commits to origin** (15 min).
-2. **Draft v0.4.0 release notes** from `git log` (30 min). Decide whether to ship CHANGELOG.md.
-3. **Run on a fresh production repo** (1–2h). Compare `tier_distribution` and `ambig ratio` against the previous v0.3.x output. Look for surprises in real PRs.
-4. **Sit with it for a week** of LLM review usage. Do prompts feel more grounded? Does the AI reviewer cite resolved targets correctly? Are the `tier` annotations meaningful in downstream tooling?
-5. **Decide between paths from data**: cross-file aggregation refactor (clear win for TS/Java) vs Kotlin DSL catalog (manual maintenance) vs polish (CHANGELOG, docs/SCHEMA.md, examples) vs whatever surfaces from step 3.
+1. **Publish v0.5.0.** `main` is at 0.5.0 with the CHANGELOG, but npm still shows
+   an older release — close the publish gap so the `outline` command and the
+   grammar-drift guards are actually consumable.
+2. **Per-class diMap scoping (Java)** — the cheapest remaining resolver win
+   (~2h, listed under "Remaining work"); removes the same-file field-name
+   collision.
+3. **Verify, then maybe do, cross-file value bindings (TS/Python).** The
+   `@IMPORT:` / `valueBindings` deferred mechanism already exists — confirm how
+   much of the "Remaining work" item is already shipped before planning it.
+4. **ESQuery-selector pilot.** napi 0.44 unlocks `kind: 'export_statement >
+   function_declaration'`, `:has`, `:not`, `:is`, `:nth-child` in the JS rule
+   API. Pilot on 1–2 verbose extractors (TS heritage, Java DI) and **measure**
+   clarity vs. performance before adopting — manual walks are sometimes faster.
+5. **Field-of-field chains** (`this.config.db.connect()`, ~4h) — once the above
+   land and real-repo data says it's worth it.
+6. **Run on a fresh production repo** and compare `tier_distribution` / ambig
+   ratio against v0.4.x. Let real LLM-review usage, not speculation, pick the
+   next resolver investment.
 
-Don't rush 4. A week of real use beats a week of speculation.
+Don't rush 6. A week of real use beats a week of speculation.

@@ -5,6 +5,67 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-24
+
+The "grammar-drift guard" release. Per-language extractors no longer carry
+tree-sitter kind strings as scattered literals — a `@ast-grep/lang-*` bump
+that renamed a node kind used to break extraction silently. New `outline`
+command, a measured receiver-type speedup, and a now-stable test gate.
+
+### Highlights
+
+- **New `kodus-graph outline` command** — a compact structural outline of a
+  file's symbols (signature, line range, flags), parse-on-demand and
+  local-only. With `--graph` it enriches each symbol with cross-file CALLS
+  fan-in/fan-out, and with `--blast` the blast-radius size — the impact view
+  a purely syntactic outline can't produce.
+- **Grammar-drift guards for all 14 languages** — every node kind a
+  per-language extractor matches now lives in a typed `kinds.ts` (`as const`)
+  with a sanity test that fails if the grammar stops emitting it. A typo is a
+  compile error; a grammar rename is a red test, not a silently empty graph.
+- **`@ast-grep/napi` 0.42 → 0.44** on a single package manager (Bun); the
+  duplicate, out-of-sync `yarn.lock` is gone.
+
+### Added
+
+- **`outline` command** — `--files`/`--dir`, `--format text|json`,
+  `--exported-only`, `--graph` (CALLS fan-in/out), `--blast` (blast-radius
+  size), `--max-depth`, `--out -`. Methods nest under their declaring class.
+
+### Changed — Internal / anti-fragility
+
+- **Centralized tree-sitter kinds (14 languages)** — each extractor consumes a
+  dedicated `src/languages/<lang>/kinds.ts` (and `*_FIELDS` where field names
+  are used). The shared `LANG_KINDS` map is deleted.
+- **Dead cross-language code removed** — the kinds-sanity guards exposed
+  branches copied between extractors that the grammar can never emit (Rust
+  `impl`/`use_tree`/`scoped_identifier`, JS `string_fragment`, C++
+  `namespace_name`, dart `default_formal_parameter`, python
+  `async_function_definition`, ts `nested_identifier`, plus C#'s
+  `type_identifier`/`parameter_modifier`). Each verified absent from the
+  grammar's `node-types.json`; behavior-identical.
+- **Shared `stripImportKeyword` helper** — the byte-identical import text
+  fallback, deduplicated across 8 C-style extractors.
+- **`java/kinds.ts` keys to camelCase** — consistent with the other 13.
+
+### Performance
+
+- **Receiver-type scope index** — replaced the per-call O(calls × scopes)
+  containment scan (TS + Python) with a precomputed scope index: an O(1)
+  `boundNames` gate plus a smallest-first early break. Byte-identical output,
+  ~20% faster receiver-type inference (measured on a 2500-file sample;
+  concentrated on the large files that drove the quadratic).
+- **`outline` impact map** — container lookup is O(1) (Map by name) and
+  `buildImpactMap` scores only the outlined nodes, not the whole graph
+  (avoids O(V × E) / OOM with `--blast`).
+
+### Fixed
+
+- **Flaky test gate** — full `bun test` runs intermittently failed (~1-in-5)
+  at a 5000ms filesystem setup/cleanup timeout; Bun 1.3.x doesn't honor the
+  `bunfig.toml` `[test] timeout`. Set `--timeout 30000` via the `test`
+  script. 12/12 consecutive green runs.
+
 ## [0.4.0] — 2026-05-01
 
 The "honest receiver tier" release. Two latent extractor bugs were silently
