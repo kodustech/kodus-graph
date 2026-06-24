@@ -1,6 +1,5 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { log } from '../../shared/logger';
 import { registerCapabilities } from '../capabilities';
@@ -9,6 +8,7 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash } from '../shared';
 import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResult, LanguageExtractors } from '../spec';
+import { RUBY_FIELDS, RUBY_KINDS } from './kinds';
 
 // Branch kinds for Ruby cyclomatic complexity.
 // Ruby's grammar reuses bare keywords (`if`, `when`, etc.) as BOTH named
@@ -17,19 +17,19 @@ import type { ExtractedClass, ExtractedFunction, ExtractedImport, ExtractionResu
 // `case` is excluded. `elsif` is a named sibling inside `if`, so both are
 // listed. Modifiers (`x if cond`) have their own kind (`if_modifier`).
 const RUBY_BRANCH_KINDS = [
-    'if',
-    'elsif',
-    'unless',
-    'if_modifier',
-    'unless_modifier',
-    'while',
-    'until',
-    'while_modifier',
-    'until_modifier',
-    'for',
-    'when',
-    'rescue',
-    'conditional',
+    RUBY_KINDS.if,
+    RUBY_KINDS.elsif,
+    RUBY_KINDS.unless,
+    RUBY_KINDS.ifModifier,
+    RUBY_KINDS.unlessModifier,
+    RUBY_KINDS.while,
+    RUBY_KINDS.until,
+    RUBY_KINDS.whileModifier,
+    RUBY_KINDS.untilModifier,
+    RUBY_KINDS.for,
+    RUBY_KINDS.when,
+    RUBY_KINDS.rescue,
+    RUBY_KINDS.conditional,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,6 @@ const RUBY_BRANCH_KINDS = [
 // ---------------------------------------------------------------------------
 
 function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
-    const kinds = LANG_KINDS.ruby;
     const seen = new Set<string>();
 
     const classes: ExtractedClass[] = [];
@@ -45,14 +44,14 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
     const imports: ExtractedImport[] = [];
 
     // ── Classes ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.class } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: RUBY_KINDS.classDeclaration } })) {
+        const name = node.field(RUBY_FIELDS.name)?.text();
         if (!name || seen.has(`c:${fp}:${name}`)) {
             continue;
         }
         seen.add(`c:${fp}:${name}`);
 
-        const superclass = node.field('superclass')?.text() || '';
+        const superclass = node.field(RUBY_FIELDS.superclass)?.text() || '';
         classes.push({
             name,
             line_start: node.range().start.line,
@@ -68,8 +67,8 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
     }
 
     // ── Modules ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.module } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: RUBY_KINDS.module } })) {
+        const name = node.field(RUBY_FIELDS.name)?.text();
         if (!name || seen.has(`c:${fp}:${name}`)) {
             continue;
         }
@@ -89,9 +88,9 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
     }
 
     // ── Methods (regular + singleton) ──
-    for (const methodKind of [kinds.method, kinds.singletonMethod]) {
+    for (const methodKind of [RUBY_KINDS.method, RUBY_KINDS.singletonMethod]) {
         for (const node of rootNode.findAll({ rule: { kind: methodKind } })) {
-            const name = node.field('name')?.text();
+            const name = node.field(RUBY_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -103,14 +102,14 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
 
             const classAncestor = node
                 .ancestors()
-                .find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module);
-            const className = classAncestor?.field('name')?.text() || '';
+                .find((a: SgNode) => a.kind() === RUBY_KINDS.classDeclaration || a.kind() === RUBY_KINDS.module);
+            const className = classAncestor?.field(RUBY_FIELDS.name)?.text() || '';
 
             functions.push({
                 name,
                 line_start: line,
                 line_end: node.range().end.line,
-                params: node.field('parameters')?.text() || '()',
+                params: node.field(RUBY_FIELDS.parameters)?.text() || '()',
                 returnType: '',
                 kind: className ? 'Method' : 'Function',
                 className,
@@ -218,13 +217,15 @@ function extractRubyDirect(rootNode: SgNode, fp: string): ExtractionResult {
 
 /** Ruby-specific call extraction config for shared extractCalls(). */
 function createRubyCallConfig(): CallExtractionConfig {
-    const kinds = LANG_KINDS.ruby;
     return {
         selfPrefixes: ['self.'],
         superPrefixes: ['super'],
         findEnclosingClass: (node) =>
-            node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.module) ?? null,
-        getParentClass: (classNode) => classNode.field('superclass')?.text(),
+            node
+                .ancestors()
+                .find((a: SgNode) => a.kind() === RUBY_KINDS.classDeclaration || a.kind() === RUBY_KINDS.module) ??
+            null,
+        getParentClass: (classNode) => classNode.field(RUBY_FIELDS.superclass)?.text(),
     };
 }
 
@@ -244,8 +245,8 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
     // ── call nodes: covers both paren and no-paren calls with arguments ──
     // The pattern $CALLEE($$$ARGS) only matches calls with literal parentheses.
     // This loop catches the remaining call nodes (no-paren style).
-    for (const node of rootNode.findAll({ rule: { kind: 'call' } })) {
-        const methodNode = node.field('method');
+    for (const node of rootNode.findAll({ rule: { kind: RUBY_KINDS.call } })) {
+        const methodNode = node.field(RUBY_FIELDS.method);
         const callName = methodNode?.text();
         if (!callName) {
             continue;
@@ -257,10 +258,10 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
         seenLines.add(`${callName}:${line}`);
 
         let resolveInClass: string | undefined;
-        const receiver = node.field('receiver');
+        const receiver = node.field(RUBY_FIELDS.receiver);
         if (receiver?.text() === 'self') {
             const classNode = config.findEnclosingClass(node);
-            resolveInClass = classNode?.field('name')?.text();
+            resolveInClass = classNode?.field(RUBY_FIELDS.name)?.text();
         }
 
         calls.push({
@@ -272,9 +273,9 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
     }
 
     // ── bare identifiers in body_statement: no-arg, no-paren calls (e.g., `authenticate_user`) ──
-    for (const node of rootNode.findAll({ rule: { kind: 'identifier' } })) {
+    for (const node of rootNode.findAll({ rule: { kind: RUBY_KINDS.identifier } })) {
         const parent = node.parent();
-        if (!parent || parent.kind() !== 'body_statement') {
+        if (!parent || parent.kind() !== RUBY_KINDS.bodyStatement) {
             continue;
         }
         const callName = node.text();

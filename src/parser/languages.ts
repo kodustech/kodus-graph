@@ -40,22 +40,4 @@ export function isTypeScriptLike(lang: Lang | string): boolean {
     return lang === Lang.TypeScript || lang === Lang.Tsx || lang === Lang.JavaScript;
 }
 
-// ---------------------------------------------------------------------------
-// LANG_KINDS — AST node kind strings used by per-language extractors.
-// Only the ruby extractor still references this; every other language
-// declares its kinds in a dedicated `languages/<lang>/kinds.ts` module (see
-// typescript/kinds.ts, python/kinds.ts, dart/kinds.ts). Ruby is pending the
-// same migration.
-// ---------------------------------------------------------------------------
-
-export const LANG_KINDS: Record<string, Record<string, string>> = {
-    ruby: {
-        class: 'class',
-        method: 'method',
-        module: 'module',
-        singletonMethod: 'singleton_method',
-        call: 'call',
-    },
-};
-
 export { Lang };
