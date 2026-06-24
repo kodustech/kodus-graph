@@ -1,5 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite, RawGraph } from '../graph/types';
+import { diScopedKey } from '../shared/qualified-name';
 import type { LanguageKey } from './language-of-file';
 import type { ReceiverTypeMap } from './receiver-types';
 import { createLanguageRegistry } from './registry';
@@ -247,7 +248,15 @@ export function extractAll(root: SgRoot, fp: string, lang: string, seen: Set<str
             graph.diMaps.set(fp, diMap);
         }
         for (const di of result.diEntries) {
+            // Bare field key — the file-scoped fallback (unchanged behavior).
             diMap.set(di.fieldName, di.typeName);
+            // Per-class key — disambiguates same-named fields across two classes
+            // in the same file. Only written when the extractor threads the
+            // declaring class; the resolver prefers it when it knows the
+            // call's enclosing class.
+            if (di.className) {
+                diMap.set(diScopedKey(di.className, di.fieldName), di.typeName);
+            }
         }
     }
 
