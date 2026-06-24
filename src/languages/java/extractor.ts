@@ -14,65 +14,44 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { JAVA_FIELDS, JAVA_KINDS } from './kinds';
 
 // Branch kinds for Java cyclomatic complexity.
-// `else if` is a nested `if_statement` in the alternative — `if_statement`
-// alone suffices. `switch_label` is the case-level kind (skip the outer
-// `switch_expression` / `switch_block`). Java has both classic `for_statement`
-// and `enhanced_for_statement` (for-each) — both are decisions.
 const JAVA_BRANCH_KINDS = [
-    'if_statement',
-    'for_statement',
-    'enhanced_for_statement',
-    'while_statement',
-    'do_statement',
-    'switch_label',
-    'catch_clause',
-    'ternary_expression',
+    JAVA_KINDS.IF_STATEMENT,
+    JAVA_KINDS.FOR_STATEMENT,
+    JAVA_KINDS.ENHANCED_FOR_STATEMENT,
+    JAVA_KINDS.WHILE_STATEMENT,
+    JAVA_KINDS.DO_STATEMENT,
+    JAVA_KINDS.SWITCH_LABEL,
+    JAVA_KINDS.CATCH_CLAUSE,
+    JAVA_KINDS.TERNARY_EXPRESSION,
 ] as const;
 
 // ---------------------------------------------------------------------------
 // Import extraction helpers
 // ---------------------------------------------------------------------------
 
+// A Java `import_declaration`'s only named children are `scoped_identifier`
+// (e.g. `java.util.List`, `java.util.*` minus the wildcard), `identifier` (a
+// single-segment import), and `asterisk`. The qualified path is the
+// scoped_identifier / identifier; that's all we need.
 function extractImportModule(node: SgNode): string {
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'string' || ck === 'interpreted_string_literal' || ck === 'string_fragment') {
-            const raw = child.text();
-            return raw.replace(/^["'`]|["'`]$/g, '');
-        }
-        for (const grandchild of child.children()) {
-            const gck = grandchild.kind();
-            if (gck === 'string_fragment' || gck === 'string_content') {
-                return grandchild.text();
-            }
-        }
-    }
-
-    for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'scoped_identifier' || ck === 'scoped_type_identifier' || ck === 'qualified_name') {
+        if (child.kind() === JAVA_KINDS.SCOPED_IDENTIFIER) {
             return child.text();
         }
     }
 
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'name' || ck === 'namespace_name' || ck === 'use_tree') {
-            return child.text();
-        }
-    }
-
-    for (const child of node.children()) {
-        if (child.kind() === 'identifier' || child.kind() === 'type_identifier') {
+        if (child.kind() === JAVA_KINDS.IDENTIFIER) {
             return child.text();
         }
     }
 
     return node
         .text()
-        .replace(/^\s*(import|use|using|require)\s+/i, '')
+        .replace(/^\s*import\s+/i, '')
         .replace(/[;{}]/g, '')
         .trim();
 }
@@ -80,8 +59,7 @@ function extractImportModule(node: SgNode): string {
 function extractImportNames(node: SgNode): string[] {
     const names: string[] = [];
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'identifier' || ck === 'type_identifier' || ck === 'name') {
+        if (child.kind() === JAVA_KINDS.IDENTIFIER) {
             names.push(child.text());
         }
     }
@@ -93,24 +71,24 @@ function extractImportNames(node: SgNode): string[] {
 // ---------------------------------------------------------------------------
 
 function javaExtends(node: SgNode): string | undefined {
-    const superclass = node.children().find((c: SgNode) => c.kind() === 'superclass');
+    const superclass = node.children().find((c: SgNode) => c.kind() === JAVA_KINDS.SUPERCLASS);
     if (!superclass) {
         return undefined;
     }
-    const typeId = superclass.children().find((c: SgNode) => c.kind() === 'type_identifier');
+    const typeId = superclass.children().find((c: SgNode) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER);
     return typeId?.text();
 }
 
 function javaImplements(node: SgNode): string[] {
-    const superInterfaces = node.children().find((c: SgNode) => c.kind() === 'super_interfaces');
+    const superInterfaces = node.children().find((c: SgNode) => c.kind() === JAVA_KINDS.SUPER_INTERFACES);
     if (!superInterfaces) {
         return [];
     }
-    const typeList = superInterfaces.children().find((c: SgNode) => c.kind() === 'type_list');
+    const typeList = superInterfaces.children().find((c: SgNode) => c.kind() === JAVA_KINDS.TYPE_LIST);
     const container = typeList || superInterfaces;
     return container
         .children()
-        .filter((c: SgNode) => c.kind() === 'type_identifier')
+        .filter((c: SgNode) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER)
         .map((c: SgNode) => c.text());
 }
 
@@ -118,7 +96,7 @@ function javaImplements(node: SgNode): string[] {
 // Test detection config
 // ---------------------------------------------------------------------------
 
-const ANNOTATION_KIND = 'marker_annotation';
+const ANNOTATION_KIND = JAVA_KINDS.MARKER_ANNOTATION;
 const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 
 // ---------------------------------------------------------------------------
@@ -169,7 +147,7 @@ function hasJavaAnnotationFrom(modifiersNode: SgNode | undefined, names: Readonl
     }
     for (const c of modifiersNode.children()) {
         const k = c.kind();
-        if (k !== 'marker_annotation' && k !== 'annotation') {
+        if (k !== JAVA_KINDS.MARKER_ANNOTATION && k !== JAVA_KINDS.ANNOTATION) {
             continue;
         }
         if (names.has(annotationLastSegment(c))) {
@@ -189,20 +167,20 @@ function hasJavaStereotypeAnnotation(modifiersNode: SgNode | undefined): boolean
 
 // Class declaration kinds that can host @Service / @Component etc.
 // `record_declaration` lets Java records (Java 14+) act as Spring beans too.
-const JAVA_CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration']);
+const JAVA_CLASS_DECL_KINDS = new Set<string>([JAVA_KINDS.CLASS_DECLARATION, JAVA_KINDS.RECORD_DECLARATION]);
 
 function findEnclosingJavaClass(node: SgNode): SgNode | null {
     return node.ancestors().find((a) => JAVA_CLASS_DECL_KINDS.has(String(a.kind()))) ?? null;
 }
 
 function countJavaConstructors(classNode: SgNode): number {
-    const body = classNode.field('body');
+    const body = classNode.field(JAVA_FIELDS.BODY);
     if (!body) {
         return 0;
     }
     let n = 0;
     for (const c of body.children()) {
-        if (c.kind() === 'constructor_declaration') {
+        if (c.kind() === JAVA_KINDS.CONSTRUCTOR_DECLARATION) {
             n++;
         }
     }
@@ -218,8 +196,8 @@ export const javaExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes ──────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: JAVA_KINDS.CLASS_DECLARATION } })) {
+            const name = node.field(JAVA_FIELDS.NAME)?.text();
             if (!name) {
                 continue;
             }
@@ -249,13 +227,13 @@ export const javaExtractors: LanguageExtractors = {
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
                 is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
-                decorators: extractDecorators(node, ['marker_annotation', 'annotation']),
+                decorators: extractDecorators(node, [JAVA_KINDS.MARKER_ANNOTATION, JAVA_KINDS.ANNOTATION]),
             });
         }
 
         // ── Interfaces ──────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'interface_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: JAVA_KINDS.INTERFACE_DECLARATION } })) {
+            const name = node.field(JAVA_FIELDS.NAME)?.text();
             if (!name) {
                 continue;
             }
@@ -273,8 +251,8 @@ export const javaExtractors: LanguageExtractors = {
         }
 
         // ── Enums ───────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'enum_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: JAVA_KINDS.ENUM_DECLARATION } })) {
+            const name = node.field(JAVA_FIELDS.NAME)?.text();
             if (!name) {
                 continue;
             }
@@ -291,13 +269,13 @@ export const javaExtractors: LanguageExtractors = {
         }
 
         // ── Functions / Methods / Constructors ──────────────────────────
-        const funcKinds = ['method_declaration', 'constructor_declaration'];
-        const constructorKindSet = new Set(['constructor_declaration']);
-        const methodKindSet = new Set(['method_declaration']);
+        const funcKinds = [JAVA_KINDS.METHOD_DECLARATION, JAVA_KINDS.CONSTRUCTOR_DECLARATION];
+        const constructorKindSet = new Set<string>([JAVA_KINDS.CONSTRUCTOR_DECLARATION]);
+        const methodKindSet = new Set<string>([JAVA_KINDS.METHOD_DECLARATION]);
 
         for (const funcKind of funcKinds) {
             for (const node of root.findAll({ rule: { kind: funcKind } })) {
-                const name = node.field('name')?.text();
+                const name = node.field(JAVA_FIELDS.NAME)?.text();
                 if (!name) {
                     continue;
                 }
@@ -308,10 +286,14 @@ export const javaExtractors: LanguageExtractors = {
                 // className empty even when the method is clearly inside a class.
                 const classAncestor = node.ancestors().find((a: SgNode) => {
                     const k = String(a.kind());
-                    return k === 'class_declaration' || k === 'record_declaration' || k === 'interface_declaration';
+                    return (
+                        k === JAVA_KINDS.CLASS_DECLARATION ||
+                        k === JAVA_KINDS.RECORD_DECLARATION ||
+                        k === JAVA_KINDS.INTERFACE_DECLARATION
+                    );
                 });
                 if (classAncestor) {
-                    className = classAncestor.field('name')?.text() || '';
+                    className = classAncestor.field(JAVA_FIELDS.NAME)?.text() || '';
                 }
 
                 let kind: 'Function' | 'Method' | 'Constructor';
@@ -331,10 +313,10 @@ export const javaExtractors: LanguageExtractors = {
 
                 // Java throws clause: find `throws` child and extract type names
                 const javaThrows: string[] = [];
-                const throwsClause = node.children().find((c) => String(c.kind()) === 'throws');
+                const throwsClause = node.children().find((c) => String(c.kind()) === JAVA_KINDS.THROWS);
                 if (throwsClause) {
                     for (const child of throwsClause.children()) {
-                        if (String(child.kind()) === 'type_identifier') {
+                        if (String(child.kind()) === JAVA_KINDS.TYPE_IDENTIFIER) {
                             javaThrows.push(child.text());
                         }
                     }
@@ -342,12 +324,14 @@ export const javaExtractors: LanguageExtractors = {
 
                 // Java tree-sitter exposes the return type as `type` field, not
                 // `return_type`. Constructors don't have a return type.
-                const returnTypeText = constructorKindSet.has(funcKind) ? '' : node.field('type')?.text() || '';
+                const returnTypeText = constructorKindSet.has(funcKind)
+                    ? ''
+                    : node.field(JAVA_FIELDS.TYPE)?.text() || '';
                 result.functions.push({
                     name,
                     line_start: range.line_start,
                     line_end: range.line_end,
-                    params: node.field('parameters')?.text() || '()',
+                    params: node.field(JAVA_FIELDS.PARAMETERS)?.text() || '()',
                     returnType: returnTypeText,
                     kind,
                     ast_kind: String(node.kind()),
@@ -357,7 +341,7 @@ export const javaExtractors: LanguageExtractors = {
                     isTest,
                     is_exported: isExported(name, node, { modifierKeywords: ['public'] }),
                     is_async: false,
-                    decorators: extractDecorators(node, ['marker_annotation', 'annotation']),
+                    decorators: extractDecorators(node, [JAVA_KINDS.MARKER_ANNOTATION, JAVA_KINDS.ANNOTATION]),
                     throws: javaThrows,
                     complexity: computeCyclomatic(node, JAVA_BRANCH_KINDS),
                 });
@@ -379,30 +363,34 @@ export const javaExtractors: LanguageExtractors = {
         // catches these patterns at the cost of also indexing non-DI fields —
         // which is harmless because the resolver only consults diMap when the
         // call is `this.field.method()`.
-        for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
+        for (const fd of root.findAll({ rule: { kind: JAVA_KINDS.FIELD_DECLARATION } })) {
             const typeNode = fd.children().find((c) => {
                 const k = c.kind();
-                return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+                return (
+                    k === JAVA_KINDS.TYPE_IDENTIFIER ||
+                    k === JAVA_KINDS.GENERIC_TYPE ||
+                    k === JAVA_KINDS.SCOPED_TYPE_IDENTIFIER
+                );
             });
             if (!typeNode) {
                 continue;
             }
             const typeName =
-                typeNode.kind() === 'generic_type'
+                typeNode.kind() === JAVA_KINDS.GENERIC_TYPE
                     ? typeNode
                           .children()
-                          .find((c) => c.kind() === 'type_identifier')
+                          .find((c) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER)
                           ?.text() || typeNode.text()
                     : typeNode.text();
             for (const vd of fd.children()) {
-                if (vd.kind() !== 'variable_declarator') {
+                if (vd.kind() !== JAVA_KINDS.VARIABLE_DECLARATOR) {
                     continue;
                 }
                 const ident =
-                    vd.field('name')?.text() ??
+                    vd.field(JAVA_FIELDS.NAME)?.text() ??
                     vd
                         .children()
-                        .find((c) => c.kind() === 'identifier')
+                        .find((c) => c.kind() === JAVA_KINDS.IDENTIFIER)
                         ?.text();
                 if (ident) {
                     result.diEntries.push({ fieldName: ident, typeName });
@@ -415,14 +403,14 @@ export const javaExtractors: LanguageExtractors = {
         // Spring 4.3+ also auto-injects when the enclosing class has a stereotype
         // annotation (@Service / @Component / @Repository / @Controller /
         // @RestController / @Configuration) AND exactly one constructor.
-        for (const cd of root.findAll({ rule: { kind: 'constructor_declaration' } })) {
-            const mods = cd.children().find((c) => c.kind() === 'modifiers');
+        for (const cd of root.findAll({ rule: { kind: JAVA_KINDS.CONSTRUCTOR_DECLARATION } })) {
+            const mods = cd.children().find((c) => c.kind() === JAVA_KINDS.MODIFIERS);
             const explicitDI = hasJavaDIAnnotation(mods);
             let implicitSpringDI = false;
             if (!explicitDI) {
                 const enclosing = findEnclosingJavaClass(cd);
                 if (enclosing) {
-                    const classMods = enclosing.children().find((c) => c.kind() === 'modifiers');
+                    const classMods = enclosing.children().find((c) => c.kind() === JAVA_KINDS.MODIFIERS);
                     if (hasJavaStereotypeAnnotation(classMods) && countJavaConstructors(enclosing) === 1) {
                         implicitSpringDI = true;
                     }
@@ -431,32 +419,36 @@ export const javaExtractors: LanguageExtractors = {
             if (!explicitDI && !implicitSpringDI) {
                 continue;
             }
-            const params = cd.field('parameters');
+            const params = cd.field(JAVA_FIELDS.PARAMETERS);
             if (!params) {
                 continue;
             }
             for (const p of params.children()) {
-                if (p.kind() !== 'formal_parameter') {
+                if (p.kind() !== JAVA_KINDS.FORMAL_PARAMETER) {
                     continue;
                 }
                 const typeNode = p.children().find((c) => {
                     const k = c.kind();
-                    return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+                    return (
+                        k === JAVA_KINDS.TYPE_IDENTIFIER ||
+                        k === JAVA_KINDS.GENERIC_TYPE ||
+                        k === JAVA_KINDS.SCOPED_TYPE_IDENTIFIER
+                    );
                 });
                 const ident =
-                    p.field('name')?.text() ??
+                    p.field(JAVA_FIELDS.NAME)?.text() ??
                     p
                         .children()
-                        .find((c) => c.kind() === 'identifier')
+                        .find((c) => c.kind() === JAVA_KINDS.IDENTIFIER)
                         ?.text();
                 if (!typeNode || !ident) {
                     continue;
                 }
                 const typeName =
-                    typeNode.kind() === 'generic_type'
+                    typeNode.kind() === JAVA_KINDS.GENERIC_TYPE
                         ? typeNode
                               .children()
-                              .find((c) => c.kind() === 'type_identifier')
+                              .find((c) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER)
                               ?.text() || typeNode.text()
                         : typeNode.text();
                 result.diEntries.push({ fieldName: ident, typeName });
@@ -464,7 +456,7 @@ export const javaExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'import_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: JAVA_KINDS.IMPORT_DECLARATION } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -490,29 +482,33 @@ export const javaExtractors: LanguageExtractors = {
         // Walking `method_invocation` directly captures both uniformly.
 
         const getParentClass = (classNode: SgNode): string | undefined => {
-            const sc = classNode.children().find((c) => c.kind() === 'superclass');
+            const sc = classNode.children().find((c) => c.kind() === JAVA_KINDS.SUPERCLASS);
             return sc
                 ?.children()
-                .find((c) => c.kind() === 'type_identifier')
+                .find((c) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER)
                 ?.text();
         };
 
         // Use declaration-kind names rather than substring checks — `class_body`
         // also contains "class" and would shadow the enclosing declaration.
-        const CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration', 'enum_declaration']);
+        const CLASS_DECL_KINDS = new Set<string>([
+            JAVA_KINDS.CLASS_DECLARATION,
+            JAVA_KINDS.RECORD_DECLARATION,
+            JAVA_KINDS.ENUM_DECLARATION,
+        ]);
         const findEnclosingClass = (node: SgNode): SgNode | null =>
             node.ancestors().find((a) => CLASS_DECL_KINDS.has(String(a.kind()))) ?? null;
 
         // Noise is NOT filtered here — the resolver applies it after the
         // receiver-type tier so user-domain calls survive to be resolved.
-        for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {
-            const nameNode = mi.field('name');
+        for (const mi of root.findAll({ rule: { kind: JAVA_KINDS.METHOD_INVOCATION } })) {
+            const nameNode = mi.field(JAVA_FIELDS.NAME);
             const callName = nameNode?.text();
             if (!callName) {
                 continue;
             }
 
-            const obj = mi.field('object');
+            const obj = mi.field(JAVA_FIELDS.OBJECT);
             let resolveInClass: string | undefined;
             let diField: string | undefined;
 
@@ -520,22 +516,22 @@ export const javaExtractors: LanguageExtractors = {
                 const objText = obj.text();
                 const objKind = obj.kind();
                 // `this.method()` — resolve against current class.
-                if (objKind === 'this' || objText === 'this') {
+                if (objKind === JAVA_KINDS.THIS || objText === 'this') {
                     const classNode = findEnclosingClass(mi);
-                    resolveInClass = classNode?.field('name')?.text();
-                } else if (objKind === 'super' || objText === 'super') {
+                    resolveInClass = classNode?.field(JAVA_FIELDS.NAME)?.text();
+                } else if (objKind === JAVA_KINDS.SUPER || objText === 'super') {
                     // `super.method()` — resolve against parent class.
                     const classNode = findEnclosingClass(mi);
                     if (classNode) {
                         resolveInClass = getParentClass(classNode);
                     }
-                } else if (objKind === 'field_access') {
+                } else if (objKind === JAVA_KINDS.FIELD_ACCESS) {
                     // `this.field.method()` — pick up `field` so the resolver
                     // can route through diMap to the injected concrete type.
                     const accessChildren = obj.children();
                     const base = accessChildren[0];
-                    const fieldName = obj.field('field')?.text();
-                    if (base && fieldName && (base.kind() === 'this' || base.text() === 'this')) {
+                    const fieldName = obj.field(JAVA_FIELDS.FIELD)?.text();
+                    if (base && fieldName && (base.kind() === JAVA_KINDS.THIS || base.text() === 'this')) {
                         diField = fieldName;
                     }
                 }
@@ -555,8 +551,8 @@ export const javaExtractors: LanguageExtractors = {
             // the outer's receiverType.
             let chainedFromLine: number | undefined;
             let chainedFromColumn: number | undefined;
-            if (obj?.kind() === 'method_invocation') {
-                const innerName = obj.field('name');
+            if (obj?.kind() === JAVA_KINDS.METHOD_INVOCATION) {
+                const innerName = obj.field(JAVA_FIELDS.NAME);
                 const innerR = (innerName ?? obj).range().end;
                 chainedFromLine = innerR.line;
                 chainedFromColumn = innerR.column;
@@ -579,13 +575,13 @@ export const javaExtractors: LanguageExtractors = {
 function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const lvd of root.findAll({ rule: { kind: 'local_variable_declaration' } })) {
-        const declaredType = lvd.field('type')?.text();
+    for (const lvd of root.findAll({ rule: { kind: JAVA_KINDS.LOCAL_VARIABLE_DECLARATION } })) {
+        const declaredType = lvd.field(JAVA_FIELDS.TYPE)?.text();
         for (const vd of lvd.children()) {
-            if (vd.kind() !== 'variable_declarator') {
+            if (vd.kind() !== JAVA_KINDS.VARIABLE_DECLARATOR) {
                 continue;
             }
-            const name = vd.field('name')?.text();
+            const name = vd.field(JAVA_FIELDS.NAME)?.text();
             if (!name) {
                 continue;
             }
@@ -593,18 +589,18 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
             if (declaredType && declaredType !== 'var') {
                 typeName = declaredType;
             } else {
-                const value = vd.field('value');
-                if (value?.kind() === 'object_creation_expression') {
-                    typeName = value.field('type')?.text();
+                const value = vd.field(JAVA_FIELDS.VALUE);
+                if (value?.kind() === JAVA_KINDS.OBJECT_CREATION_EXPRESSION) {
+                    typeName = value.field(JAVA_FIELDS.TYPE)?.text();
                 }
                 // Java 10+ `var x = factory();` — emit a deferred `@CALLEE:`
                 // marker so the resolver substitutes the callee's return type
                 // cross-file. Mirrors the TS/Python/Kotlin path. Only fires
                 // when the LHS is actually `var` (declaredType === 'var') and
                 // the RHS is a method invocation with a simple identifier callee.
-                if (!typeName && declaredType === 'var' && value?.kind() === 'method_invocation') {
-                    const fnNameNode = value.field('name');
-                    const fnObj = value.field('object');
+                if (!typeName && declaredType === 'var' && value?.kind() === JAVA_KINDS.METHOD_INVOCATION) {
+                    const fnNameNode = value.field(JAVA_FIELDS.NAME);
+                    const fnObj = value.field(JAVA_FIELDS.OBJECT);
                     // Only bare `factory()` calls (no receiver) — `obj.method()`
                     // would need a different resolution strategy.
                     if (fnNameNode && !fnObj) {
@@ -622,29 +618,33 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
     // instead of falling through to DI (0.9) or cascade. Covers both
     // constructors and regular methods (extended 2026-04-30).
     const seedJavaParam = (p: SgNode): void => {
-        if (p.kind() !== 'formal_parameter') {
+        if (p.kind() !== JAVA_KINDS.FORMAL_PARAMETER) {
             return;
         }
         const typeNode = p.children().find((c) => {
             const k = c.kind();
-            return k === 'type_identifier' || k === 'generic_type' || k === 'scoped_type_identifier';
+            return (
+                k === JAVA_KINDS.TYPE_IDENTIFIER ||
+                k === JAVA_KINDS.GENERIC_TYPE ||
+                k === JAVA_KINDS.SCOPED_TYPE_IDENTIFIER
+            );
         });
-        const name = p.field('name')?.text();
+        const name = p.field(JAVA_FIELDS.NAME)?.text();
         if (!typeNode || !name) {
             return;
         }
         const typeName =
-            typeNode.kind() === 'generic_type'
+            typeNode.kind() === JAVA_KINDS.GENERIC_TYPE
                 ? (typeNode
                       .children()
-                      .find((c) => c.kind() === 'type_identifier')
+                      .find((c) => c.kind() === JAVA_KINDS.TYPE_IDENTIFIER)
                       ?.text() ?? typeNode.text())
                 : typeNode.text();
         bindings.set(name, typeName);
     };
-    for (const kind of ['constructor_declaration', 'method_declaration']) {
+    for (const kind of [JAVA_KINDS.CONSTRUCTOR_DECLARATION, JAVA_KINDS.METHOD_DECLARATION]) {
         for (const fn of root.findAll({ rule: { kind } })) {
-            const params = fn.field('parameters');
+            const params = fn.field(JAVA_FIELDS.PARAMETERS);
             if (!params) {
                 continue;
             }
@@ -653,9 +653,9 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
             }
         }
     }
-    for (const mi of root.findAll({ rule: { kind: 'method_invocation' } })) {
-        const obj = mi.field('object');
-        if (!obj || obj.kind() !== 'identifier') {
+    for (const mi of root.findAll({ rule: { kind: JAVA_KINDS.METHOD_INVOCATION } })) {
+        const obj = mi.field(JAVA_FIELDS.OBJECT);
+        if (!obj || obj.kind() !== JAVA_KINDS.IDENTIFIER) {
             continue;
         }
         const objText = obj.text();
@@ -669,7 +669,7 @@ function extractReceiverTypesJava(root: SgNode, fp: string): ReceiverTypeMap {
             continue;
         }
         // Column = end of method name (≈ col of `(` of args).
-        const nameNode = mi.field('name');
+        const nameNode = mi.field(JAVA_FIELDS.NAME);
         const r = (nameNode ?? mi).range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
