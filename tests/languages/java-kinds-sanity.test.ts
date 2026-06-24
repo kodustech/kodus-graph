@@ -126,15 +126,15 @@ describe('Java JAVA_KINDS / JAVA_FIELDS grammar-drift guard', () => {
         const rootNode = root.root();
 
         const methods: SgNode[] = [];
-        collectByKind(rootNode, JAVA_KINDS.METHOD_DECLARATION, methods);
+        collectByKind(rootNode, JAVA_KINDS.methodDeclaration, methods);
         const classes: SgNode[] = [];
-        collectByKind(rootNode, JAVA_KINDS.CLASS_DECLARATION, classes);
+        collectByKind(rootNode, JAVA_KINDS.classDeclaration, classes);
         const declarators: SgNode[] = [];
-        collectByKind(rootNode, JAVA_KINDS.VARIABLE_DECLARATOR, declarators);
+        collectByKind(rootNode, JAVA_KINDS.variableDeclarator, declarators);
         const invocations: SgNode[] = [];
-        collectByKind(rootNode, JAVA_KINDS.METHOD_INVOCATION, invocations);
+        collectByKind(rootNode, JAVA_KINDS.methodInvocation, invocations);
         const fieldAccesses: SgNode[] = [];
-        collectByKind(rootNode, JAVA_KINDS.FIELD_ACCESS, fieldAccesses);
+        collectByKind(rootNode, JAVA_KINDS.fieldAccess, fieldAccesses);
 
         const fieldResolves = (nodes: SgNode[], field: string) =>
             nodes.some((n) => n.field(field) !== null && n.field(field) !== undefined);
@@ -142,13 +142,13 @@ describe('Java JAVA_KINDS / JAVA_FIELDS grammar-drift guard', () => {
         // name/type/parameters/body live on method_declaration; value on a
         // variable_declarator with an initializer; object on method_invocation;
         // field on field_access. The fixture exercises all of them.
-        expect(fieldResolves(methods, JAVA_FIELDS.NAME)).toBe(true);
-        expect(fieldResolves(methods, JAVA_FIELDS.TYPE)).toBe(true);
-        expect(fieldResolves(methods, JAVA_FIELDS.PARAMETERS)).toBe(true);
-        expect(fieldResolves(methods, JAVA_FIELDS.BODY)).toBe(true);
-        expect(fieldResolves(classes, JAVA_FIELDS.BODY)).toBe(true);
-        expect(fieldResolves(declarators, JAVA_FIELDS.VALUE)).toBe(true);
-        expect(fieldResolves(invocations, JAVA_FIELDS.OBJECT)).toBe(true);
-        expect(fieldResolves(fieldAccesses, JAVA_FIELDS.FIELD)).toBe(true);
+        expect(fieldResolves(methods, JAVA_FIELDS.name)).toBe(true);
+        expect(fieldResolves(methods, JAVA_FIELDS.type)).toBe(true);
+        expect(fieldResolves(methods, JAVA_FIELDS.parameters)).toBe(true);
+        expect(fieldResolves(methods, JAVA_FIELDS.body)).toBe(true);
+        expect(fieldResolves(classes, JAVA_FIELDS.body)).toBe(true);
+        expect(fieldResolves(declarators, JAVA_FIELDS.value)).toBe(true);
+        expect(fieldResolves(invocations, JAVA_FIELDS.object)).toBe(true);
+        expect(fieldResolves(fieldAccesses, JAVA_FIELDS.field)).toBe(true);
     });
 });

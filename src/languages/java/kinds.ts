@@ -17,66 +17,66 @@
 
 export const JAVA_KINDS = {
     // ── Declarations ────────────────────────────────────────────────────
-    CLASS_DECLARATION: 'class_declaration',
-    RECORD_DECLARATION: 'record_declaration',
-    INTERFACE_DECLARATION: 'interface_declaration',
-    ENUM_DECLARATION: 'enum_declaration',
-    METHOD_DECLARATION: 'method_declaration',
-    CONSTRUCTOR_DECLARATION: 'constructor_declaration',
-    FIELD_DECLARATION: 'field_declaration',
-    LOCAL_VARIABLE_DECLARATION: 'local_variable_declaration',
-    IMPORT_DECLARATION: 'import_declaration',
-    VARIABLE_DECLARATOR: 'variable_declarator',
-    FORMAL_PARAMETER: 'formal_parameter',
+    classDeclaration: 'class_declaration',
+    recordDeclaration: 'record_declaration',
+    interfaceDeclaration: 'interface_declaration',
+    enumDeclaration: 'enum_declaration',
+    methodDeclaration: 'method_declaration',
+    constructorDeclaration: 'constructor_declaration',
+    fieldDeclaration: 'field_declaration',
+    localVariableDeclaration: 'local_variable_declaration',
+    importDeclaration: 'import_declaration',
+    variableDeclarator: 'variable_declarator',
+    formalParameter: 'formal_parameter',
 
     // ── Modifiers / annotations ─────────────────────────────────────────
-    MODIFIERS: 'modifiers',
-    MARKER_ANNOTATION: 'marker_annotation',
-    ANNOTATION: 'annotation',
+    modifiers: 'modifiers',
+    markerAnnotation: 'marker_annotation',
+    annotation: 'annotation',
 
     // ── Heritage ────────────────────────────────────────────────────────
-    SUPERCLASS: 'superclass',
-    SUPER_INTERFACES: 'super_interfaces',
-    TYPE_LIST: 'type_list',
-    THROWS: 'throws',
+    superclass: 'superclass',
+    superInterfaces: 'super_interfaces',
+    typeList: 'type_list',
+    throws: 'throws',
 
     // ── Types / identifiers ─────────────────────────────────────────────
-    IDENTIFIER: 'identifier',
-    TYPE_IDENTIFIER: 'type_identifier',
-    SCOPED_IDENTIFIER: 'scoped_identifier',
-    SCOPED_TYPE_IDENTIFIER: 'scoped_type_identifier',
-    GENERIC_TYPE: 'generic_type',
+    identifier: 'identifier',
+    typeIdentifier: 'type_identifier',
+    scopedIdentifier: 'scoped_identifier',
+    scopedTypeIdentifier: 'scoped_type_identifier',
+    genericType: 'generic_type',
 
     // ── Expressions ─────────────────────────────────────────────────────
-    METHOD_INVOCATION: 'method_invocation',
-    OBJECT_CREATION_EXPRESSION: 'object_creation_expression',
-    FIELD_ACCESS: 'field_access',
-    THIS: 'this',
-    SUPER: 'super',
+    methodInvocation: 'method_invocation',
+    objectCreationExpression: 'object_creation_expression',
+    fieldAccess: 'field_access',
+    this: 'this',
+    super: 'super',
 
     // ── Branch kinds (cyclomatic complexity) ────────────────────────────
     // `else if` is a nested `if_statement` in the alternative — `if_statement`
     // alone suffices. `switch_label` is the case-level kind (skip the outer
     // `switch_expression` / `switch_block`). Java has both classic
     // `for_statement` and `enhanced_for_statement` (for-each) — both decisions.
-    IF_STATEMENT: 'if_statement',
-    FOR_STATEMENT: 'for_statement',
-    ENHANCED_FOR_STATEMENT: 'enhanced_for_statement',
-    WHILE_STATEMENT: 'while_statement',
-    DO_STATEMENT: 'do_statement',
-    SWITCH_LABEL: 'switch_label',
-    CATCH_CLAUSE: 'catch_clause',
-    TERNARY_EXPRESSION: 'ternary_expression',
+    ifStatement: 'if_statement',
+    forStatement: 'for_statement',
+    enhancedForStatement: 'enhanced_for_statement',
+    whileStatement: 'while_statement',
+    doStatement: 'do_statement',
+    switchLabel: 'switch_label',
+    catchClause: 'catch_clause',
+    ternaryExpression: 'ternary_expression',
 } as const;
 
 export const JAVA_FIELDS = {
-    NAME: 'name',
-    TYPE: 'type',
-    BODY: 'body',
-    PARAMETERS: 'parameters',
-    VALUE: 'value',
-    OBJECT: 'object',
-    FIELD: 'field',
+    name: 'name',
+    type: 'type',
+    body: 'body',
+    parameters: 'parameters',
+    value: 'value',
+    object: 'object',
+    field: 'field',
 } as const;
 
 export type JavaKind = (typeof JAVA_KINDS)[keyof typeof JAVA_KINDS];
