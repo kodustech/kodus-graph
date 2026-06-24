@@ -16,18 +16,19 @@ import {
     nodeRange,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { KOTLIN_KINDS } from './kinds';
 
 // Branch kinds for Kotlin cyclomatic complexity.
 // `when_entry` is the case-arm kind (skip outer `when_expression`).
 // `if_expression` alone covers `else if` (nested if_expression in alternative).
 // Kotlin uses `catch_block` (not `catch_clause`).
 const KOTLIN_BRANCH_KINDS = [
-    'if_expression',
-    'for_statement',
-    'while_statement',
-    'do_while_statement',
-    'when_entry',
-    'catch_block',
+    KOTLIN_KINDS.ifExpression,
+    KOTLIN_KINDS.forStatement,
+    KOTLIN_KINDS.whileStatement,
+    KOTLIN_KINDS.doWhileStatement,
+    KOTLIN_KINDS.whenEntry,
+    KOTLIN_KINDS.catchBlock,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ function hasKotlinAnnotationFrom(modifiersNode: SgNode | undefined, names: Reado
         return false;
     }
     for (const c of modifiersNode.children()) {
-        if (c.kind() !== 'annotation') {
+        if (c.kind() !== KOTLIN_KINDS.annotation) {
             continue;
         }
         if (names.has(annotationLastSegment(c))) {
@@ -103,7 +104,7 @@ function hasKotlinStereotypeAnnotation(modifiersNode: SgNode | undefined): boole
  * excluded from DI bindings.
  */
 function isKotlinPropertyClassParameter(cp: SgNode): boolean {
-    return cp.children().some((c) => c.kind() === 'binding_pattern_kind');
+    return cp.children().some((c) => c.kind() === KOTLIN_KINDS.bindingPatternKind);
 }
 
 /**
@@ -112,11 +113,11 @@ function isKotlinPropertyClassParameter(cp: SgNode): boolean {
  * inner `type_identifier` is preferred when present.
  */
 function kotlinParamTypeName(cp: SgNode): string | undefined {
-    const userType = cp.children().find((c) => c.kind() === 'user_type');
+    const userType = cp.children().find((c) => c.kind() === KOTLIN_KINDS.userType);
     if (!userType) {
         return undefined;
     }
-    const ti = userType.children().find((c) => c.kind() === 'type_identifier');
+    const ti = userType.children().find((c) => c.kind() === KOTLIN_KINDS.typeIdentifier);
     return ti?.text() ?? userType.text();
 }
 
@@ -149,10 +150,10 @@ function kotlinDiFieldFromCallee(callee: string): string | undefined {
  */
 function kotlinClassKind(node: SgNode): 'class' | 'interface' | 'enum' {
     const children = node.children();
-    if (children.some((c) => c.kind() === 'interface')) {
+    if (children.some((c) => c.kind() === KOTLIN_KINDS.interfaceKeyword)) {
         return 'interface';
     }
-    if (children.some((c) => c.kind() === 'enum')) {
+    if (children.some((c) => c.kind() === KOTLIN_KINDS.enumKeyword)) {
         return 'enum';
     }
     return 'class';
@@ -166,7 +167,7 @@ function kotlinClassKind(node: SgNode): 'class' | 'interface' | 'enum' {
 function kotlinTypeName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'type_identifier')
+        .find((c) => c.kind() === KOTLIN_KINDS.typeIdentifier)
         ?.text();
 }
 
@@ -177,7 +178,7 @@ function kotlinTypeName(node: SgNode): string | undefined {
 function kotlinFuncName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'simple_identifier')
+        .find((c) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
         ?.text();
 }
 
@@ -194,13 +195,13 @@ function kotlinFuncName(node: SgNode): string | undefined {
  */
 function kotlinExtensionReceiver(node: SgNode): string | undefined {
     const children = node.children();
-    const nameIdx = children.findIndex((c) => c.kind() === 'simple_identifier');
+    const nameIdx = children.findIndex((c) => c.kind() === KOTLIN_KINDS.simpleIdentifier);
     if (nameIdx < 0) {
         return undefined;
     }
     for (let i = 0; i < nameIdx; i++) {
-        if (children[i].kind() === 'user_type') {
-            const typeId = children[i].children().find((c) => c.kind() === 'type_identifier');
+        if (children[i].kind() === KOTLIN_KINDS.userType) {
+            const typeId = children[i].children().find((c) => c.kind() === KOTLIN_KINDS.typeIdentifier);
             return typeId?.text() ?? children[i].text();
         }
     }
@@ -212,12 +213,12 @@ function kotlinExtensionReceiver(node: SgNode): string | undefined {
 // ---------------------------------------------------------------------------
 
 function kotlinExtends(node: SgNode): string | undefined {
-    const delegations = node.children().filter((c: SgNode) => c.kind() === 'delegation_specifier');
+    const delegations = node.children().filter((c: SgNode) => c.kind() === KOTLIN_KINDS.delegationSpecifier);
     for (const d of delegations) {
-        const ctorInvocation = d.children().find((c: SgNode) => c.kind() === 'constructor_invocation');
+        const ctorInvocation = d.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.constructorInvocation);
         if (ctorInvocation) {
-            const userType = ctorInvocation.children().find((c: SgNode) => c.kind() === 'user_type');
-            const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+            const userType = ctorInvocation.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.userType);
+            const typeId = userType?.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.typeIdentifier);
             if (typeId) {
                 return typeId.text();
             }
@@ -227,13 +228,13 @@ function kotlinExtends(node: SgNode): string | undefined {
 }
 
 function kotlinImplements(node: SgNode): string[] {
-    const delegations = node.children().filter((c: SgNode) => c.kind() === 'delegation_specifier');
+    const delegations = node.children().filter((c: SgNode) => c.kind() === KOTLIN_KINDS.delegationSpecifier);
     const interfaces: string[] = [];
     for (const d of delegations) {
-        const hasCtorInvocation = d.children().some((c: SgNode) => c.kind() === 'constructor_invocation');
+        const hasCtorInvocation = d.children().some((c: SgNode) => c.kind() === KOTLIN_KINDS.constructorInvocation);
         if (!hasCtorInvocation) {
-            const userType = d.children().find((c: SgNode) => c.kind() === 'user_type');
-            const typeId = userType?.children().find((c: SgNode) => c.kind() === 'type_identifier');
+            const userType = d.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.userType);
+            const typeId = userType?.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.typeIdentifier);
             if (typeId) {
                 interfaces.push(typeId.text());
             }
@@ -246,37 +247,12 @@ function kotlinImplements(node: SgNode): string[] {
 // Import extraction helpers
 // ---------------------------------------------------------------------------
 
+// Kotlin `import_header` wraps the dotted path in a single `identifier` child
+// (`import foo.bar.Baz` → identifier "foo.bar.Baz"); aliases add an
+// `import_alias > type_identifier`. The first matching child carries the path.
 function extractImportModule(node: SgNode): string {
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'string' || ck === 'interpreted_string_literal' || ck === 'string_fragment') {
-            const raw = child.text();
-            return raw.replace(/^["'`]|["'`]$/g, '');
-        }
-        for (const grandchild of child.children()) {
-            const gck = grandchild.kind();
-            if (gck === 'string_fragment' || gck === 'string_content') {
-                return grandchild.text();
-            }
-        }
-    }
-
-    for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'scoped_identifier' || ck === 'scoped_type_identifier' || ck === 'qualified_name') {
-            return child.text();
-        }
-    }
-
-    for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'name' || ck === 'namespace_name' || ck === 'use_tree') {
-            return child.text();
-        }
-    }
-
-    for (const child of node.children()) {
-        if (child.kind() === 'identifier' || child.kind() === 'type_identifier') {
+        if (child.kind() === KOTLIN_KINDS.identifier || child.kind() === KOTLIN_KINDS.typeIdentifier) {
             return child.text();
         }
     }
@@ -292,7 +268,7 @@ function extractImportNames(node: SgNode): string[] {
     const names: string[] = [];
     for (const child of node.children()) {
         const ck = child.kind();
-        if (ck === 'identifier' || ck === 'type_identifier' || ck === 'name') {
+        if (ck === KOTLIN_KINDS.identifier || ck === KOTLIN_KINDS.typeIdentifier) {
             names.push(child.text());
         }
     }
@@ -305,7 +281,7 @@ function extractImportNames(node: SgNode): string[] {
 
 const FILE_PATTERNS = [/test/i];
 const FUNC_PATTERNS = [/^test/i];
-const ANNOTATION_KIND = 'annotation';
+const ANNOTATION_KIND = KOTLIN_KINDS.annotation;
 const ANNOTATION_NAMES = ['Test', 'ParameterizedTest'];
 
 // ---------------------------------------------------------------------------
@@ -331,7 +307,7 @@ function kotlinIsAsync(node: SgNode): boolean {
 
 /** Extract throws from Kotlin `@Throws(...)` annotation. */
 function kotlinThrows(node: SgNode): string[] {
-    const decorators = extractDecorators(node, ['annotation']);
+    const decorators = extractDecorators(node, [KOTLIN_KINDS.annotation]);
     const throws: string[] = [];
     for (const d of decorators) {
         const match = d.match(/@Throws\(([^)]+)\)/);
@@ -355,7 +331,7 @@ export const kotlinExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes (class_declaration where kind is 'class') ────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.classDeclaration } })) {
             const ktKind = kotlinClassKind(node);
             if (ktKind !== 'class') {
                 continue;
@@ -390,12 +366,12 @@ export const kotlinExtractors: LanguageExtractors = {
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
                 is_exported: isExported(name, node, kotlinExportRules),
-                decorators: extractDecorators(node, ['annotation']),
+                decorators: extractDecorators(node, [KOTLIN_KINDS.annotation]),
             });
         }
 
         // ── Classes (object_declaration) ────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'object_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.objectDeclaration } })) {
             const name = kotlinTypeName(node);
             if (!name) {
                 continue;
@@ -426,12 +402,12 @@ export const kotlinExtractors: LanguageExtractors = {
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
                 is_exported: isExported(name, node, kotlinExportRules),
-                decorators: extractDecorators(node, ['annotation']),
+                decorators: extractDecorators(node, [KOTLIN_KINDS.annotation]),
             });
         }
 
         // ── Interfaces (class_declaration where kind is 'interface') ────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.classDeclaration } })) {
             const ktKind = kotlinClassKind(node);
             if (ktKind !== 'interface') {
                 continue;
@@ -454,7 +430,7 @@ export const kotlinExtractors: LanguageExtractors = {
         }
 
         // ── Enums (class_declaration where kind is 'enum') ──────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.classDeclaration } })) {
             const ktKind = kotlinClassKind(node);
             if (ktKind !== 'enum') {
                 continue;
@@ -476,7 +452,7 @@ export const kotlinExtractors: LanguageExtractors = {
         }
 
         // ── Functions / Methods ─────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'function_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.functionDeclaration } })) {
             const name = kotlinFuncName(node);
             if (!name) {
                 continue;
@@ -485,7 +461,7 @@ export const kotlinExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_declaration' || k === 'object_declaration';
+                return k === KOTLIN_KINDS.classDeclaration || k === KOTLIN_KINDS.objectDeclaration;
             });
             if (classAncestor) {
                 className = kotlinTypeName(classAncestor) || '';
@@ -517,15 +493,19 @@ export const kotlinExtractors: LanguageExtractors = {
             // structural walk.
             let returnType = '';
             const fnKids = node.children();
-            const colonIdx = fnKids.findIndex((c) => c.kind() === ':');
+            const colonIdx = fnKids.findIndex((c) => c.kind() === KOTLIN_KINDS.colon);
             if (colonIdx >= 0) {
                 for (let i = colonIdx + 1; i < fnKids.length; i++) {
                     const k = fnKids[i].kind();
-                    if (k === 'user_type' || k === 'nullable_type' || k === 'function_type') {
+                    if (
+                        k === KOTLIN_KINDS.userType ||
+                        k === KOTLIN_KINDS.nullableType ||
+                        k === KOTLIN_KINDS.functionType
+                    ) {
                         returnType = fnKids[i].text();
                         break;
                     }
-                    if (k === 'function_body' || k === '=') {
+                    if (k === KOTLIN_KINDS.functionBody || k === KOTLIN_KINDS.eq) {
                         break;
                     }
                 }
@@ -533,7 +513,7 @@ export const kotlinExtractors: LanguageExtractors = {
             // Kotlin tree-sitter exposes parameters as a `function_value_parameters`
             // child, NOT via `field('parameters')`. Without this, every Kotlin
             // function had params='()' regardless of actual signature.
-            const paramsNode = node.children().find((c: SgNode) => c.kind() === 'function_value_parameters');
+            const paramsNode = node.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.functionValueParameters);
             result.functions.push({
                 name,
                 line_start: range.line_start,
@@ -548,7 +528,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 isTest,
                 is_exported: isExported(name, node, kotlinExportRules),
                 is_async: kotlinIsAsync(node),
-                decorators: extractDecorators(node, ['annotation']),
+                decorators: extractDecorators(node, [KOTLIN_KINDS.annotation]),
                 throws: kotlinThrows(node),
                 complexity: computeCyclomatic(node, KOTLIN_BRANCH_KINDS),
             });
@@ -556,22 +536,22 @@ export const kotlinExtractors: LanguageExtractors = {
 
         // ── DI: @Inject on properties and primary constructor ────────────
         // Property injection: `@Inject lateinit var foo: T` → diMap[foo] = T
-        for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
-            const mods = pd.children().find((c) => c.kind() === 'modifiers');
+        for (const pd of root.findAll({ rule: { kind: KOTLIN_KINDS.propertyDeclaration } })) {
+            const mods = pd.children().find((c) => c.kind() === KOTLIN_KINDS.modifiers);
             if (!hasKotlinDIAnnotation(mods)) {
                 continue;
             }
-            const varDecl = pd.children().find((c) => c.kind() === 'variable_declaration');
+            const varDecl = pd.children().find((c) => c.kind() === KOTLIN_KINDS.variableDeclaration);
             if (!varDecl) {
                 continue;
             }
             const name = varDecl
                 .children()
-                .find((c) => c.kind() === 'simple_identifier')
+                .find((c) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
                 ?.text();
             const type = varDecl
                 .children()
-                .find((c) => c.kind() === 'user_type')
+                .find((c) => c.kind() === KOTLIN_KINDS.userType)
                 ?.text();
             if (name && type) {
                 result.diEntries.push({ fieldName: name, typeName: type });
@@ -591,23 +571,23 @@ export const kotlinExtractors: LanguageExtractors = {
         // Params WITHOUT val/var are ctor-local and intentionally skipped —
         // they cannot be referenced from method bodies, so adding them as DI
         // bindings would introduce false positives.
-        for (const pc of root.findAll({ rule: { kind: 'primary_constructor' } })) {
-            const ctorMods = pc.children().find((c) => c.kind() === 'modifiers');
+        for (const pc of root.findAll({ rule: { kind: KOTLIN_KINDS.primaryConstructor } })) {
+            const ctorMods = pc.children().find((c) => c.kind() === KOTLIN_KINDS.modifiers);
             const explicitDI = hasKotlinDIAnnotation(ctorMods);
             // Stereotype check — walk to enclosing class and check its modifiers.
             let stereotypeDI = false;
             if (!explicitDI) {
                 const enclosingClass = pc.ancestors().find((a) => {
                     const k = String(a.kind());
-                    return k === 'class_declaration' || k === 'object_declaration';
+                    return k === KOTLIN_KINDS.classDeclaration || k === KOTLIN_KINDS.objectDeclaration;
                 });
                 if (enclosingClass) {
-                    const classMods = enclosingClass.children().find((c) => c.kind() === 'modifiers');
+                    const classMods = enclosingClass.children().find((c) => c.kind() === KOTLIN_KINDS.modifiers);
                     stereotypeDI = hasKotlinStereotypeAnnotation(classMods);
                 }
             }
             for (const cp of pc.children()) {
-                if (cp.kind() !== 'class_parameter') {
+                if (cp.kind() !== KOTLIN_KINDS.classParameter) {
                     continue;
                 }
                 // val/var is always sufficient on its own; explicit/stereotype
@@ -617,7 +597,7 @@ export const kotlinExtractors: LanguageExtractors = {
                 }
                 const name = cp
                     .children()
-                    .find((c) => c.kind() === 'simple_identifier')
+                    .find((c) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
                     ?.text();
                 const typeName = kotlinParamTypeName(cp);
                 if (name && typeName) {
@@ -627,7 +607,7 @@ export const kotlinExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'import_header' } })) {
+        for (const node of root.findAll({ rule: { kind: KOTLIN_KINDS.importHeader } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -645,12 +625,7 @@ export const kotlinExtractors: LanguageExtractors = {
 
     extractCalls(root: SgNode, fp: string, calls: RawCallSite[]): void {
         const findEnclosingClass = (node: SgNode): SgNode | null => {
-            return (
-                node.ancestors().find((a) => {
-                    const k = String(a.kind());
-                    return k.includes('class') || k.includes('struct') || k.includes('impl');
-                }) ?? null
-            );
+            return node.ancestors().find((a) => String(a.kind()).includes('class')) ?? null;
         };
 
         const config: CallExtractionConfig = {
@@ -658,14 +633,14 @@ export const kotlinExtractors: LanguageExtractors = {
             superPrefixes: ['super.'],
             findEnclosingClass,
             getParentClass: (classNode) => {
-                const delegations = classNode.children().filter((c) => c.kind() === 'delegation_specifier');
+                const delegations = classNode.children().filter((c) => c.kind() === KOTLIN_KINDS.delegationSpecifier);
                 for (const d of delegations) {
-                    const ctorInvocation = d.children().find((c) => c.kind() === 'constructor_invocation');
+                    const ctorInvocation = d.children().find((c) => c.kind() === KOTLIN_KINDS.constructorInvocation);
                     if (ctorInvocation) {
-                        const userType = ctorInvocation.children().find((c) => c.kind() === 'user_type');
+                        const userType = ctorInvocation.children().find((c) => c.kind() === KOTLIN_KINDS.userType);
                         return userType
                             ?.children()
-                            .find((c) => c.kind() === 'type_identifier')
+                            .find((c) => c.kind() === KOTLIN_KINDS.typeIdentifier)
                             ?.text();
                     }
                 }
@@ -682,11 +657,11 @@ export const kotlinExtractors: LanguageExtractors = {
 function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
-        const varDecl = pd.children().find((c: SgNode) => c.kind() === 'variable_declaration');
+    for (const pd of root.findAll({ rule: { kind: KOTLIN_KINDS.propertyDeclaration } })) {
+        const varDecl = pd.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.variableDeclaration);
         const name = varDecl
             ?.children()
-            .find((c: SgNode) => c.kind() === 'simple_identifier')
+            .find((c: SgNode) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
             ?.text();
         if (!name) {
             continue;
@@ -694,14 +669,14 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
         // Explicit type annotation: `val y: Bar` — user_type inside variable_declaration.
         const userType = varDecl
             ?.children()
-            .find((c: SgNode) => c.kind() === 'user_type')
+            .find((c: SgNode) => c.kind() === KOTLIN_KINDS.userType)
             ?.text();
         let typeName: string | undefined = userType;
         let callFnText: string | undefined;
         if (!typeName) {
             // Constructor-like call on RHS: `val x = Foo()` → call_expression with simple_identifier function.
-            const call = pd.children().find((c: SgNode) => c.kind() === 'call_expression');
-            const fnId = call?.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+            const call = pd.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.callExpression);
+            const fnId = call?.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.simpleIdentifier);
             if (fnId) {
                 callFnText = fnId.text();
                 if (/^[A-Z]/.test(callFnText)) {
@@ -715,12 +690,17 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
             // with `as` operator and a `user_type` child for the target).
             const asExpr = pd
                 .children()
-                .find((c: SgNode) => c.kind() === 'as_expression' || c.kind() === 'infix_expression');
+                .find(
+                    (c: SgNode) => c.kind() === KOTLIN_KINDS.asExpression || c.kind() === KOTLIN_KINDS.infixExpression,
+                );
             if (asExpr) {
-                const ut = asExpr.children().find((c: SgNode) => c.kind() === 'user_type');
+                const ut = asExpr.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.userType);
                 const ti = ut
                     ?.children()
-                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier');
+                    .find(
+                        (c: SgNode) =>
+                            c.kind() === KOTLIN_KINDS.typeIdentifier || c.kind() === KOTLIN_KINDS.simpleIdentifier,
+                    );
                 if (ti) {
                     typeName = ti.text();
                 }
@@ -740,9 +720,9 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
     // inside method bodies resolves at the receiver tier (0.95). Without
     // this, every Kotlin class with the dominant `class Foo(val repo: Repo)`
     // shape was falling through to cascade for member calls on `repo`.
-    for (const pc of root.findAll({ rule: { kind: 'primary_constructor' } })) {
+    for (const pc of root.findAll({ rule: { kind: KOTLIN_KINDS.primaryConstructor } })) {
         for (const cp of pc.children()) {
-            if (cp.kind() !== 'class_parameter') {
+            if (cp.kind() !== KOTLIN_KINDS.classParameter) {
                 continue;
             }
             if (!isKotlinPropertyClassParameter(cp)) {
@@ -750,7 +730,7 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
             }
             const name = cp
                 .children()
-                .find((c: SgNode) => c.kind() === 'simple_identifier')
+                .find((c: SgNode) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
                 ?.text();
             const typeName = kotlinParamTypeName(cp);
             if (name && typeName) {
@@ -762,36 +742,39 @@ function extractReceiverTypesKotlin(root: SgNode, fp: string): ReceiverTypeMap {
     // become bindings inside the body so `repo.find()` resolves at the receiver
     // tier. Kotlin's tree-sitter exposes these as `function_value_parameters >
     // parameter > [simple_identifier, user_type]`.
-    for (const fn of root.findAll({ rule: { kind: 'function_declaration' } })) {
-        const params = fn.children().find((c: SgNode) => c.kind() === 'function_value_parameters');
+    for (const fn of root.findAll({ rule: { kind: KOTLIN_KINDS.functionDeclaration } })) {
+        const params = fn.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.functionValueParameters);
         if (!params) {
             continue;
         }
         for (const p of params.children()) {
-            if (p.kind() !== 'parameter') {
+            if (p.kind() !== KOTLIN_KINDS.parameter) {
                 continue;
             }
             const name = p
                 .children()
-                .find((c: SgNode) => c.kind() === 'simple_identifier')
+                .find((c: SgNode) => c.kind() === KOTLIN_KINDS.simpleIdentifier)
                 ?.text();
-            const userType = p.children().find((c: SgNode) => c.kind() === 'user_type');
+            const userType = p.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.userType);
             const typeName =
                 userType
                     ?.children()
-                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier')
+                    .find(
+                        (c: SgNode) =>
+                            c.kind() === KOTLIN_KINDS.typeIdentifier || c.kind() === KOTLIN_KINDS.simpleIdentifier,
+                    )
                     ?.text() ?? userType?.text();
             if (name && typeName) {
                 bindings.set(name, typeName);
             }
         }
     }
-    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
-        const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
+    for (const ce of root.findAll({ rule: { kind: KOTLIN_KINDS.callExpression } })) {
+        const nav = ce.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.navigationExpression);
         if (!nav) {
             continue;
         }
-        const base = nav.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+        const base = nav.children().find((c: SgNode) => c.kind() === KOTLIN_KINDS.simpleIdentifier);
         if (!base) {
             continue;
         }
