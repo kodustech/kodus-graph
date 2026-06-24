@@ -42,26 +42,13 @@ export function isTypeScriptLike(lang: Lang | string): boolean {
 
 // ---------------------------------------------------------------------------
 // LANG_KINDS — AST node kind strings used by per-language extractors.
-// Only typescript and ruby extractors still reference this; every other
-// language declares its kinds in a dedicated `languages/<lang>/kinds.ts`
-// module (see python/kinds.ts, dart/kinds.ts). TS and Ruby are pending the
+// Only the ruby extractor still references this; every other language
+// declares its kinds in a dedicated `languages/<lang>/kinds.ts` module (see
+// typescript/kinds.ts, python/kinds.ts, dart/kinds.ts). Ruby is pending the
 // same migration.
 // ---------------------------------------------------------------------------
 
 export const LANG_KINDS: Record<string, Record<string, string>> = {
-    typescript: {
-        class: 'class_declaration',
-        function: 'function_declaration',
-        method: 'method_definition',
-        interface: 'interface_declaration',
-        enum: 'enum_declaration',
-        import: 'import_statement',
-        abstractClass: 'abstract_class_declaration',
-        arrowContainer: 'variable_declarator',
-        arrowFunction: 'arrow_function',
-        export: 'export_statement',
-        methodSignature: 'method_signature',
-    },
     ruby: {
         class: 'class',
         method: 'method',

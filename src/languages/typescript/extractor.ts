@@ -1,6 +1,5 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { registerCapabilities } from '../capabilities';
@@ -19,12 +18,13 @@ import type {
     ExtractionResult,
     LanguageExtractors,
 } from '../spec';
+import { TS_FIELDS, TS_KINDS } from './kinds';
 
 // ---------------------------------------------------------------------------
 // Shared constants
 // ---------------------------------------------------------------------------
 
-const EXPORT_RULES = { exportKeywords: ['export_statement', 'export'] } as const;
+const EXPORT_RULES = { exportKeywords: [TS_KINDS.exportStatement, TS_KINDS.exportKeyword] } as const;
 const DECORATOR_KINDS = ['decorator'] as const;
 const THROW_KINDS = ['throw_statement'] as const;
 
@@ -33,14 +33,14 @@ const THROW_KINDS = ['throw_statement'] as const;
 // - `switch_case` (case-level) only; skip `switch_statement` — outer switch + per-case would N+1.
 // - `if_statement` alone covers else-if chains (elif is nested if_statement in alternative).
 const TS_BRANCH_KINDS = [
-    'if_statement',
-    'for_statement',
-    'for_in_statement',
-    'while_statement',
-    'do_statement',
-    'switch_case',
-    'catch_clause',
-    'ternary_expression',
+    TS_KINDS.ifStatement,
+    TS_KINDS.forStatement,
+    TS_KINDS.forInStatement,
+    TS_KINDS.whileStatement,
+    TS_KINDS.doStatement,
+    TS_KINDS.switchCase,
+    TS_KINDS.catchClause,
+    TS_KINDS.ternaryExpression,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,6 @@ const TS_BRANCH_KINDS = [
 // ---------------------------------------------------------------------------
 
 function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResult {
-    const kinds = LANG_KINDS.typescript;
     const seen = new Set<string>();
 
     const classes: ExtractedClass[] = [];
@@ -60,10 +59,12 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     const diEntries: ExtractedDI[] = [];
 
     // ── Classes ──
-    const classKinds = isTS ? [kinds.class, kinds.abstractClass] : [kinds.class];
+    const classKinds = isTS
+        ? [TS_KINDS.classDeclaration, TS_KINDS.abstractClassDeclaration]
+        : [TS_KINDS.classDeclaration];
     for (const kind of classKinds) {
         for (const node of rootNode.findAll({ rule: { kind } })) {
-            const name = node.field('name')?.text();
+            const name = node.field(TS_FIELDS.name)?.text();
             if (!name || seen.has(`c:${fp}:${name}`)) {
                 continue;
             }
@@ -71,24 +72,24 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
 
             let extendsName = '';
             let implementsNames: string[] = [];
-            const heritage = node.children().find((c: SgNode) => c.kind() === 'class_heritage');
+            const heritage = node.children().find((c: SgNode) => c.kind() === TS_KINDS.classHeritage);
             if (heritage) {
-                const ext = heritage.children().find((c: SgNode) => c.kind() === 'extends_clause');
+                const ext = heritage.children().find((c: SgNode) => c.kind() === TS_KINDS.extendsClause);
                 extendsName =
                     ext
                         ?.children()
                         .find(
                             (c: SgNode) =>
-                                c.kind() === 'identifier' ||
-                                c.kind() === 'type_identifier' ||
-                                c.kind() === 'member_expression',
+                                c.kind() === TS_KINDS.identifier ||
+                                c.kind() === TS_KINDS.typeIdentifier ||
+                                c.kind() === TS_KINDS.memberExpression,
                         )
                         ?.text() || '';
-                const impl = heritage.children().find((c: SgNode) => c.kind() === 'implements_clause');
+                const impl = heritage.children().find((c: SgNode) => c.kind() === TS_KINDS.implementsClause);
                 implementsNames =
                     impl
                         ?.children()
-                        .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+                        .filter((c: SgNode) => c.kind() === TS_KINDS.typeIdentifier || c.kind() === TS_KINDS.identifier)
                         .map((c: SgNode) => c.text()) ?? [];
             }
 
@@ -108,8 +109,8 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     }
 
     // ── Methods (kind-based: catches constructor, async, getters/setters) ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.method } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.methodDefinition } })) {
+        const name = node.field(TS_FIELDS.name)?.text();
         if (!name) {
             continue;
         }
@@ -121,38 +122,41 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
 
         const classAncestor = node
             .ancestors()
-            .find((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass));
-        const className = classAncestor?.field('name')?.text() || '';
-        const params = node.field('parameters');
-        const retType = node.field('return_type')?.text()?.replace(/^:\s*/, '') || '';
+            .find(
+                (a: SgNode) =>
+                    a.kind() === TS_KINDS.classDeclaration || (isTS && a.kind() === TS_KINDS.abstractClassDeclaration),
+            );
+        const className = classAncestor?.field(TS_FIELDS.name)?.text() || '';
+        const params = node.field(TS_FIELDS.parameters);
+        const retType = node.field(TS_FIELDS.returnType)?.text()?.replace(/^:\s*/, '') || '';
 
         if (name === 'constructor' && className) {
             // Constructor DI extraction
             if (params) {
                 for (const p of params.children()) {
-                    if (p.kind() !== 'required_parameter') {
+                    if (p.kind() !== TS_KINDS.requiredParameter) {
                         continue;
                     }
-                    if (!p.children().some((c: SgNode) => c.kind() === 'accessibility_modifier')) {
+                    if (!p.children().some((c: SgNode) => c.kind() === TS_KINDS.accessibilityModifier)) {
                         continue;
                     }
-                    const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
-                    const typeAnn = p.children().find((c: SgNode) => c.kind() === 'type_annotation');
+                    const ident = p.children().find((c: SgNode) => c.kind() === TS_KINDS.identifier);
+                    const typeAnn = p.children().find((c: SgNode) => c.kind() === TS_KINDS.typeAnnotation);
                     if (ident && typeAnn) {
                         const typeNode = typeAnn
                             .children()
                             .find(
                                 (c: SgNode) =>
-                                    c.kind() === 'type_identifier' ||
-                                    c.kind() === 'identifier' ||
-                                    c.kind() === 'generic_type',
+                                    c.kind() === TS_KINDS.typeIdentifier ||
+                                    c.kind() === TS_KINDS.identifier ||
+                                    c.kind() === TS_KINDS.genericType,
                             );
                         if (typeNode) {
                             const typeName =
-                                typeNode.kind() === 'generic_type'
+                                typeNode.kind() === TS_KINDS.genericType
                                     ? typeNode
                                           .children()
-                                          .find((c: SgNode) => c.kind() === 'type_identifier')
+                                          .find((c: SgNode) => c.kind() === TS_KINDS.typeIdentifier)
                                           ?.text() || typeNode.text()
                                     : typeNode.text();
                             diEntries.push({ fieldName: ident.text(), typeName });
@@ -204,8 +208,8 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     }
 
     // ── Standalone functions ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.function } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.functionDeclaration } })) {
+        const name = node.field(TS_FIELDS.name)?.text();
         if (!name) {
             continue;
         }
@@ -214,7 +218,13 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
             continue;
         }
         if (
-            node.ancestors().some((a: SgNode) => a.kind() === kinds.class || (isTS && a.kind() === kinds.abstractClass))
+            node
+                .ancestors()
+                .some(
+                    (a: SgNode) =>
+                        a.kind() === TS_KINDS.classDeclaration ||
+                        (isTS && a.kind() === TS_KINDS.abstractClassDeclaration),
+                )
         ) {
             continue;
         }
@@ -224,8 +234,8 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
             name,
             line_start: line,
             line_end: node.range().end.line,
-            params: node.field('parameters')?.text() || '()',
-            returnType: node.field('return_type')?.text()?.replace(/^:\s*/, '') || '',
+            params: node.field(TS_FIELDS.parameters)?.text() || '()',
+            returnType: node.field(TS_FIELDS.returnType)?.text()?.replace(/^:\s*/, '') || '',
             kind: 'Function',
             className: '',
             modifiers: extractModifiers(node),
@@ -242,9 +252,9 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
 
     // ── Arrow functions ──
     for (const node of rootNode.findAll({
-        rule: { kind: kinds.arrowContainer, has: { kind: kinds.arrowFunction } },
+        rule: { kind: TS_KINDS.variableDeclarator, has: { kind: TS_KINDS.arrowFunction } },
     })) {
-        const name = node.field('name')?.text();
+        const name = node.field(TS_FIELDS.name)?.text();
         if (!name) {
             continue;
         }
@@ -254,13 +264,13 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
         }
         seen.add(`f:${fp}:${name}:${line}`);
 
-        const arrow = node.children().find((c: SgNode) => c.kind() === kinds.arrowFunction);
+        const arrow = node.children().find((c: SgNode) => c.kind() === TS_KINDS.arrowFunction);
         functions.push({
             name,
             line_start: line,
             line_end: node.range().end.line,
-            params: arrow?.field('parameters')?.text() || '()',
-            returnType: arrow?.field('return_type')?.text()?.replace(/^:\s*/, '') || '',
+            params: arrow?.field(TS_FIELDS.parameters)?.text() || '()',
+            returnType: arrow?.field(TS_FIELDS.returnType)?.text()?.replace(/^:\s*/, '') || '',
             kind: 'Function',
             className: '',
             modifiers: '',
@@ -277,18 +287,18 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
 
     // ── Interfaces (TS only — JS grammar has no interface_declaration) ──
     if (isTS) {
-        for (const node of rootNode.findAll({ rule: { kind: kinds.interface } })) {
-            const name = node.field('name')?.text();
+        for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.interfaceDeclaration } })) {
+            const name = node.field(TS_FIELDS.name)?.text();
             if (!name || seen.has(`i:${fp}:${name}`)) {
                 continue;
             }
             seen.add(`i:${fp}:${name}`);
 
             const methods: string[] = [];
-            const body = node.field('body');
+            const body = node.field(TS_FIELDS.body);
             if (body) {
-                for (const child of body.findAll({ rule: { kind: kinds.methodSignature } })) {
-                    const mn = child.field('name')?.text();
+                for (const child of body.findAll({ rule: { kind: TS_KINDS.methodSignature } })) {
+                    const mn = child.field(TS_FIELDS.name)?.text();
                     if (mn) {
                         methods.push(mn);
                     }
@@ -309,8 +319,8 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
 
     // ── Enums (TS only — JS grammar has no enum_declaration) ──
     if (isTS) {
-        for (const node of rootNode.findAll({ rule: { kind: kinds.enum } })) {
-            const name = node.field('name')?.text();
+        for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.enumDeclaration } })) {
+            const name = node.field(TS_FIELDS.name)?.text();
             if (!name || seen.has(`e:${fp}:${name}`)) {
                 continue;
             }
@@ -327,34 +337,34 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     }
 
     // ── Imports ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.import } })) {
-        const sourceNode = node.children().find((c: SgNode) => c.kind() === 'string');
-        const frag = sourceNode?.children().find((c: SgNode) => c.kind() === 'string_fragment');
+    for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.importStatement } })) {
+        const sourceNode = node.children().find((c: SgNode) => c.kind() === TS_KINDS.string);
+        const frag = sourceNode?.children().find((c: SgNode) => c.kind() === TS_KINDS.stringFragment);
         const modulePath = frag?.text() || sourceNode?.text()?.replace(/['"]/g, '') || '';
         if (!modulePath) {
             continue;
         }
 
         const names: string[] = [];
-        const importClause = node.children().find((c: SgNode) => c.kind() === 'import_clause');
+        const importClause = node.children().find((c: SgNode) => c.kind() === TS_KINDS.importClause);
         if (importClause) {
             for (const child of importClause.children()) {
-                if (child.kind() === 'identifier') {
+                if (child.kind() === TS_KINDS.identifier) {
                     names.push(child.text());
-                } else if (child.kind() === 'named_imports') {
-                    for (const spec of child.findAll({ rule: { kind: 'import_specifier' } })) {
+                } else if (child.kind() === TS_KINDS.namedImports) {
+                    for (const spec of child.findAll({ rule: { kind: TS_KINDS.importSpecifier } })) {
                         const n =
-                            spec.field('name')?.text() ||
+                            spec.field(TS_FIELDS.name)?.text() ||
                             spec
                                 .children()
-                                .find((c: SgNode) => c.kind() === 'identifier')
+                                .find((c: SgNode) => c.kind() === TS_KINDS.identifier)
                                 ?.text();
                         if (n) {
                             names.push(n);
                         }
                     }
-                } else if (child.kind() === 'namespace_import') {
-                    const alias = child.children().find((c: SgNode) => c.kind() === 'identifier');
+                } else if (child.kind() === TS_KINDS.namespaceImport) {
+                    const alias = child.children().find((c: SgNode) => c.kind() === TS_KINDS.identifier);
                     if (alias) {
                         names.push(alias.text());
                     }
@@ -370,10 +380,10 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     }
 
     // ── Re-exports ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.export } })) {
-        const src = node.children().find((c: SgNode) => c.kind() === 'string');
+    for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.exportStatement } })) {
+        const src = node.children().find((c: SgNode) => c.kind() === TS_KINDS.string);
         if (src) {
-            const frag = src.children().find((c: SgNode) => c.kind() === 'string_fragment');
+            const frag = src.children().find((c: SgNode) => c.kind() === TS_KINDS.stringFragment);
             reExports.push({
                 module: frag?.text() || src.text().replace(/['"]/g, ''),
                 line: node.range().start.line,
@@ -446,19 +456,25 @@ const TS_CALL_CONFIG: CallExtractionConfig = {
     selfPrefixes: ['this.'],
     superPrefixes: ['super.'],
     findEnclosingClass: (node) => {
-        const kinds = LANG_KINDS.typescript;
         return (
-            node.ancestors().find((a: SgNode) => a.kind() === kinds.class || a.kind() === kinds.abstractClass) ?? null
+            node
+                .ancestors()
+                .find(
+                    (a: SgNode) =>
+                        a.kind() === TS_KINDS.classDeclaration || a.kind() === TS_KINDS.abstractClassDeclaration,
+                ) ?? null
         );
     },
     getParentClass: (classNode) => {
-        const heritage = classNode.children().find((c: SgNode) => c.kind() === 'class_heritage');
-        const ext = heritage?.children().find((c: SgNode) => c.kind() === 'extends_clause');
+        const heritage = classNode.children().find((c: SgNode) => c.kind() === TS_KINDS.classHeritage);
+        const ext = heritage?.children().find((c: SgNode) => c.kind() === TS_KINDS.extendsClause);
         return ext
             ?.children()
             .find(
                 (c: SgNode) =>
-                    c.kind() === 'identifier' || c.kind() === 'type_identifier' || c.kind() === 'member_expression',
+                    c.kind() === TS_KINDS.identifier ||
+                    c.kind() === TS_KINDS.typeIdentifier ||
+                    c.kind() === TS_KINDS.memberExpression,
             )
             ?.text();
     },
@@ -500,13 +516,13 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
     // Only `.tsx` / `.jsx` files have JSX kinds in the grammar; querying the
     // kind in plain `.ts` / `.js` throws `InvalidKind`. Gate by extension.
     if (/\.(tsx|jsx)$/i.test(fp)) {
-        for (const kind of ['jsx_self_closing_element', 'jsx_opening_element']) {
+        for (const kind of [TS_KINDS.jsxSelfClosingElement, TS_KINDS.jsxOpeningElement]) {
             for (const el of rootNode.findAll({ rule: { kind } })) {
                 const nameNode =
-                    el.field('name') ??
+                    el.field(TS_FIELDS.name) ??
                     el.children().find((c: SgNode) => {
                         const k = String(c.kind());
-                        return k === 'identifier' || k === 'nested_identifier' || k === 'jsx_namespace_name';
+                        return k === TS_KINDS.identifier || k === TS_KINDS.jsxNamespaceName;
                     });
                 const name = nameNode?.text();
                 if (!name) {
@@ -571,17 +587,17 @@ function createTsExtractors(isTS: boolean): LanguageExtractors {
  * we can't confidently name.
  */
 function typeFromNewExpression(newExpr: SgNode): string | undefined {
-    const cons = newExpr.field('constructor');
+    const cons = newExpr.field(TS_FIELDS.constructor);
     if (!cons) {
         return undefined;
     }
     const k = cons.kind();
-    if (k === 'identifier' || k === 'type_identifier') {
+    if (k === TS_KINDS.identifier || k === TS_KINDS.typeIdentifier) {
         return cons.text();
     }
     // `new pkg.Foo()` — take the final member
-    if (k === 'member_expression') {
-        const prop = cons.field('property');
+    if (k === TS_KINDS.memberExpression) {
+        const prop = cons.field(TS_FIELDS.property);
         return prop?.text();
     }
     return undefined;
@@ -592,16 +608,19 @@ function typeFromAnnotation(typeAnn: SgNode): string | undefined {
     const typeNode = typeAnn
         .children()
         .find(
-            (c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier' || c.kind() === 'generic_type',
+            (c: SgNode) =>
+                c.kind() === TS_KINDS.typeIdentifier ||
+                c.kind() === TS_KINDS.identifier ||
+                c.kind() === TS_KINDS.genericType,
         );
     if (!typeNode) {
         return undefined;
     }
-    if (typeNode.kind() === 'generic_type') {
+    if (typeNode.kind() === TS_KINDS.genericType) {
         return (
             typeNode
                 .children()
-                .find((c: SgNode) => c.kind() === 'type_identifier')
+                .find((c: SgNode) => c.kind() === TS_KINDS.typeIdentifier)
                 ?.text() ?? undefined
         );
     }
@@ -620,15 +639,15 @@ function typeFromAnnotation(typeAnn: SgNode): string | undefined {
  */
 function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string, string> {
     const bindings = new Map<string, string>();
-    for (const vd of scopeNode.findAll({ rule: { kind: 'variable_declarator' } })) {
-        const nameNode = vd.children().find((c: SgNode) => c.kind() === 'identifier');
+    for (const vd of scopeNode.findAll({ rule: { kind: TS_KINDS.variableDeclarator } })) {
+        const nameNode = vd.children().find((c: SgNode) => c.kind() === TS_KINDS.identifier);
         const name = nameNode?.text();
         if (!name) {
             continue;
         }
-        const typeAnn = vd.children().find((c: SgNode) => c.kind() === 'type_annotation');
-        const newExpr = vd.children().find((c: SgNode) => c.kind() === 'new_expression');
-        const asExpr = vd.children().find((c: SgNode) => c.kind() === 'as_expression');
+        const typeAnn = vd.children().find((c: SgNode) => c.kind() === TS_KINDS.typeAnnotation);
+        const newExpr = vd.children().find((c: SgNode) => c.kind() === TS_KINDS.newExpression);
+        const asExpr = vd.children().find((c: SgNode) => c.kind() === TS_KINDS.asExpression);
         let typeName: string | undefined;
         if (typeAnn) {
             typeName = typeFromAnnotation(typeAnn);
@@ -642,13 +661,13 @@ function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string
         if (!typeName && asExpr) {
             const typeChild = asExpr
                 .children()
-                .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'generic_type');
+                .find((c: SgNode) => c.kind() === TS_KINDS.typeIdentifier || c.kind() === TS_KINDS.genericType);
             if (typeChild) {
                 typeName =
-                    typeChild.kind() === 'generic_type'
+                    typeChild.kind() === TS_KINDS.genericType
                         ? (typeChild
                               .children()
-                              .find((c: SgNode) => c.kind() === 'type_identifier')
+                              .find((c: SgNode) => c.kind() === TS_KINDS.typeIdentifier)
                               ?.text() ?? typeChild.text())
                         : typeChild.text();
             }
@@ -659,9 +678,9 @@ function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string
         // resolver substitute the real type at resolve time using the global
         // returnTypes map.
         if (!typeName) {
-            const callExpr = vd.children().find((c: SgNode) => c.kind() === 'call_expression');
-            const fnNode = callExpr?.field('function');
-            if (fnNode?.kind() === 'identifier') {
+            const callExpr = vd.children().find((c: SgNode) => c.kind() === TS_KINDS.callExpression);
+            const fnNode = callExpr?.field(TS_FIELDS.function);
+            if (fnNode?.kind() === TS_KINDS.identifier) {
                 const calleeName = fnNode.text();
                 // Skip lowercase-only names that are clearly noise (e.g. `log`,
                 // `print`) — those won't have user-domain return types anyway.
@@ -687,21 +706,23 @@ function collectBindings(scopeNode: SgNode, isFunctionScope = false): Map<string
  */
 function seedTSParamBindings(fnNode: SgNode, bindings: Map<string, string>): void {
     const params =
-        fnNode.field('parameters') ?? fnNode.children().find((c: SgNode) => c.kind() === 'formal_parameters');
+        fnNode.field(TS_FIELDS.parameters) ??
+        fnNode.children().find((c: SgNode) => c.kind() === TS_KINDS.formalParameters);
     if (!params) {
         return;
     }
     for (const p of params.children()) {
         const kind = p.kind();
-        if (kind !== 'required_parameter' && kind !== 'optional_parameter') {
+        if (kind !== TS_KINDS.requiredParameter && kind !== TS_KINDS.optionalParameter) {
             continue;
         }
-        const pattern = p.field('pattern') ?? p.children().find((c: SgNode) => c.kind() === 'identifier');
-        const name = pattern?.kind() === 'identifier' ? pattern.text() : undefined;
+        const pattern =
+            p.field(TS_FIELDS.pattern) ?? p.children().find((c: SgNode) => c.kind() === TS_KINDS.identifier);
+        const name = pattern?.kind() === TS_KINDS.identifier ? pattern.text() : undefined;
         if (!name) {
             continue;
         }
-        const typeAnn = p.children().find((c: SgNode) => c.kind() === 'type_annotation');
+        const typeAnn = p.children().find((c: SgNode) => c.kind() === TS_KINDS.typeAnnotation);
         if (!typeAnn) {
             continue;
         }
@@ -717,7 +738,12 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
     // File-level bindings act as fallbacks for top-level method calls.
     const fileBindings = collectBindings(rootNode);
     // Per-function bindings override file-level ones inside the function body.
-    const functionKinds = ['function_declaration', 'method_definition', 'arrow_function', 'function_expression'];
+    const functionKinds = [
+        TS_KINDS.functionDeclaration,
+        TS_KINDS.methodDefinition,
+        TS_KINDS.arrowFunction,
+        TS_KINDS.functionExpression,
+    ];
     const functionRanges: { node: SgNode; bindings: Map<string, string> }[] = [];
     for (const kind of functionKinds) {
         for (const fn of rootNode.findAll({ rule: { kind } })) {
@@ -726,13 +752,13 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
     }
     // For each member_expression used as a call receiver, find the innermost
     // enclosing function whose binding matches `x`. Fall back to file scope.
-    for (const ce of rootNode.findAll({ rule: { kind: 'call_expression' } })) {
-        const fnField = ce.field('function');
-        if (!fnField || fnField.kind() !== 'member_expression') {
+    for (const ce of rootNode.findAll({ rule: { kind: TS_KINDS.callExpression } })) {
+        const fnField = ce.field(TS_FIELDS.function);
+        if (!fnField || fnField.kind() !== TS_KINDS.memberExpression) {
             continue;
         }
-        const objectNode = fnField.field('object');
-        if (!objectNode || objectNode.kind() !== 'identifier') {
+        const objectNode = fnField.field(TS_FIELDS.object);
+        if (!objectNode || objectNode.kind() !== TS_KINDS.identifier) {
             continue;
         }
         const receiver = objectNode.text();
@@ -779,7 +805,7 @@ function extractReceiverTypesTS(rootNode: SgNode, fp: string): ReceiverTypeMap {
         // Column convention: end-of-function (≈ col of `(` of args). Matches
         // the call extractor so chained calls don't collide on receiver-type
         // lookup. See src/shared/extract-calls.ts.
-        const r = (ce.field('function') ?? ce).range().end;
+        const r = (ce.field(TS_FIELDS.function) ?? ce).range().end;
         out.set(locationKey(fp, r.line, r.column), typeName);
     }
     return out;
