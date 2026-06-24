@@ -9,4 +9,9 @@ optional = true
 ignore = true
 
 [test]
+# NOTE: Bun 1.3.x does not honor this for per-test/hook timeouts — they still
+# fire at the built-in 5000ms default, which intermittently failed resolver
+# setup/cleanup under filesystem contention. The effective timeout is set via
+# the `--timeout 30000` flag in the package.json `test` script. Kept here to
+# document intent and in case a future Bun version respects it.
 timeout = 30000
