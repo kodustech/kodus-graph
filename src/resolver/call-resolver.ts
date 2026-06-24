@@ -12,6 +12,7 @@ import type { RawCallEdge, RawCallSite } from '../graph/types';
 import { getDIHeuristicsFor } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
+import { diScopedKey } from '../shared/qualified-name';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
 
@@ -299,7 +300,7 @@ const diTier: Tier = (call, ctx) => {
     if (!call.diField) {
         return null;
     }
-    const resolved = resolveDICall(call.diField, call.callName, ctx.fp, ctx.diMap, ctx.symbolTable);
+    const resolved = resolveDICall(call.diField, call.callName, ctx.fp, ctx.diMap, ctx.symbolTable, call.diClass);
     if (!resolved) {
         return null;
     }
@@ -593,11 +594,18 @@ function resolveDICall(
     currentFile: string,
     diMap: Map<string, string> | undefined,
     symbolTable: SymbolTable,
+    diClass?: string,
 ): ResolveResult | null {
-    if (!diMap?.has(fieldName)) {
+    if (!diMap) {
         return null;
     }
-    const typeName = diMap.get(fieldName)!;
+    // Prefer the per-class binding (`A#repo`) so two classes in the same file
+    // injecting different types into a same-named field resolve correctly;
+    // fall back to the bare field key when the call's class is unknown.
+    const typeName = (diClass ? diMap.get(diScopedKey(diClass, fieldName)) : undefined) ?? diMap.get(fieldName);
+    if (typeName === undefined) {
+        return null;
+    }
 
     // 1) Direct type match — pick by proximity so a multi-package monorepo
     //    doesn't silently bind to whichever file was indexed first.

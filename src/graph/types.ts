@@ -338,6 +338,7 @@ export interface RawCallSite {
     line: number; // line number of the call
     column?: number; // column number of the call (optional — used to key receiver-type inference)
     diField?: string; // if DI pattern (this.field.method), the field name
+    diClass?: string; // class enclosing a this.field.method() call — disambiguates the per-class diMap
     resolveInClass?: string; // class to resolve in: current class for self.X(), parent for super().X()
     /**
      * Inferred type of the receiver object (e.g. 'Foo' for `x.method()` where `x: Foo`).

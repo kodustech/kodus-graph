@@ -379,6 +379,7 @@ export const javaExtractors: LanguageExtractors = {
                           .find((c) => c.kind() === JAVA_KINDS.typeIdentifier)
                           ?.text() || typeNode.text()
                     : typeNode.text();
+            const className = findEnclosingJavaClass(fd)?.field(JAVA_FIELDS.name)?.text();
             for (const vd of fd.children()) {
                 if (vd.kind() !== JAVA_KINDS.variableDeclarator) {
                     continue;
@@ -390,7 +391,7 @@ export const javaExtractors: LanguageExtractors = {
                         .find((c) => c.kind() === JAVA_KINDS.identifier)
                         ?.text();
                 if (ident) {
-                    result.diEntries.push({ fieldName: ident, typeName });
+                    result.diEntries.push({ fieldName: ident, typeName, className });
                 }
             }
         }
@@ -420,6 +421,7 @@ export const javaExtractors: LanguageExtractors = {
             if (!params) {
                 continue;
             }
+            const className = findEnclosingJavaClass(cd)?.field(JAVA_FIELDS.name)?.text();
             for (const p of params.children()) {
                 if (p.kind() !== JAVA_KINDS.formalParameter) {
                     continue;
@@ -448,7 +450,7 @@ export const javaExtractors: LanguageExtractors = {
                               .find((c) => c.kind() === JAVA_KINDS.typeIdentifier)
                               ?.text() || typeNode.text()
                         : typeNode.text();
-                result.diEntries.push({ fieldName: ident, typeName });
+                result.diEntries.push({ fieldName: ident, typeName, className });
             }
         }
 
@@ -508,6 +510,7 @@ export const javaExtractors: LanguageExtractors = {
             const obj = mi.field(JAVA_FIELDS.object);
             let resolveInClass: string | undefined;
             let diField: string | undefined;
+            let diClass: string | undefined;
 
             if (obj) {
                 const objText = obj.text();
@@ -530,6 +533,15 @@ export const javaExtractors: LanguageExtractors = {
                     const fieldName = obj.field(JAVA_FIELDS.field)?.text();
                     if (base && fieldName && (base.kind() === JAVA_KINDS.this || base.text() === 'this')) {
                         diField = fieldName;
+                        // Enclosing class disambiguates the per-class diMap when
+                        // two classes in the same file share a field name. Use
+                        // the SAME helper the diMap write side uses
+                        // (findEnclosingJavaClass) so the per-class key the
+                        // resolver looks up matches the one the engine stored.
+                        // The local findEnclosingClass also matches enums, which
+                        // the write side doesn't — that mismatch would silently
+                        // drop enum-scoped fields to the bare-key fallback.
+                        diClass = findEnclosingJavaClass(mi)?.field(JAVA_FIELDS.name)?.text();
                     }
                 }
                 // For other `x.method()` member calls, `callName` alone is
@@ -562,6 +574,7 @@ export const javaExtractors: LanguageExtractors = {
                 column: r.column,
                 ...(resolveInClass ? { resolveInClass } : {}),
                 ...(diField ? { diField } : {}),
+                ...(diClass ? { diClass } : {}),
                 ...(chainedFromLine !== undefined ? { chainedFromLine, chainedFromColumn } : {}),
             });
         }

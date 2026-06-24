@@ -69,6 +69,15 @@ export interface ExtractedEnum {
 export interface ExtractedDI {
     fieldName: string;
     typeName: string;
+    /**
+     * Class that declares the injected field. When set, the engine indexes the
+     * binding under a per-class key so two classes in the same file with a
+     * same-named field of different types don't collide (last-write-wins). The
+     * bare field key is still written as a fallback for callers without class
+     * context. Optional — languages that don't thread class context keep the
+     * file-scoped behavior.
+     */
+    className?: string;
 }
 
 export interface ExtractedValueBinding {
