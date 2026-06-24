@@ -7,6 +7,7 @@ import { executeCommunities } from './commands/communities';
 import { executeContext } from './commands/context';
 import { executeDiff } from './commands/diff';
 import { executeFlows } from './commands/flows';
+import { executeOutline } from './commands/outline';
 import { executeParse } from './commands/parse';
 import { executeSearch } from './commands/search';
 import { executeUpdate } from './commands/update';
@@ -225,6 +226,38 @@ program
             callersOf: opts.callersOf,
             calleesOf: opts.calleesOf,
             limit: parseInt(opts.limit, 10),
+            out: opts.out,
+        });
+    });
+
+program
+    .command('outline')
+    .description('Print a compact structural outline of files (symbols, signatures, ranges)')
+    .option('--files <paths...>', 'Files to outline (relative to --repo-dir)')
+    .option('--dir <path>', 'Outline every source file under this directory')
+    .option('--repo-dir <path>', 'Repository root', '.')
+    .option('--format <fmt>', 'Output format: text or json', 'text')
+    .option('--exported-only', 'Only show exported symbols')
+    .option('--include <patterns...>', 'Glob(s) to include')
+    .option('--exclude <patterns...>', 'Glob(s) to exclude')
+    .option('--out <path>', 'Output file (default: stdout)', '-')
+    .action((opts) => {
+        if (!opts.files && !opts.dir) {
+            log.error('one of --files or --dir is required');
+            process.exit(1);
+        }
+        if (opts.format !== 'text' && opts.format !== 'json') {
+            log.error("--format must be 'text' or 'json'");
+            process.exit(1);
+        }
+        executeOutline({
+            repoDir: resolve(opts.repoDir),
+            files: opts.files,
+            dir: opts.dir ? resolve(opts.dir) : undefined,
+            format: opts.format,
+            exportedOnly: opts.exportedOnly,
+            include: opts.include,
+            exclude: opts.exclude,
             out: opts.out,
         });
     });
