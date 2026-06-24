@@ -1,6 +1,9 @@
 import { relative } from 'path';
+import { computeBlastRadius } from '../analysis/blast-radius';
+import { GraphIndex } from '../analysis/graph-index';
 import { buildGraphData } from '../graph/builder';
-import type { GraphNode } from '../graph/types';
+import { loadGraph } from '../graph/loader';
+import type { GraphData, GraphEdge, GraphNode } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { computeFileHash } from '../shared/file-hash';
@@ -18,6 +21,23 @@ export interface OutlineOptions {
     exportedOnly?: boolean;
     include?: string[];
     exclude?: string[];
+    /**
+     * Path to an existing graph JSON. When set, each symbol is enriched with
+     * its CALLS fan-in / fan-out — the cross-file impact view that a purely
+     * syntactic outline cannot produce.
+     */
+    graph?: string;
+    /** With `graph`, also compute each symbol's blast-radius size. Heavier. */
+    blast?: boolean;
+    /** Blast-radius traversal depth (default 2). */
+    maxDepth?: number;
+}
+
+/** Cross-file impact metrics for one symbol, sourced from a resolved graph. */
+interface SymbolImpact {
+    callers: number;
+    callees: number;
+    blast?: number;
 }
 
 /** One symbol in the structural outline (a node, flattened for output). */
@@ -34,6 +54,12 @@ interface OutlineSymbol {
     is_test: boolean;
     complexity?: number;
     decorators?: string[];
+    /** CALLS fan-in (callers), present only when enriched from a graph. */
+    callers?: number;
+    /** CALLS fan-out (callees), present only when enriched from a graph. */
+    callees?: number;
+    /** Blast-radius size (downstream functions), present with --blast. */
+    blast?: number;
     /** Members (methods / constructors) when this symbol is a class. */
     members?: OutlineSymbol[];
 }
@@ -59,7 +85,8 @@ function signatureOf(n: GraphNode): string {
     return `${n.name}${params}${ret}`;
 }
 
-function toSymbol(n: GraphNode): OutlineSymbol {
+function toSymbol(n: GraphNode, impacts?: Map<string, SymbolImpact>): OutlineSymbol {
+    const impact = impacts?.get(n.qualified_name);
     return {
         kind: n.kind,
         name: n.name,
@@ -73,6 +100,9 @@ function toSymbol(n: GraphNode): OutlineSymbol {
         is_test: n.is_test,
         complexity: n.complexity,
         decorators: n.decorators && n.decorators.length > 0 ? n.decorators : undefined,
+        callers: impact?.callers,
+        callees: impact?.callees,
+        blast: impact?.blast,
     };
 }
 
@@ -81,7 +111,12 @@ function toSymbol(n: GraphNode): OutlineSymbol {
  * top-level functions at the root, methods/constructors nested under their
  * declaring class. Everything is line-ordered.
  */
-function buildFileOutline(file: string, nodes: GraphNode[], exportedOnly: boolean): OutlineFile {
+function buildFileOutline(
+    file: string,
+    nodes: GraphNode[],
+    exportedOnly: boolean,
+    impacts?: Map<string, SymbolImpact>,
+): OutlineFile {
     const byLine = [...nodes].sort((a, b) => a.line_start - b.line_start || a.line_end - b.line_end);
 
     // Index containers by name so members can attach in O(1). Multiple classes
@@ -131,11 +166,11 @@ function buildFileOutline(file: string, nodes: GraphNode[], exportedOnly: boolea
         if (!passesFilter(n)) {
             continue;
         }
-        const sym = toSymbol(n);
+        const sym = toSymbol(n, impacts);
         if (CONTAINER_KINDS.has(n.kind)) {
             const members = (memberMap.get(n) ?? [])
                 .filter(passesFilter)
-                .map(toSymbol)
+                .map((m) => toSymbol(m, impacts))
                 .sort((a, b) => a.line_start - b.line_start);
             if (members.length > 0) {
                 sym.members = members;
@@ -174,6 +209,14 @@ function flagsOf(s: OutlineSymbol): string {
     if (s.decorators && s.decorators.length > 0) {
         flags.push(...s.decorators.map((d) => (d.startsWith('@') ? d : `@${d}`)));
     }
+    // Cross-file impact (only when enriched from a graph). `↑` callers (fan-in),
+    // `↓` callees (fan-out), `⌀` blast-radius size.
+    if (typeof s.callers === 'number' || typeof s.callees === 'number') {
+        flags.push(`↑${s.callers ?? 0} ↓${s.callees ?? 0}`);
+    }
+    if (typeof s.blast === 'number') {
+        flags.push(`⌀${s.blast}`);
+    }
     return flags.length > 0 ? `  [${flags.join(' ')}]` : '';
 }
 
@@ -200,6 +243,36 @@ function renderText(files: OutlineFile[]): string {
         blocks.push(lines.join('\n'));
     }
     return blocks.join('\n\n');
+}
+
+/**
+ * Build a qualified-name → impact map from a resolved graph file: CALLS
+ * fan-in (callers) and fan-out (callees) per symbol, plus optional
+ * blast-radius size. This is the cross-file enrichment a syntactic outline
+ * can't produce on its own.
+ */
+function buildImpactMap(graphPath: string, withBlast: boolean, maxDepth: number): Map<string, SymbolImpact> {
+    const idx = loadGraph(graphPath);
+    const graphData: GraphData = { nodes: idx.nodes, edges: idx.edges };
+    const gi = new GraphIndex(graphData);
+    const countCalls = (edges: readonly GraphEdge[] | undefined): number =>
+        (edges ?? []).reduce((n, e) => (e.kind === 'CALLS' ? n + 1 : n), 0);
+
+    const impacts = new Map<string, SymbolImpact>();
+    for (const node of idx.nodes) {
+        const qn = node.qualified_name;
+        const impact: SymbolImpact = {
+            callers: countCalls(idx.reverseAdjacency.get(qn)),
+            callees: countCalls(idx.adjacency.get(qn)),
+        };
+        if (withBlast) {
+            impact.blast = computeBlastRadius(graphData, [qn], maxDepth, undefined, undefined, {
+                index: gi,
+            }).total_functions;
+        }
+        impacts.set(qn, impact);
+    }
+    return impacts;
 }
 
 /**
@@ -241,9 +314,14 @@ export async function executeOutline(opts: OutlineOptions): Promise<void> {
         byFile.get(node.file_path)?.push(node);
     }
 
+    // Optional cross-file enrichment from a resolved graph: CALLS fan-in /
+    // fan-out, and (with --blast) blast-radius size. This is the part a purely
+    // syntactic outline can't do.
+    const impacts = opts.graph ? buildImpactMap(opts.graph, opts.blast ?? false, opts.maxDepth ?? 2) : undefined;
+
     const outlines: OutlineFile[] = [...byFile.keys()]
         .sort()
-        .map((file) => buildFileOutline(file, byFile.get(file) ?? [], opts.exportedOnly ?? false))
+        .map((file) => buildFileOutline(file, byFile.get(file) ?? [], opts.exportedOnly ?? false, impacts))
         .filter((o) => o.symbols.length > 0);
 
     const content = opts.format === 'json' ? JSON.stringify(outlines, null, 2) : renderText(outlines);

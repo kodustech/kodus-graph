@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { executeOutline } from '../../src/commands/outline';
+import { executeParse } from '../../src/commands/parse';
 // Import to trigger language registration.
 import '../../src/parser/languages';
 
@@ -85,6 +86,52 @@ describe('executeOutline', () => {
         expect(names).toContain('AuthService');
         expect(names).toContain('hashPassword');
         expect(parsed.every((f) => f.symbols.every((s) => s.is_exported))).toBe(true);
+
+        rmSync(jsonPath, { force: true });
+    });
+
+    it('enriches symbols with CALLS fan-in/out and blast-radius from a graph', async () => {
+        const graphPath = '/tmp/kodus-graph-test-outline-graph.json';
+        await executeParse({ repoDir: fixtureDir, all: true, out: graphPath });
+
+        await executeOutline({
+            repoDir: fixtureDir,
+            files: ['src/db.ts'],
+            format: 'json',
+            graph: graphPath,
+            blast: true,
+            out: jsonPath,
+        });
+        const parsed = JSON.parse(readFileSync(jsonPath, 'utf8')) as Array<{
+            symbols: Array<{ name: string; callers?: number; callees?: number; blast?: number }>;
+        }>;
+
+        // `findUser` is called from multiple other files in the fixture, so it
+        // has a non-zero fan-in and a blast radius reaching its callers.
+        const findUser = parsed.flatMap((f) => f.symbols).find((s) => s.name === 'findUser');
+        expect(findUser).toBeDefined();
+        expect(typeof findUser?.callers).toBe('number');
+        expect(typeof findUser?.callees).toBe('number');
+        expect(findUser?.callers ?? 0).toBeGreaterThan(0);
+        expect(findUser?.blast ?? 0).toBeGreaterThan(0);
+
+        rmSync(graphPath, { force: true });
+        rmSync(jsonPath, { force: true });
+    });
+
+    it('omits impact fields when no --graph is given', async () => {
+        await executeOutline({
+            repoDir: fixtureDir,
+            files: ['src/db.ts'],
+            format: 'json',
+            out: jsonPath,
+        });
+        const parsed = JSON.parse(readFileSync(jsonPath, 'utf8')) as Array<{
+            symbols: Array<{ callers?: number; callees?: number; blast?: number }>;
+        }>;
+        const allSymbols = parsed.flatMap((f) => f.symbols);
+        expect(allSymbols.length).toBeGreaterThan(0);
+        expect(allSymbols.every((s) => s.callers === undefined && s.callees === undefined)).toBe(true);
 
         rmSync(jsonPath, { force: true });
     });

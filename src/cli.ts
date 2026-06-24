@@ -238,6 +238,9 @@ program
     .option('--repo-dir <path>', 'Repository root', '.')
     .option('--format <fmt>', 'Output format: text or json', 'text')
     .option('--exported-only', 'Only show exported symbols')
+    .option('--graph <path>', 'Resolved graph JSON — enrich symbols with CALLS fan-in/fan-out')
+    .option('--blast', "With --graph, also compute each symbol's blast-radius size")
+    .option('--max-depth <n>', 'Blast-radius traversal depth', '2')
     .option('--include <patterns...>', 'Glob(s) to include')
     .option('--exclude <patterns...>', 'Glob(s) to exclude')
     .option('--out <path>', 'Output file (default: stdout)', '-')
@@ -250,12 +253,19 @@ program
             log.error("--format must be 'text' or 'json'");
             process.exit(1);
         }
+        if (opts.blast && !opts.graph) {
+            log.error('--blast requires --graph');
+            process.exit(1);
+        }
         executeOutline({
             repoDir: resolve(opts.repoDir),
             files: opts.files,
             dir: opts.dir ? resolve(opts.dir) : undefined,
             format: opts.format,
             exportedOnly: opts.exportedOnly,
+            graph: opts.graph,
+            blast: opts.blast,
+            maxDepth: parseInt(opts.maxDepth, 10),
             include: opts.include,
             exclude: opts.exclude,
             out: opts.out,

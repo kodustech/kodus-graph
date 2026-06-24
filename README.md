@@ -260,6 +260,11 @@ kodus-graph outline --dir ./src --exported-only
 
 # Machine-readable JSON for an agent / pipe
 kodus-graph outline --files src/auth.ts --format json --out - | jq '.[0].symbols'
+
+# Enrich with cross-file impact from an existing graph: CALLS fan-in/fan-out
+# (and blast-radius size with --blast). This is what a purely syntactic
+# outline (e.g. ast-grep's) can't do.
+kodus-graph outline --files src/db.ts --graph graph.json --blast
 ```
 
 Example text output:
@@ -273,6 +278,16 @@ src/auth.ts
       method verifyToken(token: string): boolean  L16-18  [export]
   fn hashPassword(password: string): string  L21-23  [export]
   fn validateEmail(email: string): boolean  L25-27
+```
+
+With `--graph --blast`, each symbol also carries `↑<callers> ↓<callees>` (CALLS
+fan-in / fan-out) and `⌀<n>` (blast-radius size — downstream functions impacted
+if it changes):
+
+```
+src/db.ts
+  fn findUser(id: number): Promise<User | null>  L0-2  [export async ↑3 ↓0 ⌀6]
+  fn saveUser(user: User): Promise<void>  L4-4  [export async ↑2 ↓0 ⌀3]
 ```
 
 ## Graph Schema
