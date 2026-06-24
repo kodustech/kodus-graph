@@ -13,8 +13,10 @@ import {
     extractThrows,
     hasTestAnnotation,
     nodeRange,
+    stripImportKeyword,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { CSHARP_FIELDS, CSHARP_KINDS } from './kinds';
 
 // Branch kinds for C# cyclomatic complexity.
 // `switch_section` is the per-case kind (skip outer `switch_statement`).
@@ -22,15 +24,15 @@ import type { ExtractionResult, LanguageExtractors } from '../spec';
 // `conditional_access_expression` is `?.` (short-circuiting) which adds a
 // branch.
 const CSHARP_BRANCH_KINDS = [
-    'if_statement',
-    'for_statement',
-    'foreach_statement',
-    'while_statement',
-    'do_statement',
-    'switch_section',
-    'catch_clause',
-    'conditional_expression',
-    'conditional_access_expression',
+    CSHARP_KINDS.ifStatement,
+    CSHARP_KINDS.forStatement,
+    CSHARP_KINDS.foreachStatement,
+    CSHARP_KINDS.whileStatement,
+    CSHARP_KINDS.doStatement,
+    CSHARP_KINDS.switchSection,
+    CSHARP_KINDS.catchClause,
+    CSHARP_KINDS.conditionalExpression,
+    CSHARP_KINDS.conditionalAccessExpression,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -38,26 +40,26 @@ const CSHARP_BRANCH_KINDS = [
 // ---------------------------------------------------------------------------
 
 function csharpExtends(node: SgNode): string | undefined {
-    const baseList = node.children().find((c: SgNode) => c.kind() === 'base_list');
+    const baseList = node.children().find((c: SgNode) => c.kind() === CSHARP_KINDS.baseList);
     if (!baseList) {
         return undefined;
     }
     const types = baseList
         .children()
-        .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+        .filter((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
         .map((c: SgNode) => c.text());
     // First non-interface name is the base class (C# convention: interfaces start with I+uppercase)
     return types.find((t) => !(t.length >= 2 && t[0] === 'I' && t[1] === t[1].toUpperCase()));
 }
 
 function csharpImplements(node: SgNode): string[] {
-    const baseList = node.children().find((c: SgNode) => c.kind() === 'base_list');
+    const baseList = node.children().find((c: SgNode) => c.kind() === CSHARP_KINDS.baseList);
     if (!baseList) {
         return [];
     }
     const types = baseList
         .children()
-        .filter((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier')
+        .filter((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
         .map((c: SgNode) => c.text());
     // Names matching I+uppercase convention are interfaces
     return types.filter((t) => t.length >= 2 && t[0] === 'I' && t[1] === t[1].toUpperCase());
@@ -69,51 +71,24 @@ function csharpImplements(node: SgNode): string[] {
 
 function extractImportModule(node: SgNode): string {
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'string' || ck === 'interpreted_string_literal' || ck === 'string_fragment') {
-            const raw = child.text();
-            return raw.replace(/^["'`]|["'`]$/g, '');
-        }
-        for (const grandchild of child.children()) {
-            const gck = grandchild.kind();
-            if (gck === 'string_fragment' || gck === 'string_content') {
-                return grandchild.text();
-            }
-        }
-    }
-
-    for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'scoped_identifier' || ck === 'scoped_type_identifier' || ck === 'qualified_name') {
+        if (child.kind() === CSHARP_KINDS.qualifiedName) {
             return child.text();
         }
     }
 
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'name' || ck === 'namespace_name' || ck === 'use_tree') {
+        if (child.kind() === CSHARP_KINDS.identifier) {
             return child.text();
         }
     }
 
-    for (const child of node.children()) {
-        if (child.kind() === 'identifier' || child.kind() === 'type_identifier') {
-            return child.text();
-        }
-    }
-
-    return node
-        .text()
-        .replace(/^\s*(import|use|using|require)\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 function extractImportNames(node: SgNode): string[] {
     const names: string[] = [];
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'identifier' || ck === 'type_identifier' || ck === 'name') {
+        if (child.kind() === CSHARP_KINDS.identifier) {
             names.push(child.text());
         }
     }
@@ -126,19 +101,19 @@ function extractImportNames(node: SgNode): string[] {
 
 /** Check if a C# node has 'public' modifier. C# tree-sitter uses 'modifier' kind nodes. */
 function csharpIsExported(node: SgNode): boolean {
-    return node.children().some((c) => String(c.kind()) === 'modifier' && c.text() === 'public');
+    return node.children().some((c) => String(c.kind()) === CSHARP_KINDS.modifier && c.text() === 'public');
 }
 
 /** Check if a C# node has 'async' modifier. */
 function csharpIsAsync(node: SgNode): boolean {
-    return node.children().some((c) => String(c.kind()) === 'modifier' && c.text() === 'async');
+    return node.children().some((c) => String(c.kind()) === CSHARP_KINDS.modifier && c.text() === 'async');
 }
 
 // ---------------------------------------------------------------------------
 // Test detection config
 // ---------------------------------------------------------------------------
 
-const ANNOTATION_KIND = 'attribute';
+const ANNOTATION_KIND = CSHARP_KINDS.attribute;
 const ANNOTATION_NAMES = ['TestMethod', 'Fact', 'Test', 'Theory'];
 
 // ---------------------------------------------------------------------------
@@ -149,11 +124,15 @@ const ANNOTATION_NAMES = ['TestMethod', 'Fact', 'Test', 'Theory'];
 // classes; records since C# 9). The resolver treats every class member with a
 // matching field/property name as a DI binding so `this.Repo.FindAll()`
 // resolves through the DI tier.
-const CSHARP_CLASS_DECL_KINDS = new Set(['class_declaration', 'record_declaration', 'struct_declaration']);
+const CSHARP_CLASS_DECL_KINDS = new Set([
+    CSHARP_KINDS.classDeclaration,
+    CSHARP_KINDS.recordDeclaration,
+    CSHARP_KINDS.structDeclaration,
+]);
 
 // Primitive C# types we deliberately exclude from DI bindings — they are not
 // services and would only add noise to the diMap.
-const CSHARP_PRIMITIVE_KINDS = new Set(['predefined_type']);
+const CSHARP_PRIMITIVE_KINDS = new Set<string>([CSHARP_KINDS.predefinedType]);
 
 /**
  * Extract a (typeName, declaratorName) pair from a tree-sitter `parameter`
@@ -161,23 +140,23 @@ const CSHARP_PRIMITIVE_KINDS = new Set(['predefined_type']);
  * (no field name on the type), so we read positionally.
  */
 function csharpParamTypeAndName(p: SgNode): { typeName: string; name: string } | null {
-    if (p.kind() !== 'parameter') {
+    if (p.kind() !== CSHARP_KINDS.parameter) {
         return null;
     }
     let typeNode: SgNode | undefined;
     let nameNode: SgNode | undefined;
     for (const c of p.children()) {
         const k = c.kind();
-        if (k === 'attribute_list' || k === 'modifier' || k === 'parameter_modifier') {
+        if (k === CSHARP_KINDS.attributeList || k === CSHARP_KINDS.modifier) {
             continue;
         }
         if (
-            k === 'identifier' ||
-            k === 'generic_name' ||
-            k === 'qualified_name' ||
-            k === 'predefined_type' ||
-            k === 'nullable_type' ||
-            k === 'array_type'
+            k === CSHARP_KINDS.identifier ||
+            k === CSHARP_KINDS.genericName ||
+            k === CSHARP_KINDS.qualifiedName ||
+            k === CSHARP_KINDS.predefinedType ||
+            k === CSHARP_KINDS.nullableType ||
+            k === CSHARP_KINDS.arrayType
         ) {
             if (!typeNode) {
                 typeNode = c;
@@ -196,19 +175,21 @@ function csharpParamTypeAndName(p: SgNode): { typeName: string; name: string } |
 /** Unwrap `IFoo<Bar>` → `IFoo`, `IFoo?` → `IFoo`, `IFoo` → `IFoo`. */
 function unwrapCsharpType(typeNode: SgNode): string {
     const k = typeNode.kind();
-    if (k === 'generic_name') {
+    if (k === CSHARP_KINDS.genericName) {
         return (
             typeNode
                 .children()
-                .find((c) => c.kind() === 'identifier')
+                .find((c) => c.kind() === CSHARP_KINDS.identifier)
                 ?.text() ?? typeNode.text()
         );
     }
-    if (k === 'nullable_type') {
-        const inner = typeNode.children().find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name');
+    if (k === CSHARP_KINDS.nullableType) {
+        const inner = typeNode
+            .children()
+            .find((c) => c.kind() === CSHARP_KINDS.identifier || c.kind() === CSHARP_KINDS.genericName);
         return inner ? unwrapCsharpType(inner) : typeNode.text();
     }
-    if (k === 'array_type') {
+    if (k === CSHARP_KINDS.arrayType) {
         return typeNode.text();
     }
     return typeNode.text();
@@ -221,16 +202,16 @@ function unwrapCsharpType(typeNode: SgNode): string {
  * resolves ctor params at runtime.
  */
 function csharpConstructorsIn(classNode: SgNode): SgNode[] {
-    const body = classNode.children().find((c) => c.kind() === 'declaration_list');
+    const body = classNode.children().find((c) => c.kind() === CSHARP_KINDS.declarationList);
     if (!body) {
         return [];
     }
-    return body.children().filter((c) => c.kind() === 'constructor_declaration');
+    return body.children().filter((c) => c.kind() === CSHARP_KINDS.constructorDeclaration);
 }
 
 /** Find the immediate `parameter_list` child of a class/record (primary ctor). */
 function csharpPrimaryCtorParams(classNode: SgNode): SgNode | null {
-    return classNode.children().find((c) => c.kind() === 'parameter_list') ?? null;
+    return classNode.children().find((c) => c.kind() === CSHARP_KINDS.parameterList) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +223,8 @@ export const csharpExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes ──────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: CSHARP_KINDS.classDeclaration } })) {
+            const name = node.field(CSHARP_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -269,13 +250,13 @@ export const csharpExtractors: LanguageExtractors = {
                 modifiers: classModifiers,
                 content_hash: computeContentHash(node.text()),
                 is_exported: csharpIsExported(node),
-                decorators: extractDecorators(node, ['attribute_list']),
+                decorators: extractDecorators(node, [CSHARP_KINDS.attributeList]),
             });
         }
 
         // ── Interfaces ──────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'interface_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: CSHARP_KINDS.interfaceDeclaration } })) {
+            const name = node.field(CSHARP_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -293,8 +274,8 @@ export const csharpExtractors: LanguageExtractors = {
         }
 
         // ── Enums ───────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'enum_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: CSHARP_KINDS.enumDeclaration } })) {
+            const name = node.field(CSHARP_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -311,13 +292,13 @@ export const csharpExtractors: LanguageExtractors = {
         }
 
         // ── Functions / Methods / Constructors ──────────────────────────
-        const funcKinds = ['method_declaration', 'constructor_declaration'];
-        const constructorKindSet = new Set(['constructor_declaration']);
-        const methodKindSet = new Set(['method_declaration']);
+        const funcKinds = [CSHARP_KINDS.methodDeclaration, CSHARP_KINDS.constructorDeclaration];
+        const constructorKindSet = new Set<string>([CSHARP_KINDS.constructorDeclaration]);
+        const methodKindSet = new Set<string>([CSHARP_KINDS.methodDeclaration]);
 
         for (const funcKind of funcKinds) {
             for (const node of root.findAll({ rule: { kind: funcKind } })) {
-                const name = node.field('name')?.text();
+                const name = node.field(CSHARP_FIELDS.name)?.text();
                 if (!name) {
                     continue;
                 }
@@ -328,7 +309,7 @@ export const csharpExtractors: LanguageExtractors = {
                     return k.includes('class') || k.includes('struct') || k.includes('impl');
                 });
                 if (classAncestor) {
-                    className = classAncestor.field('name')?.text() || '';
+                    className = classAncestor.field(CSHARP_FIELDS.name)?.text() || '';
                 }
 
                 let kind: 'Function' | 'Method' | 'Constructor';
@@ -350,9 +331,9 @@ export const csharpExtractors: LanguageExtractors = {
                     name,
                     line_start: range.line_start,
                     line_end: range.line_end,
-                    params: node.field('parameters')?.text() || '()',
+                    params: node.field(CSHARP_FIELDS.parameters)?.text() || '()',
                     // C# tree-sitter exposes the return type as `returns` field.
-                    returnType: node.field('returns')?.text() || '',
+                    returnType: node.field(CSHARP_FIELDS.returns)?.text() || '',
                     kind,
                     ast_kind: String(node.kind()),
                     className,
@@ -361,8 +342,8 @@ export const csharpExtractors: LanguageExtractors = {
                     isTest,
                     is_exported: csharpIsExported(node),
                     is_async: csharpIsAsync(node),
-                    decorators: extractDecorators(node, ['attribute_list']),
-                    throws: extractThrows(node, ['throw_statement']),
+                    decorators: extractDecorators(node, [CSHARP_KINDS.attributeList]),
+                    throws: extractThrows(node, [CSHARP_KINDS.throwStatement]),
                     complexity: computeCyclomatic(node, CSHARP_BRANCH_KINDS),
                 });
             }
@@ -384,25 +365,30 @@ export const csharpExtractors: LanguageExtractors = {
         // resolver only consults diMap when the call shape is `this.field.method()`.
 
         // Field injection
-        for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
-            const vd = fd.children().find((c) => c.kind() === 'variable_declaration');
+        for (const fd of root.findAll({ rule: { kind: CSHARP_KINDS.fieldDeclaration } })) {
+            const vd = fd.children().find((c) => c.kind() === CSHARP_KINDS.variableDeclaration);
             if (!vd) {
                 continue;
             }
             const typeNode = vd
                 .children()
-                .find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name' || c.kind() === 'qualified_name');
+                .find(
+                    (c) =>
+                        c.kind() === CSHARP_KINDS.identifier ||
+                        c.kind() === CSHARP_KINDS.genericName ||
+                        c.kind() === CSHARP_KINDS.qualifiedName,
+                );
             if (!typeNode) {
                 continue;
             }
             const typeName = unwrapCsharpType(typeNode);
             for (const decl of vd.children()) {
-                if (decl.kind() !== 'variable_declarator') {
+                if (decl.kind() !== CSHARP_KINDS.variableDeclarator) {
                     continue;
                 }
                 const fieldName = decl
                     .children()
-                    .find((c) => c.kind() === 'identifier')
+                    .find((c) => c.kind() === CSHARP_KINDS.identifier)
                     ?.text();
                 if (!fieldName) {
                     continue;
@@ -412,11 +398,15 @@ export const csharpExtractors: LanguageExtractors = {
         }
 
         // Property injection (Blazor `[Inject]` and conventional auto-props)
-        for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+        for (const pd of root.findAll({ rule: { kind: CSHARP_KINDS.propertyDeclaration } })) {
             const ids: SgNode[] = [];
             for (const c of pd.children()) {
                 const k = c.kind();
-                if (k === 'identifier' || k === 'generic_name' || k === 'qualified_name') {
+                if (
+                    k === CSHARP_KINDS.identifier ||
+                    k === CSHARP_KINDS.genericName ||
+                    k === CSHARP_KINDS.qualifiedName
+                ) {
                     ids.push(c);
                 }
             }
@@ -433,12 +423,12 @@ export const csharpExtractors: LanguageExtractors = {
         // Constructor injection: when a class has exactly ONE ctor, every typed
         // param is treated as an injected dependency. Mirrors the .NET DI
         // container's runtime behavior — and matches the Java Spring 4.3+ rule.
-        for (const cls of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const cls of root.findAll({ rule: { kind: CSHARP_KINDS.classDeclaration } })) {
             const ctors = csharpConstructorsIn(cls);
             if (ctors.length !== 1) {
                 continue;
             }
-            const params = ctors[0].field('parameters');
+            const params = ctors[0].field(CSHARP_FIELDS.parameters);
             if (!params) {
                 continue;
             }
@@ -453,7 +443,7 @@ export const csharpExtractors: LanguageExtractors = {
         // Primary constructor (C# 12+ for classes; C# 9+ for records). The
         // params are auto-promoted to compiler-generated fields/properties
         // accessible inside the body — semantically identical to ctor injection.
-        for (const k of ['class_declaration', 'record_declaration']) {
+        for (const k of [CSHARP_KINDS.classDeclaration, CSHARP_KINDS.recordDeclaration]) {
             for (const cls of root.findAll({ rule: { kind: k } })) {
                 const params = csharpPrimaryCtorParams(cls);
                 if (!params) {
@@ -469,7 +459,7 @@ export const csharpExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'using_directive' } })) {
+        for (const node of root.findAll({ rule: { kind: CSHARP_KINDS.usingDirective } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -500,10 +490,10 @@ export const csharpExtractors: LanguageExtractors = {
             superPrefixes: ['base.'],
             findEnclosingClass,
             getParentClass: (classNode) => {
-                const bl = classNode.children().find((c) => c.kind() === 'base_list');
+                const bl = classNode.children().find((c) => c.kind() === CSHARP_KINDS.baseList);
                 return bl
                     ?.children()
-                    .find((c) => c.kind() === 'identifier' || c.kind() === 'type_identifier')
+                    .find((c) => c.kind() === CSHARP_KINDS.identifier)
                     ?.text();
             },
         };
@@ -516,40 +506,39 @@ export const csharpExtractors: LanguageExtractors = {
 function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const vdWrap of root.findAll({ rule: { kind: 'variable_declaration' } })) {
+    for (const vdWrap of root.findAll({ rule: { kind: CSHARP_KINDS.variableDeclaration } })) {
         const first = vdWrap.children()[0];
         // `Foo x = ...` → explicit; `var x = ...` → first child kind is `implicit_type`.
-        const declaredType =
-            first && (first.kind() === 'identifier' || first.kind() === 'type_identifier') ? first.text() : undefined;
+        const declaredType = first && first.kind() === CSHARP_KINDS.identifier ? first.text() : undefined;
         for (const vd of vdWrap.children()) {
-            if (vd.kind() !== 'variable_declarator') {
+            if (vd.kind() !== CSHARP_KINDS.variableDeclarator) {
                 continue;
             }
             const name = vd
                 .children()
-                .find((c: SgNode) => c.kind() === 'identifier')
+                .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
                 ?.text();
             if (!name) {
                 continue;
             }
             let typeName: string | undefined = declaredType;
             if (!typeName) {
-                const oce = vd.children().find((c: SgNode) => c.kind() === 'object_creation_expression');
+                const oce = vd.children().find((c: SgNode) => c.kind() === CSHARP_KINDS.objectCreationExpression);
                 if (oce) {
                     typeName =
-                        oce.field('type')?.text() ??
+                        oce.field(CSHARP_FIELDS.type)?.text() ??
                         oce
                             .children()
-                            .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'type_identifier')
+                            .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
                             ?.text();
                 }
                 // C# `var x = factory();` — emit deferred `@CALLEE:` marker so
                 // the resolver substitutes the callee's return type cross-file.
                 // Only fires for bare invocation `Foo()` (no receiver).
                 if (!typeName) {
-                    const inv = vd.children().find((c: SgNode) => c.kind() === 'invocation_expression');
-                    const fn = inv?.field('function');
-                    if (fn?.kind() === 'identifier') {
+                    const inv = vd.children().find((c: SgNode) => c.kind() === CSHARP_KINDS.invocationExpression);
+                    const fn = inv?.field(CSHARP_FIELDS.function);
+                    if (fn?.kind() === CSHARP_KINDS.identifier) {
                         typeName = `@CALLEE:${fn.text()}`;
                     }
                 }
@@ -563,38 +552,38 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
     // become bindings inside the body so `repo.Find()` resolves at the receiver
     // tier. C# tree-sitter exposes `parameter_list > parameter > [type, identifier]`.
     const seedCsParam = (p: SgNode): void => {
-        if (p.kind() !== 'parameter') {
+        if (p.kind() !== CSHARP_KINDS.parameter) {
             return;
         }
         const name =
-            p.field('name')?.text() ??
+            p.field(CSHARP_FIELDS.name)?.text() ??
             p
                 .children()
-                .find((c: SgNode) => c.kind() === 'identifier')
+                .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
                 ?.text();
-        const typeNode = p.field('type');
+        const typeNode = p.field(CSHARP_FIELDS.type);
         if (!name || !typeNode) {
             return;
         }
         let typeName: string | undefined;
         const tk = typeNode.kind();
-        if (tk === 'identifier' || tk === 'type_identifier' || tk === 'predefined_type') {
+        if (tk === CSHARP_KINDS.identifier || tk === CSHARP_KINDS.predefinedType) {
             typeName = typeNode.text();
-        } else if (tk === 'generic_name') {
+        } else if (tk === CSHARP_KINDS.genericName) {
             typeName =
                 typeNode
                     .children()
-                    .find((c: SgNode) => c.kind() === 'identifier')
+                    .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
                     ?.text() ?? typeNode.text();
-        } else if (tk === 'nullable_type') {
+        } else if (tk === CSHARP_KINDS.nullableType) {
             const inner = typeNode
                 .children()
-                .find((c: SgNode) => c.kind() === 'identifier' || c.kind() === 'generic_name');
+                .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier || c.kind() === CSHARP_KINDS.genericName);
             typeName =
-                inner?.kind() === 'generic_name'
+                inner?.kind() === CSHARP_KINDS.genericName
                     ? inner
                           .children()
-                          .find((c: SgNode) => c.kind() === 'identifier')
+                          .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
                           ?.text()
                     : inner?.text();
         }
@@ -602,10 +591,14 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
             bindings.set(name, typeName);
         }
     };
-    const CSHARP_FN_KINDS = ['method_declaration', 'constructor_declaration', 'local_function_statement'];
+    const CSHARP_FN_KINDS = [
+        CSHARP_KINDS.methodDeclaration,
+        CSHARP_KINDS.constructorDeclaration,
+        CSHARP_KINDS.localFunctionStatement,
+    ];
     for (const kind of CSHARP_FN_KINDS) {
         for (const fn of root.findAll({ rule: { kind } })) {
-            const params = fn.field('parameters');
+            const params = fn.field(CSHARP_FIELDS.parameters);
             if (!params) {
                 continue;
             }
@@ -620,25 +613,30 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
     // falls through to cascade. Mirrors the choice we made in Java DI for
     // bare typed fields — and complements the diEntries pass above so both
     // `this.Repo.X` AND `_repo.X` resolve at high-conf tiers.
-    for (const fd of root.findAll({ rule: { kind: 'field_declaration' } })) {
-        const vd = fd.children().find((c) => c.kind() === 'variable_declaration');
+    for (const fd of root.findAll({ rule: { kind: CSHARP_KINDS.fieldDeclaration } })) {
+        const vd = fd.children().find((c) => c.kind() === CSHARP_KINDS.variableDeclaration);
         if (!vd) {
             continue;
         }
         const typeNode = vd
             .children()
-            .find((c) => c.kind() === 'identifier' || c.kind() === 'generic_name' || c.kind() === 'qualified_name');
+            .find(
+                (c) =>
+                    c.kind() === CSHARP_KINDS.identifier ||
+                    c.kind() === CSHARP_KINDS.genericName ||
+                    c.kind() === CSHARP_KINDS.qualifiedName,
+            );
         if (!typeNode) {
             continue;
         }
         const typeName = unwrapCsharpType(typeNode);
         for (const decl of vd.children()) {
-            if (decl.kind() !== 'variable_declarator') {
+            if (decl.kind() !== CSHARP_KINDS.variableDeclarator) {
                 continue;
             }
             const fieldName = decl
                 .children()
-                .find((c) => c.kind() === 'identifier')
+                .find((c) => c.kind() === CSHARP_KINDS.identifier)
                 ?.text();
             if (fieldName) {
                 bindings.set(fieldName, typeName);
@@ -646,11 +644,11 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
         }
     }
     // Properties: same rationale — `Repo.FindAll()` (auto-prop) is bare-access.
-    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+    for (const pd of root.findAll({ rule: { kind: CSHARP_KINDS.propertyDeclaration } })) {
         const ids: SgNode[] = [];
         for (const c of pd.children()) {
             const k = c.kind();
-            if (k === 'identifier' || k === 'generic_name' || k === 'qualified_name') {
+            if (k === CSHARP_KINDS.identifier || k === CSHARP_KINDS.genericName || k === CSHARP_KINDS.qualifiedName) {
                 ids.push(c);
             }
         }
@@ -667,9 +665,9 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
     // are visible bare inside every method of the class, so they deserve a
     // binding entry. We seed them at file scope; intra-file namespace clashes
     // between sibling classes are rare enough to ignore.
-    for (const k of ['class_declaration', 'record_declaration']) {
+    for (const k of [CSHARP_KINDS.classDeclaration, CSHARP_KINDS.recordDeclaration]) {
         for (const cls of root.findAll({ rule: { kind: k } })) {
-            const params = cls.children().find((c) => c.kind() === 'parameter_list');
+            const params = cls.children().find((c) => c.kind() === CSHARP_KINDS.parameterList);
             if (!params) {
                 continue;
             }
@@ -682,13 +680,13 @@ function extractReceiverTypesCsharp(root: SgNode, fp: string): ReceiverTypeMap {
         }
     }
 
-    for (const inv of root.findAll({ rule: { kind: 'invocation_expression' } })) {
-        const fn = inv.field('function');
-        if (!fn || fn.kind() !== 'member_access_expression') {
+    for (const inv of root.findAll({ rule: { kind: CSHARP_KINDS.invocationExpression } })) {
+        const fn = inv.field(CSHARP_FIELDS.function);
+        if (!fn || fn.kind() !== CSHARP_KINDS.memberAccessExpression) {
             continue;
         }
-        const expr = fn.field('expression') ?? fn.children()[0];
-        if (!expr || expr.kind() !== 'identifier') {
+        const expr = fn.field(CSHARP_FIELDS.expression) ?? fn.children()[0];
+        if (!expr || expr.kind() !== CSHARP_KINDS.identifier) {
             continue;
         }
         const exprText = expr.text();

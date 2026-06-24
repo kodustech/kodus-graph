@@ -1,11 +1,16 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { LANG_KINDS } from '../../parser/languages';
 import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
-import { locationKey, type ReceiverTypeMap } from '../receiver-types';
+import {
+    buildScopeIndex,
+    locationKey,
+    type RangedScope,
+    type ReceiverTypeMap,
+    resolveReceiverScope,
+} from '../receiver-types';
 import { computeContentHash, extractDecorators, extractThrows, isExported } from '../shared';
 import type {
     ExtractedClass,
@@ -15,27 +20,28 @@ import type {
     ExtractionResult,
     LanguageExtractors,
 } from '../spec';
+import { PYTHON_FIELDS, PYTHON_KINDS } from './kinds';
 
 // ---------------------------------------------------------------------------
 // Shared constants
 // ---------------------------------------------------------------------------
 
 const EXPORT_RULES = { customCheck: (n: string) => !n.startsWith('_') } as const;
-const DECORATOR_KINDS = ['decorator'] as const;
-const THROW_KINDS = ['raise_statement'] as const;
+const DECORATOR_KINDS = [PYTHON_KINDS.decorator] as const;
+const THROW_KINDS = [PYTHON_KINDS.raiseStatement] as const;
 
 // Branch kinds for Python cyclomatic complexity.
 // Python emits `elif_clause` as a named child of the outer `if_statement`
 // (NOT as a nested if_statement), so both are needed to count elif branches.
 // `conditional_expression` handles ternaries (x if cond else y).
 const PY_BRANCH_KINDS = [
-    'if_statement',
-    'elif_clause',
-    'for_statement',
-    'while_statement',
-    'except_clause',
-    'conditional_expression',
-    'case_clause',
+    PYTHON_KINDS.ifStatement,
+    PYTHON_KINDS.elifClause,
+    PYTHON_KINDS.forStatement,
+    PYTHON_KINDS.whileStatement,
+    PYTHON_KINDS.exceptClause,
+    PYTHON_KINDS.conditionalExpression,
+    PYTHON_KINDS.caseClause,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -43,7 +49,6 @@ const PY_BRANCH_KINDS = [
 // ---------------------------------------------------------------------------
 
 function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
-    const kinds = LANG_KINDS.python;
     const seen = new Set<string>();
 
     const classes: ExtractedClass[] = [];
@@ -51,18 +56,20 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
     const imports: ExtractedImport[] = [];
 
     // ── Classes ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.class } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: PYTHON_KINDS.classDefinition } })) {
+        const name = node.field(PYTHON_FIELDS.name)?.text();
         if (!name || seen.has(`c:${fp}:${name}`)) {
             continue;
         }
         seen.add(`c:${fp}:${name}`);
 
-        const argList = node.field('superclasses') || node.children().find((c: SgNode) => c.kind() === 'argument_list');
+        const argList =
+            node.field(PYTHON_FIELDS.superclasses) ||
+            node.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.argumentList);
         const extendsName =
             argList
                 ?.children()
-                .find((c: SgNode) => c.kind() === 'identifier')
+                .find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier)
                 ?.text() || '';
 
         classes.push({
@@ -80,8 +87,8 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
     }
 
     // ── Functions / Methods ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.function } })) {
-        const name = node.field('name')?.text();
+    for (const node of rootNode.findAll({ rule: { kind: PYTHON_KINDS.functionDefinition } })) {
+        const name = node.field(PYTHON_FIELDS.name)?.text();
         if (!name) {
             continue;
         }
@@ -91,28 +98,25 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
         }
         seen.add(`m:${fp}:${name}:${line}`);
 
-        const classAncestor = node.ancestors().find((a: SgNode) => a.kind() === kinds.class);
-        const className = classAncestor?.field('name')?.text() || '';
+        const classAncestor = node.ancestors().find((a: SgNode) => a.kind() === PYTHON_KINDS.classDefinition);
+        const className = classAncestor?.field(PYTHON_FIELDS.name)?.text() || '';
         const retType =
             node
-                .field('return_type')
+                .field(PYTHON_FIELDS.returnType)
                 ?.text()
                 ?.replace(/^->\s*/, '') || '';
 
         const isTest = name.startsWith('test_');
 
-        // Python async: node kind could be 'function_definition' with 'async' keyword child,
-        // or the node itself may have text starting with 'async'
-        const pyIsAsync =
-            String(node.kind()) === 'async_function_definition' ||
-            node.children().some((c: SgNode) => c.text() === 'async') ||
-            node.parent()?.kind() === 'async_function_definition';
+        // Python has no distinct async node kind — the `async` keyword is a
+        // leading child of `function_definition`, so detect it there.
+        const pyIsAsync = node.children().some((c: SgNode) => c.text() === 'async');
 
         functions.push({
             name,
             line_start: line,
             line_end: node.range().end.line,
-            params: node.field('parameters')?.text() || '()',
+            params: node.field(PYTHON_FIELDS.parameters)?.text() || '()',
             returnType: retType,
             kind: name === '__init__' ? 'Constructor' : className ? 'Method' : 'Function',
             className,
@@ -135,10 +139,10 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
     const reExports: ExtractedReExport[] = [];
 
     // ── Imports (from X import Y) ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.import } })) {
+    for (const node of rootNode.findAll({ rule: { kind: PYTHON_KINDS.importFromStatement } })) {
         const modNode = node
             .children()
-            .find((c: SgNode) => c.kind() === 'dotted_name' || c.kind() === 'relative_import');
+            .find((c: SgNode) => c.kind() === PYTHON_KINDS.dottedName || c.kind() === PYTHON_KINDS.relativeImport);
         const modulePath = modNode?.text() || '';
         if (!modulePath) {
             continue;
@@ -146,10 +150,10 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
 
         const names: string[] = [];
         for (const child of node.children()) {
-            if (child.kind() === 'dotted_name' && child !== modNode) {
+            if (child.kind() === PYTHON_KINDS.dottedName && child !== modNode) {
                 names.push(child.text());
             }
-            if (child.kind() === 'identifier' && child !== modNode) {
+            if (child.kind() === PYTHON_KINDS.identifier && child !== modNode) {
                 names.push(child.text());
             }
         }
@@ -164,7 +168,7 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
         // and the module path is relative (`.` prefix). Absolute imports in
         // __init__.py are less likely to be re-exports — they could be sibling
         // dependencies. Conservative: relative-only.
-        if (isInitFile && modNode?.kind() === 'relative_import') {
+        if (isInitFile && modNode?.kind() === PYTHON_KINDS.relativeImport) {
             reExports.push({
                 module: modulePath,
                 line: node.range().start.line,
@@ -173,8 +177,8 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
     }
 
     // ── Regular imports (import X) ──
-    for (const node of rootNode.findAll({ rule: { kind: kinds.importRegular } })) {
-        const modNode = node.children().find((c: SgNode) => c.kind() === 'dotted_name');
+    for (const node of rootNode.findAll({ rule: { kind: PYTHON_KINDS.importStatement } })) {
+        const modNode = node.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.dottedName);
         if (modNode) {
             imports.push({
                 module: modNode.text(),
@@ -204,13 +208,15 @@ function extractPythonDirect(rootNode: SgNode, fp: string): ExtractionResult {
 const PYTHON_CALL_CONFIG: CallExtractionConfig = {
     selfPrefixes: ['self.'],
     superPrefixes: ['super().'],
-    findEnclosingClass: (node) => node.ancestors().find((a: SgNode) => a.kind() === 'class_definition') ?? null,
+    findEnclosingClass: (node) =>
+        node.ancestors().find((a: SgNode) => a.kind() === PYTHON_KINDS.classDefinition) ?? null,
     getParentClass: (classNode) => {
         const argList =
-            classNode.field('superclasses') || classNode.children().find((c: SgNode) => c.kind() === 'argument_list');
+            classNode.field(PYTHON_FIELDS.superclasses) ||
+            classNode.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.argumentList);
         return argList
             ?.children()
-            .find((c: SgNode) => c.kind() === 'identifier')
+            .find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier)
             ?.text();
     },
 };
@@ -293,24 +299,24 @@ function isLikelyClassName(name: string): boolean {
  */
 function typeNameFromTypeNode(typeNode: SgNode): string | undefined {
     // Bare type: type > identifier
-    const direct = typeNode.children().find((c: SgNode) => c.kind() === 'identifier');
+    const direct = typeNode.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
     if (direct) {
         return direct.text();
     }
     // Generic: type > generic_type > [identifier(wrapper), type_parameter[type, type, ...]]
-    const generic = typeNode.children().find((c: SgNode) => c.kind() === 'generic_type');
+    const generic = typeNode.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.genericType);
     if (!generic) {
         return undefined;
     }
     const wrapper = generic
         .children()
-        .find((c: SgNode) => c.kind() === 'identifier')
+        .find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier)
         ?.text();
-    const params = generic.children().find((c: SgNode) => c.kind() === 'type_parameter');
+    const params = generic.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.typeParameter);
     if (!params) {
         return wrapper; // No parameters — return the wrapper itself
     }
-    const innerTypes = params.children().filter((c: SgNode) => c.kind() === 'type');
+    const innerTypes = params.children().filter((c: SgNode) => c.kind() === PYTHON_KINDS.type);
     if (innerTypes.length === 0) {
         return wrapper;
     }
@@ -332,15 +338,15 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
     // count: `typed_parameter` (no default) and `typed_default_parameter`
     // (`x: T = default`) — the latter covers FastAPI's
     // `svc: Service = Depends(get_service)` pattern.
-    const params = fnNode.field('parameters');
+    const params = fnNode.field(PYTHON_FIELDS.parameters);
     if (params) {
         for (const p of params.children()) {
             const k = p.kind();
-            if (k !== 'typed_parameter' && k !== 'typed_default_parameter') {
+            if (k !== PYTHON_KINDS.typedParameter && k !== PYTHON_KINDS.typedDefaultParameter) {
                 continue;
             }
-            const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
-            const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
+            const ident = p.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
+            const typeNode = p.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
             if (!ident || !typeNode) {
                 continue;
             }
@@ -355,18 +361,22 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
     // 2. Assignments inside the function body.
     //    Walk `assignment` nodes but skip any that live inside a nested
     //    function/class so bindings stay scope-local.
-    const body = fnNode.field('body');
+    const body = fnNode.field(PYTHON_FIELDS.body);
     if (!body) {
         return bindings;
     }
-    for (const a of body.findAll({ rule: { kind: 'assignment' } })) {
+    for (const a of body.findAll({ rule: { kind: PYTHON_KINDS.assignment } })) {
         // Skip assignments nested inside another function/class within this body.
         // Note: ast-grep returns fresh SgNode wrappers from `ancestors()`, so we
         // can't use reference equality with `fnNode`. Compare byte ranges instead.
         const fnRange = fnNode.range();
         const nested = a.ancestors().some((anc: SgNode) => {
             const k = anc.kind();
-            if (k !== 'function_definition' && k !== 'class_definition' && k !== 'lambda') {
+            if (
+                k !== PYTHON_KINDS.functionDefinition &&
+                k !== PYTHON_KINDS.classDefinition &&
+                k !== PYTHON_KINDS.lambda
+            ) {
                 return false;
             }
             const ar = anc.range();
@@ -381,7 +391,7 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
         }
 
         const kids = a.children();
-        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        const lhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!lhs) {
             continue;
         }
@@ -391,7 +401,7 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
             continue;
         }
 
-        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        const typeNode = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
         if (typeNode) {
             const typeName = typeNameFromTypeNode(typeNode);
             if (typeName) {
@@ -401,11 +411,11 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
         }
 
         // No annotation → check for `= Foo(...)` uppercase constructor.
-        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        const rhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.call);
         if (!rhs) {
             continue;
         }
-        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!fnIdent) {
             continue;
         }
@@ -444,22 +454,22 @@ function collectPythonBindings(fnNode: SgNode): Map<string, string> {
 function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
     const selfAttrs = new Map<string, string>();
 
-    const body = classNode.field('body');
+    const body = classNode.field(PYTHON_FIELDS.body);
     if (!body) {
         return selfAttrs;
     }
 
     // Pass 1a + 1b: class-body top-level expression_statement > assignment
     for (const stmt of body.children()) {
-        if (stmt.kind() !== 'expression_statement') {
+        if (stmt.kind() !== PYTHON_KINDS.expressionStatement) {
             continue;
         }
-        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+        const assign = stmt.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.assignment);
         if (!assign) {
             continue;
         }
         const kids = assign.children();
-        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        const lhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!lhs) {
             continue;
         }
@@ -469,7 +479,7 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
         }
 
         // Rule 1: typed annotation (`repo: UserRepository` or `name: str = "x"`).
-        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        const typeNode = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
         if (typeNode) {
             const typeName = typeNameFromTypeNode(typeNode);
             if (typeName) {
@@ -479,11 +489,11 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
         }
 
         // Rule 2: uppercase-constructor assignment (`logger = Logger()`).
-        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        const rhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.call);
         if (!rhs) {
             continue;
         }
-        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!fnIdent) {
             continue;
         }
@@ -501,18 +511,22 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
     const factoryNames = new Set(['__init__', '__post_init__', 'setUp', 'setup', 'asyncSetUp']);
     const factories = body
         .children()
-        .filter((c: SgNode) => c.kind() === 'function_definition' && factoryNames.has(c.field('name')?.text() ?? ''));
+        .filter(
+            (c: SgNode) =>
+                c.kind() === PYTHON_KINDS.functionDefinition &&
+                factoryNames.has(c.field(PYTHON_FIELDS.name)?.text() ?? ''),
+        );
     for (const fn of factories) {
         const paramTypes = new Map<string, string>();
-        const fnParams = fn.field('parameters');
+        const fnParams = fn.field(PYTHON_FIELDS.parameters);
         if (fnParams) {
             for (const p of fnParams.children()) {
                 const k = p.kind();
-                if (k !== 'typed_parameter' && k !== 'typed_default_parameter') {
+                if (k !== PYTHON_KINDS.typedParameter && k !== PYTHON_KINDS.typedDefaultParameter) {
                     continue;
                 }
-                const ident = p.children().find((c: SgNode) => c.kind() === 'identifier');
-                const typeNode = p.children().find((c: SgNode) => c.kind() === 'type');
+                const ident = p.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
+                const typeNode = p.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
                 if (!ident || !typeNode) {
                     continue;
                 }
@@ -523,26 +537,26 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
             }
         }
 
-        const fnBody = fn.field('body');
+        const fnBody = fn.field(PYTHON_FIELDS.body);
         if (!fnBody) {
             continue;
         }
         for (const stmt of fnBody.children()) {
-            if (stmt.kind() !== 'expression_statement') {
+            if (stmt.kind() !== PYTHON_KINDS.expressionStatement) {
                 continue;
             }
-            const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+            const assign = stmt.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.assignment);
             if (!assign) {
                 continue;
             }
             const kids = assign.children();
-            const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
+            const attr = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.attribute);
             if (!attr) {
                 continue;
             }
             const attrKids = attr.children();
-            const recv = attrKids.find((c: SgNode) => c.kind() === 'identifier');
-            const attrName = attrKids.filter((c: SgNode) => c.kind() === 'identifier')[1];
+            const recv = attrKids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
+            const attrName = attrKids.filter((c: SgNode) => c.kind() === PYTHON_KINDS.identifier)[1];
             if (!recv || !attrName || recv.text() !== 'self') {
                 continue;
             }
@@ -552,7 +566,7 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
             }
 
             // `self.X: Type = ...`
-            const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+            const typeNode = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
             if (typeNode) {
                 const typeName = typeNameFromTypeNode(typeNode);
                 if (typeName) {
@@ -562,7 +576,7 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
             }
 
             // `self.X = typedParam`
-            const rhsIdent = kids.find((c: SgNode) => c.kind() === 'identifier');
+            const rhsIdent = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
             if (rhsIdent) {
                 const typeName = paramTypes.get(rhsIdent.text());
                 if (typeName) {
@@ -572,9 +586,9 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
             }
 
             // `self.X = Foo(...)` uppercase-call factory inside a setup method.
-            const rhsCall = kids.find((c: SgNode) => c.kind() === 'call');
+            const rhsCall = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.call);
             if (rhsCall) {
-                const fnIdent = rhsCall.children().find((c: SgNode) => c.kind() === 'identifier');
+                const fnIdent = rhsCall.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
                 if (fnIdent && isLikelyClassName(fnIdent.text())) {
                     selfAttrs.set(name, fnIdent.text());
                 }
@@ -601,15 +615,15 @@ function collectPythonSelfAttrs(classNode: SgNode): Map<string, string> {
 function collectPythonModuleBindings(root: SgNode): Map<string, string> {
     const bindings = new Map<string, string>();
     for (const stmt of root.children()) {
-        if (stmt.kind() !== 'expression_statement') {
+        if (stmt.kind() !== PYTHON_KINDS.expressionStatement) {
             continue;
         }
-        const assign = stmt.children().find((c: SgNode) => c.kind() === 'assignment');
+        const assign = stmt.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.assignment);
         if (!assign) {
             continue;
         }
         const kids = assign.children();
-        const lhs = kids.find((c: SgNode) => c.kind() === 'identifier');
+        const lhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!lhs) {
             continue;
         }
@@ -617,7 +631,7 @@ function collectPythonModuleBindings(root: SgNode): Map<string, string> {
         if (bindings.has(name)) {
             continue;
         }
-        const typeNode = kids.find((c: SgNode) => c.kind() === 'type');
+        const typeNode = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.type);
         if (typeNode) {
             const typeName = typeNameFromTypeNode(typeNode);
             if (typeName) {
@@ -625,11 +639,11 @@ function collectPythonModuleBindings(root: SgNode): Map<string, string> {
             }
             continue;
         }
-        const rhs = kids.find((c: SgNode) => c.kind() === 'call');
+        const rhs = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.call);
         if (!rhs) {
             continue;
         }
-        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === 'identifier');
+        const fnIdent = rhs.children().find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
         if (!fnIdent) {
             continue;
         }
@@ -649,27 +663,31 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
     // Collect (function node, bindings) pairs for all function scopes.
     // Python's tree-sitter grammar uses `function_definition` for both sync
     // and async (the `async` keyword is a leading child, not a distinct kind).
-    const fnScopes: { node: SgNode; bindings: Map<string, string> }[] = [];
-    for (const fn of root.findAll({ rule: { kind: 'function_definition' } })) {
-        fnScopes.push({ node: fn, bindings: collectPythonBindings(fn) });
+    const fnScopeList: RangedScope[] = [];
+    for (const fn of root.findAll({ rule: { kind: PYTHON_KINDS.functionDefinition } })) {
+        const r = fn.range();
+        fnScopeList.push({ start: r.start.index, end: r.end.index, bindings: collectPythonBindings(fn) });
     }
+    const fnScopeIndex = buildScopeIndex(fnScopeList);
 
     // Module-level bindings (consulted last as a fallback for bare receivers
     // that no enclosing function scope explains).
     const moduleBindings = collectPythonModuleBindings(root);
 
     // Collect per-class self.attr → type maps for `self.X.Y()` resolution.
-    const classScopes: { node: SgNode; selfAttrs: Map<string, string> }[] = [];
-    for (const cls of root.findAll({ rule: { kind: 'class_definition' } })) {
-        classScopes.push({ node: cls, selfAttrs: collectPythonSelfAttrs(cls) });
+    const classScopeList: RangedScope[] = [];
+    for (const cls of root.findAll({ rule: { kind: PYTHON_KINDS.classDefinition } })) {
+        const r = cls.range();
+        classScopeList.push({ start: r.start.index, end: r.end.index, bindings: collectPythonSelfAttrs(cls) });
     }
+    const classScopeIndex = buildScopeIndex(classScopeList);
 
     // For each method call (`call` whose function is an `attribute` with an
     // identifier receiver), find the innermost enclosing function scope and
     // record the receiver type — if known.
-    for (const ce of root.findAll({ rule: { kind: 'call' } })) {
+    for (const ce of root.findAll({ rule: { kind: PYTHON_KINDS.call } })) {
         const kids = ce.children();
-        const attr = kids.find((c: SgNode) => c.kind() === 'attribute');
+        const attr = kids.find((c: SgNode) => c.kind() === PYTHON_KINDS.attribute);
         if (!attr) {
             continue;
         }
@@ -679,32 +697,21 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
 
         // Case A: `self.X.Y()` — outer attribute's receiver is `attribute[self.X]`,
         // so we resolve X against the enclosing class's self-attr map.
-        const innerAttr = attrKids.find((c: SgNode) => c.kind() === 'attribute');
+        const innerAttr = attrKids.find((c: SgNode) => c.kind() === PYTHON_KINDS.attribute);
         if (innerAttr) {
             const innerKids = innerAttr.children();
-            const innerRecv = innerKids.find((c: SgNode) => c.kind() === 'identifier');
-            const innerAttrIds = innerKids.filter((c: SgNode) => c.kind() === 'identifier');
+            const innerRecv = innerKids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
+            const innerAttrIds = innerKids.filter((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
             if (innerRecv && innerRecv.text() === 'self' && innerAttrIds.length >= 2) {
                 const attrName = innerAttrIds[1]!.text();
-                let bestSize = Infinity;
-                for (const { node, selfAttrs } of classScopes) {
-                    const nr = node.range();
-                    if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
-                        continue;
-                    }
-                    const size = nr.end.index - nr.start.index;
-                    if (size < bestSize && selfAttrs.has(attrName)) {
-                        typeName = selfAttrs.get(attrName);
-                        bestSize = size;
-                    }
-                }
+                typeName = resolveReceiverScope(classScopeIndex, callRange.start.index, callRange.end.index, attrName);
             }
         }
 
         // Case B: `x.Y()` — outer attribute's receiver is a simple identifier,
         // resolve via the enclosing function's scope-local bindings.
         if (!typeName) {
-            const receiver = attrKids.find((c: SgNode) => c.kind() === 'identifier');
+            const receiver = attrKids.find((c: SgNode) => c.kind() === PYTHON_KINDS.identifier);
             if (!receiver) {
                 continue;
             }
@@ -714,18 +721,7 @@ function extractReceiverTypesPython(root: SgNode, fp: string): ReceiverTypeMap {
             if (receiverName === 'self') {
                 continue;
             }
-            let bestSize = Infinity;
-            for (const { node, bindings } of fnScopes) {
-                const nr = node.range();
-                if (nr.start.index > callRange.start.index || nr.end.index < callRange.end.index) {
-                    continue;
-                }
-                const size = nr.end.index - nr.start.index;
-                if (size < bestSize && bindings.has(receiverName)) {
-                    typeName = bindings.get(receiverName);
-                    bestSize = size;
-                }
-            }
+            typeName = resolveReceiverScope(fnScopeIndex, callRange.start.index, callRange.end.index, receiverName);
             // Module-scope fallback: when no enclosing function binds the
             // name, consult module-level assignments (`db = Database()`).
             // This is what unlocks Django/FastAPI receiver-tier resolution.

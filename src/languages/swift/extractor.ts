@@ -13,8 +13,10 @@ import {
     isExported,
     isTestByNaming,
     nodeRange,
+    stripImportKeyword,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { SWIFT_KINDS } from './kinds';
 
 // Branch kinds for Swift cyclomatic complexity.
 // Empirically verified against the Swift tree-sitter grammar:
@@ -23,14 +25,14 @@ import type { ExtractionResult, LanguageExtractors } from '../spec';
 // - `else if` is a nested `if_statement` in the alternative; `if_statement` alone covers it.
 // - `guard` is a decision (guarded fall-through vs. else branch).
 const SWIFT_BRANCH_KINDS = [
-    'if_statement',
-    'guard_statement',
-    'for_statement',
-    'while_statement',
-    'repeat_while_statement',
-    'switch_entry',
-    'catch_block',
-    'ternary_expression',
+    SWIFT_KINDS.ifStatement,
+    SWIFT_KINDS.guardStatement,
+    SWIFT_KINDS.forStatement,
+    SWIFT_KINDS.whileStatement,
+    SWIFT_KINDS.repeatWhileStatement,
+    SWIFT_KINDS.switchEntry,
+    SWIFT_KINDS.catchBlock,
+    SWIFT_KINDS.ternaryExpression,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -44,10 +46,10 @@ const SWIFT_BRANCH_KINDS = [
  */
 function swiftClassKind(node: SgNode): 'class' | 'struct' | 'enum' {
     const children = node.children();
-    if (children.some((c) => c.kind() === 'enum')) {
+    if (children.some((c) => c.kind() === SWIFT_KINDS.enumKeyword)) {
         return 'enum';
     }
-    if (children.some((c) => c.kind() === 'struct')) {
+    if (children.some((c) => c.kind() === SWIFT_KINDS.structKeyword)) {
         return 'struct';
     }
     return 'class';
@@ -60,7 +62,7 @@ function swiftClassKind(node: SgNode): 'class' | 'struct' | 'enum' {
 function swiftTypeName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'type_identifier')
+        .find((c) => c.kind() === SWIFT_KINDS.typeIdentifier)
         ?.text();
 }
 
@@ -71,7 +73,7 @@ function swiftTypeName(node: SgNode): string | undefined {
 function swiftFuncName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'simple_identifier')
+        .find((c) => c.kind() === SWIFT_KINDS.simpleIdentifier)
         ?.text();
 }
 
@@ -95,15 +97,15 @@ function swiftExtends(node: SgNode): string | undefined {
         return undefined;
     }
 
-    const specifiers = node.children().filter((c) => c.kind() === 'inheritance_specifier');
+    const specifiers = node.children().filter((c) => c.kind() === SWIFT_KINDS.inheritanceSpecifier);
     if (specifiers.length === 0) {
         return undefined;
     }
 
     // The first specifier is typically the superclass (by Swift convention)
     const first = specifiers[0];
-    const userType = first.children().find((c) => c.kind() === 'user_type');
-    const typeId = userType?.children().find((c) => c.kind() === 'type_identifier');
+    const userType = first.children().find((c) => c.kind() === SWIFT_KINDS.userType);
+    const typeId = userType?.children().find((c) => c.kind() === SWIFT_KINDS.typeIdentifier);
     return typeId?.text();
 }
 
@@ -114,7 +116,7 @@ function swiftExtends(node: SgNode): string | undefined {
  */
 function swiftImplements(node: SgNode): string[] {
     const kind = swiftClassKind(node);
-    const specifiers = node.children().filter((c) => c.kind() === 'inheritance_specifier');
+    const specifiers = node.children().filter((c) => c.kind() === SWIFT_KINDS.inheritanceSpecifier);
 
     if (specifiers.length === 0) {
         return [];
@@ -130,8 +132,8 @@ function swiftImplements(node: SgNode): string[] {
 
     const protocols: string[] = [];
     for (let i = startIdx; i < specifiers.length; i++) {
-        const userType = specifiers[i].children().find((c) => c.kind() === 'user_type');
-        const typeId = userType?.children().find((c) => c.kind() === 'type_identifier');
+        const userType = specifiers[i].children().find((c) => c.kind() === SWIFT_KINDS.userType);
+        const typeId = userType?.children().find((c) => c.kind() === SWIFT_KINDS.typeIdentifier);
         if (typeId) {
             protocols.push(typeId.text());
         }
@@ -145,17 +147,13 @@ function swiftImplements(node: SgNode): string[] {
 
 function extractImportModule(node: SgNode): string {
     // Swift imports have an `identifier` child containing `simple_identifier`
-    const identifier = node.children().find((c) => c.kind() === 'identifier');
+    const identifier = node.children().find((c) => c.kind() === SWIFT_KINDS.identifier);
     if (identifier) {
         return identifier.text();
     }
 
     // Fallback: strip the import keyword
-    return node
-        .text()
-        .replace(/^\s*import\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +180,7 @@ const swiftExportRules = {
 
 /** Extract throws from Swift function signature. */
 function swiftThrows(node: SgNode): string[] {
-    const hasThrows = node.children().some((c) => c.kind() === 'throws');
+    const hasThrows = node.children().some((c) => c.kind() === SWIFT_KINDS.throwsKeyword);
     return hasThrows ? ['throws'] : [];
 }
 
@@ -191,10 +189,10 @@ function swiftDecorators(node: SgNode): string[] {
     const decorators: string[] = [];
 
     // Check modifiers child for attribute nodes
-    const mods = node.children().find((c) => c.kind() === 'modifiers');
+    const mods = node.children().find((c) => c.kind() === SWIFT_KINDS.modifiers);
     if (mods) {
         for (const child of mods.children()) {
-            if (child.kind() === 'attribute') {
+            if (child.kind() === SWIFT_KINDS.attribute) {
                 decorators.push(child.text());
             }
         }
@@ -202,7 +200,7 @@ function swiftDecorators(node: SgNode): string[] {
 
     // Also check previous siblings (attributes outside modifiers)
     for (const sib of node.prevAll()) {
-        if (sib.kind() === 'attribute') {
+        if (sib.kind() === SWIFT_KINDS.attribute) {
             decorators.push(sib.text());
         }
     }
@@ -212,7 +210,7 @@ function swiftDecorators(node: SgNode): string[] {
 
 /** Extract parameters text from a Swift function or init node. */
 function swiftParams(node: SgNode): string {
-    const params = node.children().filter((c) => c.kind() === 'parameter');
+    const params = node.children().filter((c) => c.kind() === SWIFT_KINDS.parameter);
     if (params.length === 0) {
         return '()';
     }
@@ -226,18 +224,18 @@ function swiftReturnType(node: SgNode): string {
     const children = node.children();
     let afterArrow = false;
     for (const child of children) {
-        if (child.kind() === '->') {
+        if (child.kind() === SWIFT_KINDS.arrow) {
             afterArrow = true;
             continue;
         }
         if (afterArrow) {
             const k = child.kind();
             if (
-                k === 'user_type' ||
-                k === 'optional_type' ||
-                k === 'tuple_type' ||
-                k === 'array_type' ||
-                k === 'dictionary_type'
+                k === SWIFT_KINDS.userType ||
+                k === SWIFT_KINDS.optionalType ||
+                k === SWIFT_KINDS.tupleType ||
+                k === SWIFT_KINDS.arrayType ||
+                k === SWIFT_KINDS.dictionaryType
             ) {
                 return child.text();
             }
@@ -248,15 +246,15 @@ function swiftReturnType(node: SgNode): string {
 
 /** Extract method signatures from a protocol body. */
 function swiftProtocolMethods(node: SgNode): string[] {
-    const body = node.children().find((c) => c.kind() === 'protocol_body');
+    const body = node.children().find((c) => c.kind() === SWIFT_KINDS.protocolBody);
     if (!body) {
         return [];
     }
 
     const methods: string[] = [];
     for (const child of body.children()) {
-        if (child.kind() === 'protocol_function_declaration') {
-            const name = child.children().find((c) => c.kind() === 'simple_identifier');
+        if (child.kind() === SWIFT_KINDS.protocolFunctionDeclaration) {
+            const name = child.children().find((c) => c.kind() === SWIFT_KINDS.simpleIdentifier);
             if (name) {
                 methods.push(name.text());
             }
@@ -274,7 +272,7 @@ export const swiftExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes (class_declaration where kind is 'class') ────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.classDeclaration } })) {
             const swKind = swiftClassKind(node);
             if (swKind !== 'class' && swKind !== 'struct') {
                 continue;
@@ -315,7 +313,7 @@ export const swiftExtractors: LanguageExtractors = {
         }
 
         // ── Interfaces (protocol_declaration) ──────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'protocol_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.protocolDeclaration } })) {
             const name = swiftTypeName(node);
             if (!name) {
                 continue;
@@ -334,7 +332,7 @@ export const swiftExtractors: LanguageExtractors = {
         }
 
         // ── Enums (class_declaration where kind is 'enum') ─────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.classDeclaration } })) {
             const swKind = swiftClassKind(node);
             if (swKind !== 'enum') {
                 continue;
@@ -356,7 +354,7 @@ export const swiftExtractors: LanguageExtractors = {
         }
 
         // ── Functions / Methods (function_declaration) ─────────────────
-        for (const node of root.findAll({ rule: { kind: 'function_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.functionDeclaration } })) {
             const name = swiftFuncName(node);
             if (!name) {
                 continue;
@@ -365,7 +363,7 @@ export const swiftExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_declaration' || k === 'protocol_declaration';
+                return k === SWIFT_KINDS.classDeclaration || k === SWIFT_KINDS.protocolDeclaration;
             });
             if (classAncestor) {
                 className = swiftTypeName(classAncestor) || '';
@@ -400,11 +398,11 @@ export const swiftExtractors: LanguageExtractors = {
         }
 
         // ── Init declarations (constructors) ───────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'init_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.initDeclaration } })) {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_declaration';
+                return k === SWIFT_KINDS.classDeclaration;
             });
             if (classAncestor) {
                 className = swiftTypeName(classAncestor) || '';
@@ -434,7 +432,7 @@ export const swiftExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'import_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SWIFT_KINDS.importDeclaration } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -455,7 +453,7 @@ export const swiftExtractors: LanguageExtractors = {
             return (
                 node.ancestors().find((a) => {
                     const k = String(a.kind());
-                    return k === 'class_declaration';
+                    return k === SWIFT_KINDS.classDeclaration;
                 }) ?? null
             );
         };
@@ -465,12 +463,12 @@ export const swiftExtractors: LanguageExtractors = {
             superPrefixes: ['super.'],
             findEnclosingClass,
             getParentClass: (classNode) => {
-                const specifiers = classNode.children().filter((c) => c.kind() === 'inheritance_specifier');
+                const specifiers = classNode.children().filter((c) => c.kind() === SWIFT_KINDS.inheritanceSpecifier);
                 if (specifiers.length > 0) {
-                    const userType = specifiers[0].children().find((c) => c.kind() === 'user_type');
+                    const userType = specifiers[0].children().find((c) => c.kind() === SWIFT_KINDS.userType);
                     return userType
                         ?.children()
-                        .find((c) => c.kind() === 'type_identifier')
+                        .find((c) => c.kind() === SWIFT_KINDS.typeIdentifier)
                         ?.text();
                 }
                 return undefined;
@@ -485,28 +483,28 @@ export const swiftExtractors: LanguageExtractors = {
 function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const pd of root.findAll({ rule: { kind: 'property_declaration' } })) {
+    for (const pd of root.findAll({ rule: { kind: SWIFT_KINDS.propertyDeclaration } })) {
         const kids = pd.children();
         // `pattern` → first simple_identifier inside.
-        const pattern = kids.find((c: SgNode) => c.kind() === 'pattern');
+        const pattern = kids.find((c: SgNode) => c.kind() === SWIFT_KINDS.pattern);
         const name = pattern
             ?.children()
-            .find((c: SgNode) => c.kind() === 'simple_identifier')
+            .find((c: SgNode) => c.kind() === SWIFT_KINDS.simpleIdentifier)
             ?.text();
         if (!name) {
             continue;
         }
-        const typeAnn = kids.find((c: SgNode) => c.kind() === 'type_annotation');
+        const typeAnn = kids.find((c: SgNode) => c.kind() === SWIFT_KINDS.typeAnnotation);
         let typeName: string | undefined;
         if (typeAnn) {
             const uti = typeAnn
                 .children()
-                .find((c: SgNode) => c.kind() === 'user_type' || c.kind() === 'type_identifier');
+                .find((c: SgNode) => c.kind() === SWIFT_KINDS.userType || c.kind() === SWIFT_KINDS.typeIdentifier);
             typeName = uti?.text();
         }
         if (!typeName) {
-            const call = kids.find((c: SgNode) => c.kind() === 'call_expression');
-            const fnId = call?.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+            const call = kids.find((c: SgNode) => c.kind() === SWIFT_KINDS.callExpression);
+            const fnId = call?.children().find((c: SgNode) => c.kind() === SWIFT_KINDS.simpleIdentifier);
             if (fnId && /^[A-Z]/.test(fnId.text())) {
                 typeName = fnId.text();
             }
@@ -519,14 +517,18 @@ function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
     // `func handle(_ repo: Repo)`, `init(with repo: Repo)` — become bindings inside
     // the body. Swift parameters expose `[simple_identifier (label)?, simple_identifier (name), user_type]`
     // directly; there is no enclosing `type_annotation`.
-    const SWIFT_FN_KINDS = ['function_declaration', 'init_declaration', 'deinit_declaration'];
+    const SWIFT_FN_KINDS = [
+        SWIFT_KINDS.functionDeclaration,
+        SWIFT_KINDS.initDeclaration,
+        SWIFT_KINDS.deinitDeclaration,
+    ];
     for (const kind of SWIFT_FN_KINDS) {
         for (const fn of root.findAll({ rule: { kind } })) {
             for (const p of fn.children()) {
-                if (p.kind() !== 'parameter') {
+                if (p.kind() !== SWIFT_KINDS.parameter) {
                     continue;
                 }
-                const idents = p.children().filter((c: SgNode) => c.kind() === 'simple_identifier');
+                const idents = p.children().filter((c: SgNode) => c.kind() === SWIFT_KINDS.simpleIdentifier);
                 if (idents.length === 0) {
                     continue;
                 }
@@ -534,15 +536,19 @@ function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
                 const internalName = idents[idents.length - 1].text();
                 const userType = p
                     .children()
-                    .find((c: SgNode) => c.kind() === 'user_type' || c.kind() === 'type_identifier');
+                    .find((c: SgNode) => c.kind() === SWIFT_KINDS.userType || c.kind() === SWIFT_KINDS.typeIdentifier);
                 if (!userType) {
                     continue;
                 }
                 const typeName =
-                    userType.kind() === 'user_type'
+                    userType.kind() === SWIFT_KINDS.userType
                         ? (userType
                               .children()
-                              .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'simple_identifier')
+                              .find(
+                                  (c: SgNode) =>
+                                      c.kind() === SWIFT_KINDS.typeIdentifier ||
+                                      c.kind() === SWIFT_KINDS.simpleIdentifier,
+                              )
                               ?.text() ?? userType.text())
                         : userType.text();
                 if (internalName && typeName) {
@@ -552,12 +558,12 @@ function extractReceiverTypesSwift(root: SgNode, fp: string): ReceiverTypeMap {
         }
     }
 
-    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
-        const nav = ce.children().find((c: SgNode) => c.kind() === 'navigation_expression');
+    for (const ce of root.findAll({ rule: { kind: SWIFT_KINDS.callExpression } })) {
+        const nav = ce.children().find((c: SgNode) => c.kind() === SWIFT_KINDS.navigationExpression);
         if (!nav) {
             continue;
         }
-        const base = nav.children().find((c: SgNode) => c.kind() === 'simple_identifier');
+        const base = nav.children().find((c: SgNode) => c.kind() === SWIFT_KINDS.simpleIdentifier);
         if (!base) {
             continue;
         }

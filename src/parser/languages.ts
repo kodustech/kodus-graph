@@ -40,41 +40,4 @@ export function isTypeScriptLike(lang: Lang | string): boolean {
     return lang === Lang.TypeScript || lang === Lang.Tsx || lang === Lang.JavaScript;
 }
 
-// ---------------------------------------------------------------------------
-// LANG_KINDS — AST node kind strings used by per-language extractors.
-// Only typescript, python, and ruby extractors still reference this;
-// all other languages use hardcoded kind strings in their dedicated extractors.
-// ---------------------------------------------------------------------------
-
-export const LANG_KINDS: Record<string, Record<string, string>> = {
-    typescript: {
-        class: 'class_declaration',
-        function: 'function_declaration',
-        method: 'method_definition',
-        interface: 'interface_declaration',
-        enum: 'enum_declaration',
-        import: 'import_statement',
-        abstractClass: 'abstract_class_declaration',
-        arrowContainer: 'variable_declarator',
-        arrowFunction: 'arrow_function',
-        export: 'export_statement',
-        methodSignature: 'method_signature',
-    },
-    python: {
-        class: 'class_definition',
-        function: 'function_definition',
-        method: 'function_definition',
-        import: 'import_from_statement',
-        importRegular: 'import_statement',
-        decorator: 'decorator',
-    },
-    ruby: {
-        class: 'class',
-        method: 'method',
-        module: 'module',
-        singletonMethod: 'singleton_method',
-        call: 'call',
-    },
-};
-
 export { Lang };

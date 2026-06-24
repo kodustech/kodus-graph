@@ -4,8 +4,17 @@ import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
-import { computeContentHash, emptyResult, extractModifiers, extractThrows, isTestByNaming, nodeRange } from '../shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractModifiers,
+    extractThrows,
+    isTestByNaming,
+    nodeRange,
+    stripImportKeyword,
+} from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { PHP_FIELDS, PHP_KINDS } from './kinds';
 
 // Branch kinds for PHP cyclomatic complexity.
 // PHP grammar emits `else_if_clause` as a named child of `if_statement`
@@ -13,15 +22,15 @@ import type { ExtractionResult, LanguageExtractors } from '../spec';
 // `elseif` branches. `case_statement` is the per-case kind (skip outer
 // `switch_statement`).
 const PHP_BRANCH_KINDS = [
-    'if_statement',
-    'else_if_clause',
-    'for_statement',
-    'foreach_statement',
-    'while_statement',
-    'do_statement',
-    'case_statement',
-    'catch_clause',
-    'conditional_expression',
+    PHP_KINDS.ifStatement,
+    PHP_KINDS.elseIfClause,
+    PHP_KINDS.forStatement,
+    PHP_KINDS.foreachStatement,
+    PHP_KINDS.whileStatement,
+    PHP_KINDS.doStatement,
+    PHP_KINDS.caseStatement,
+    PHP_KINDS.catchClause,
+    PHP_KINDS.conditionalExpression,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -29,23 +38,25 @@ const PHP_BRANCH_KINDS = [
 // ---------------------------------------------------------------------------
 
 function phpExtends(node: SgNode): string | undefined {
-    const baseClause = node.children().find((c: SgNode) => c.kind() === 'base_clause');
+    const baseClause = node.children().find((c: SgNode) => c.kind() === PHP_KINDS.baseClause);
     if (!baseClause) {
         return undefined;
     }
     // PHP base_clause child is `name` for simple names, `qualified_name` for namespaced ones
-    const name = baseClause.children().find((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name');
+    const name = baseClause
+        .children()
+        .find((c: SgNode) => c.kind() === PHP_KINDS.name || c.kind() === PHP_KINDS.qualifiedName);
     return name?.text();
 }
 
 function phpImplements(node: SgNode): string[] {
-    const ifaceClause = node.children().find((c: SgNode) => c.kind() === 'class_interface_clause');
+    const ifaceClause = node.children().find((c: SgNode) => c.kind() === PHP_KINDS.classInterfaceClause);
     if (!ifaceClause) {
         return [];
     }
     return ifaceClause
         .children()
-        .filter((c: SgNode) => c.kind() === 'name' || c.kind() === 'qualified_name')
+        .filter((c: SgNode) => c.kind() === PHP_KINDS.name || c.kind() === PHP_KINDS.qualifiedName)
         .map((c: SgNode) => c.text());
 }
 
@@ -54,15 +65,17 @@ function phpImplements(node: SgNode): string[] {
 // ---------------------------------------------------------------------------
 
 function extractImportModule(node: SgNode): string {
+    // PHP `use` declarations expose the module via a `string`/`string_content`
+    // child only for the (rare) string-literal form; the common case is a
+    // `name`/`namespace_name` child, falling through to the text-strip below.
     for (const child of node.children()) {
         const ck = child.kind();
-        if (ck === 'string' || ck === 'interpreted_string_literal' || ck === 'string_fragment') {
+        if (ck === PHP_KINDS.string) {
             const raw = child.text();
             return raw.replace(/^["'`]|["'`]$/g, '');
         }
         for (const grandchild of child.children()) {
-            const gck = grandchild.kind();
-            if (gck === 'string_fragment' || gck === 'string_content') {
+            if (grandchild.kind() === PHP_KINDS.stringContent) {
                 return grandchild.text();
             }
         }
@@ -70,36 +83,18 @@ function extractImportModule(node: SgNode): string {
 
     for (const child of node.children()) {
         const ck = child.kind();
-        if (ck === 'scoped_identifier' || ck === 'scoped_type_identifier' || ck === 'qualified_name') {
+        if (ck === PHP_KINDS.name || ck === PHP_KINDS.namespaceName) {
             return child.text();
         }
     }
 
-    for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'name' || ck === 'namespace_name' || ck === 'use_tree') {
-            return child.text();
-        }
-    }
-
-    for (const child of node.children()) {
-        if (child.kind() === 'identifier' || child.kind() === 'type_identifier') {
-            return child.text();
-        }
-    }
-
-    return node
-        .text()
-        .replace(/^\s*(import|use|using|require)\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 function extractImportNames(node: SgNode): string[] {
     const names: string[] = [];
     for (const child of node.children()) {
-        const ck = child.kind();
-        if (ck === 'identifier' || ck === 'type_identifier' || ck === 'name') {
+        if (child.kind() === PHP_KINDS.name) {
             names.push(child.text());
         }
     }
@@ -122,8 +117,8 @@ export const phpExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes ──────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'class_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: PHP_KINDS.classDeclaration } })) {
+            const name = node.field(PHP_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -154,8 +149,8 @@ export const phpExtractors: LanguageExtractors = {
         }
 
         // ── Interfaces ──────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'interface_declaration' } })) {
-            const name = node.field('name')?.text();
+        for (const node of root.findAll({ rule: { kind: PHP_KINDS.interfaceDeclaration } })) {
+            const name = node.field(PHP_FIELDS.name)?.text();
             if (!name) {
                 continue;
             }
@@ -173,12 +168,12 @@ export const phpExtractors: LanguageExtractors = {
         }
 
         // ── Functions / Methods ─────────────────────────────────────────
-        const funcKinds = ['function_definition', 'method_declaration'];
-        const methodKindSet = new Set(['method_declaration']);
+        const funcKinds = [PHP_KINDS.functionDefinition, PHP_KINDS.methodDeclaration];
+        const methodKindSet = new Set<string>([PHP_KINDS.methodDeclaration]);
 
         for (const funcKind of funcKinds) {
             for (const node of root.findAll({ rule: { kind: funcKind } })) {
-                const name = node.field('name')?.text();
+                const name = node.field(PHP_FIELDS.name)?.text();
                 if (!name) {
                     continue;
                 }
@@ -189,7 +184,7 @@ export const phpExtractors: LanguageExtractors = {
                     return k.includes('class') || k.includes('struct') || k.includes('impl');
                 });
                 if (classAncestor) {
-                    className = classAncestor.field('name')?.text() || '';
+                    className = classAncestor.field(PHP_FIELDS.name)?.text() || '';
                 }
 
                 let kind: 'Function' | 'Method' | 'Constructor';
@@ -206,15 +201,15 @@ export const phpExtractors: LanguageExtractors = {
                 const range = nodeRange(node);
 
                 // PHP: public by default unless private/protected visibility_modifier
-                const visibilityMod = node.children().find((c) => String(c.kind()) === 'visibility_modifier');
+                const visibilityMod = node.children().find((c) => String(c.kind()) === PHP_KINDS.visibilityModifier);
                 const phpExported = !visibilityMod || visibilityMod.text() === 'public';
 
                 result.functions.push({
                     name,
                     line_start: range.line_start,
                     line_end: range.line_end,
-                    params: node.field('parameters')?.text() || '()',
-                    returnType: node.field('return_type')?.text() || '',
+                    params: node.field(PHP_FIELDS.parameters)?.text() || '()',
+                    returnType: node.field(PHP_FIELDS.returnType)?.text() || '',
                     kind,
                     ast_kind: String(node.kind()),
                     className,
@@ -224,7 +219,7 @@ export const phpExtractors: LanguageExtractors = {
                     is_exported: phpExported,
                     is_async: false,
                     decorators: [],
-                    throws: extractThrows(node, ['throw_expression']),
+                    throws: extractThrows(node, [PHP_KINDS.throwExpression]),
                     complexity: computeCyclomatic(node, PHP_BRANCH_KINDS),
                 });
             }
@@ -235,17 +230,17 @@ export const phpExtractors: LanguageExtractors = {
         // `public function __construct(private UserRepository $repo) {}`
         // (PHP 8.0+ promotion), record `repo → UserRepository` so
         // `$this->repo->method()` routes through the DI tier.
-        for (const cls of root.findAll({ rule: { kind: 'class_declaration' } })) {
-            for (const pd of cls.findAll({ rule: { kind: 'property_declaration' } })) {
-                const typeNode = pd.children().find((c) => c.kind() === 'named_type');
-                const propEl = pd.children().find((c) => c.kind() === 'property_element');
+        for (const cls of root.findAll({ rule: { kind: PHP_KINDS.classDeclaration } })) {
+            for (const pd of cls.findAll({ rule: { kind: PHP_KINDS.propertyDeclaration } })) {
+                const typeNode = pd.children().find((c) => c.kind() === PHP_KINDS.namedType);
+                const propEl = pd.children().find((c) => c.kind() === PHP_KINDS.propertyElement);
                 if (!typeNode || !propEl) {
                     continue;
                 }
                 const propName =
                     propEl
                         .children()
-                        .find((c) => c.kind() === 'variable_name')
+                        .find((c) => c.kind() === PHP_KINDS.variableName)
                         ?.text() ?? propEl.text();
                 const fieldName = propName.replace(/^\$/, '');
                 if (fieldName) {
@@ -253,24 +248,24 @@ export const phpExtractors: LanguageExtractors = {
                 }
             }
             // Promoted constructor properties (PHP 8.0+).
-            for (const ctor of cls.findAll({ rule: { kind: 'method_declaration' } })) {
-                if (ctor.field('name')?.text() !== '__construct') {
+            for (const ctor of cls.findAll({ rule: { kind: PHP_KINDS.methodDeclaration } })) {
+                if (ctor.field(PHP_FIELDS.name)?.text() !== '__construct') {
                     continue;
                 }
-                const params = ctor.field('parameters');
+                const params = ctor.field(PHP_FIELDS.parameters);
                 if (!params) {
                     continue;
                 }
                 for (const p of params.children()) {
-                    if (p.kind() !== 'simple_parameter' && p.kind() !== 'property_promotion_parameter') {
+                    if (p.kind() !== PHP_KINDS.simpleParameter && p.kind() !== PHP_KINDS.propertyPromotionParameter) {
                         continue;
                     }
-                    const hasVisibility = p.children().some((c) => c.kind() === 'visibility_modifier');
+                    const hasVisibility = p.children().some((c) => c.kind() === PHP_KINDS.visibilityModifier);
                     if (!hasVisibility) {
                         continue;
                     }
-                    const typeNode = p.children().find((c) => c.kind() === 'named_type');
-                    const varNode = p.children().find((c) => c.kind() === 'variable_name');
+                    const typeNode = p.children().find((c) => c.kind() === PHP_KINDS.namedType);
+                    const varNode = p.children().find((c) => c.kind() === PHP_KINDS.variableName);
                     if (!typeNode || !varNode) {
                         continue;
                     }
@@ -283,7 +278,7 @@ export const phpExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'namespace_use_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: PHP_KINDS.namespaceUseDeclaration } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -320,12 +315,16 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
     const findEnclosingClass = (node: SgNode): SgNode | null =>
         node.ancestors().find((a) => {
             const k = String(a.kind());
-            return k === 'class_declaration' || k === 'interface_declaration' || k === 'trait_declaration';
+            return (
+                k === PHP_KINDS.classDeclaration ||
+                k === PHP_KINDS.interfaceDeclaration ||
+                k === PHP_KINDS.traitDeclaration
+            );
         }) ?? null;
 
     // ── function_call_expression: helperFunction() ─────────────────────
-    for (const node of root.findAll({ rule: { kind: 'function_call_expression' } })) {
-        const nameNode = node.children().find((c) => c.kind() === 'name');
+    for (const node of root.findAll({ rule: { kind: PHP_KINDS.functionCallExpression } })) {
+        const nameNode = node.children().find((c) => c.kind() === PHP_KINDS.name);
         if (!nameNode) {
             continue;
         }
@@ -336,12 +335,12 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
     }
 
     // ── member_call_expression: $obj->method(), $this->m(), $this->f->m() ─
-    for (const node of root.findAll({ rule: { kind: 'member_call_expression' } })) {
+    for (const node of root.findAll({ rule: { kind: PHP_KINDS.memberCallExpression } })) {
         // The PHP grammar emits `member_call_expression` children as:
         //   [object, ->, name, arguments]
         // where `object` is `variable_name` (simple) or `member_access_expression`
         // (chained — DI pattern $this->field->method).
-        const methodNameNode = node.children().find((c) => c.kind() === 'name');
+        const methodNameNode = node.children().find((c) => c.kind() === PHP_KINDS.name);
         if (!methodNameNode) {
             continue;
         }
@@ -355,20 +354,20 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
         let resolveInClass: string | undefined;
         let diField: string | undefined;
 
-        if (objectNode.kind() === 'variable_name') {
+        if (objectNode.kind() === PHP_KINDS.variableName) {
             // `$this->method()` — resolve in enclosing class
             if (objectNode.text() === '$this') {
                 const classNode = findEnclosingClass(node);
-                resolveInClass = classNode?.field('name')?.text();
+                resolveInClass = classNode?.field(PHP_FIELDS.name)?.text();
             }
             // Other $var->method() — no receiver-type inference registered
             // for PHP, so nothing more to add.
-        } else if (objectNode.kind() === 'member_access_expression') {
+        } else if (objectNode.kind() === PHP_KINDS.memberAccessExpression) {
             // `$this->field->method()` — DI pattern.
             // member_access_expression children: [variable_name, ->, name]
             const accessChildren = objectNode.children();
             const base = accessChildren[0];
-            const fieldNameNode = accessChildren.find((c) => c.kind() === 'name');
+            const fieldNameNode = accessChildren.find((c) => c.kind() === PHP_KINDS.name);
             if (base?.text() === '$this' && fieldNameNode) {
                 diField = fieldNameNode.text();
             }
@@ -386,7 +385,7 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
     }
 
     // ── scoped_call_expression: Foo::bar(), parent::log(), self::x() ────
-    for (const node of root.findAll({ rule: { kind: 'scoped_call_expression' } })) {
+    for (const node of root.findAll({ rule: { kind: PHP_KINDS.scopedCallExpression } })) {
         // Children: [scope, ::, method-name-or-variable, arguments]
         // scope is either `name` (class like `Foo`) or `relative_scope`
         // (`self`/`parent`/`static`). Method is `name` or `variable_name`.
@@ -401,11 +400,11 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
         let methodNode: SgNode | undefined;
         let seenDoubleColon = false;
         for (const c of children) {
-            if (c.kind() === '::') {
+            if (c.kind() === PHP_KINDS.doubleColon) {
                 seenDoubleColon = true;
                 continue;
             }
-            if (seenDoubleColon && (c.kind() === 'name' || c.kind() === 'variable_name')) {
+            if (seenDoubleColon && (c.kind() === PHP_KINDS.name || c.kind() === PHP_KINDS.variableName)) {
                 methodNode = c;
                 break;
             }
@@ -420,17 +419,17 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
         }
 
         let resolveInClass: string | undefined;
-        if (scopeNode.kind() === 'relative_scope') {
+        if (scopeNode.kind() === PHP_KINDS.relativeScope) {
             const scope = scopeNode.text();
             const classNode = findEnclosingClass(node);
             if (classNode) {
                 if (scope === 'parent') {
                     resolveInClass = phpExtends(classNode);
                 } else if (scope === 'self' || scope === 'static') {
-                    resolveInClass = classNode.field('name')?.text();
+                    resolveInClass = classNode.field(PHP_FIELDS.name)?.text();
                 }
             }
-        } else if (scopeNode.kind() === 'name') {
+        } else if (scopeNode.kind() === PHP_KINDS.name) {
             // `Foo::bar()` — scope is an explicit class name; resolver can
             // use it as a hint to prefer methods in that class.
             resolveInClass = scopeNode.text();
@@ -458,29 +457,29 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
  */
 function collectPhpBindings(fn: SgNode): Map<string, string> {
     const bindings = new Map<string, string>();
-    const params = fn.field('parameters');
+    const params = fn.field(PHP_FIELDS.parameters);
     if (params) {
         for (const p of params.children()) {
-            if (p.kind() !== 'simple_parameter' && p.kind() !== 'property_promotion_parameter') {
+            if (p.kind() !== PHP_KINDS.simpleParameter && p.kind() !== PHP_KINDS.propertyPromotionParameter) {
                 continue;
             }
-            const typeNode = p.children().find((c) => c.kind() === 'named_type');
-            const varNode = p.children().find((c) => c.kind() === 'variable_name');
+            const typeNode = p.children().find((c) => c.kind() === PHP_KINDS.namedType);
+            const varNode = p.children().find((c) => c.kind() === PHP_KINDS.variableName);
             if (typeNode && varNode) {
                 bindings.set(varNode.text(), typeNode.text());
             }
         }
     }
-    for (const a of fn.findAll({ rule: { kind: 'assignment_expression' } })) {
-        const left = a.field('left');
-        const right = a.field('right');
-        if (left?.kind() !== 'variable_name' || !right) {
+    for (const a of fn.findAll({ rule: { kind: PHP_KINDS.assignmentExpression } })) {
+        const left = a.field(PHP_FIELDS.left);
+        const right = a.field(PHP_FIELDS.right);
+        if (left?.kind() !== PHP_KINDS.variableName || !right) {
             continue;
         }
-        if (right.kind() === 'object_creation_expression') {
+        if (right.kind() === PHP_KINDS.objectCreationExpression) {
             const typeNode = right.children().find((c) => {
                 const k = c.kind();
-                return k === 'name' || k === 'qualified_name';
+                return k === PHP_KINDS.name || k === PHP_KINDS.qualifiedName;
             });
             if (typeNode) {
                 bindings.set(left.text(), typeNode.text());
@@ -500,23 +499,23 @@ function collectPhpBindings(fn: SgNode): Map<string, string> {
  */
 function extractReceiverTypesPHP(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
-    const fnKinds = ['method_declaration', 'function_definition'];
+    const fnKinds = [PHP_KINDS.methodDeclaration, PHP_KINDS.functionDefinition];
     for (const kind of fnKinds) {
         for (const fn of root.findAll({ rule: { kind } })) {
             const bindings = collectPhpBindings(fn);
             if (bindings.size === 0) {
                 continue;
             }
-            for (const mce of fn.findAll({ rule: { kind: 'member_call_expression' } })) {
+            for (const mce of fn.findAll({ rule: { kind: PHP_KINDS.memberCallExpression } })) {
                 const obj = mce.children()[0];
-                if (!obj || obj.kind() !== 'variable_name' || obj.text() === '$this') {
+                if (!obj || obj.kind() !== PHP_KINDS.variableName || obj.text() === '$this') {
                     continue;
                 }
                 const typeName = bindings.get(obj.text());
                 if (!typeName) {
                     continue;
                 }
-                const methodNameNode = mce.children().find((c) => c.kind() === 'name');
+                const methodNameNode = mce.children().find((c) => c.kind() === PHP_KINDS.name);
                 if (!methodNameNode) {
                     continue;
                 }

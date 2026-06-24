@@ -5,6 +5,22 @@ import type { ExtractionResult } from './spec';
 export { computeContentHash } from '../shared/file-hash';
 
 /**
+ * Last-resort import-path extraction: strip a leading import keyword
+ * (`import`/`use`/`using`/`require`) and trailing punctuation from a node's
+ * raw text. Per-language `extractImportModule` helpers structurally resolve
+ * the path from typed children first and fall back to this only when no known
+ * child kind matches. Shared so the keyword list and stripping rules live in
+ * one place across all eight C-style import extractors.
+ */
+export function stripImportKeyword(node: SgNode): string {
+    return node
+        .text()
+        .replace(/^\s*(import|use|using|require)\s+/i, '')
+        .replace(/[;{}]/g, '')
+        .trim();
+}
+
+/**
  * Extract the full modifiers string from a node.
  * Looks for a `modifiers` or `accessibility_modifier` child and returns its
  * text with whitespace normalised (e.g. "@Service @Autowired public static").

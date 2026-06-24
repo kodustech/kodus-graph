@@ -6,6 +6,7 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { C_FIELDS, C_KINDS } from './kinds';
 
 // Branch kinds for C / C++ cyclomatic complexity.
 // `case_statement` is the case-level kind (also used for `default:`).
@@ -14,13 +15,13 @@ import type { ExtractionResult, LanguageExtractors } from '../spec';
 // (C has no exceptions) but harmless to list for both since it just won't
 // match in C code.
 const C_BRANCH_KINDS = [
-    'if_statement',
-    'for_statement',
-    'while_statement',
-    'do_statement',
-    'case_statement',
-    'conditional_expression',
-    'catch_clause',
+    C_KINDS.ifStatement,
+    C_KINDS.forStatement,
+    C_KINDS.whileStatement,
+    C_KINDS.doStatement,
+    C_KINDS.caseStatement,
+    C_KINDS.conditionalExpression,
+    C_KINDS.catchClause,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -50,16 +51,18 @@ function extractFuncName(node: SgNode): string | undefined {
     }
 
     const direct =
-        declarator.children().find((c) => c.kind() === 'identifier') ||
-        declarator.children().find((c) => c.kind() === 'field_identifier');
+        declarator.children().find((c) => c.kind() === C_KINDS.identifier) ||
+        declarator.children().find((c) => c.kind() === C_KINDS.fieldIdentifier);
     if (direct) {
         return direct.text();
     }
 
-    const qualified = declarator.children().find((c) => c.kind() === 'qualified_identifier');
+    const qualified = declarator.children().find((c) => c.kind() === C_KINDS.qualifiedIdentifier);
     if (qualified) {
         const subs = qualified.children();
-        const last = [...subs].reverse().find((c) => c.kind() === 'identifier' || c.kind() === 'field_identifier');
+        const last = [...subs]
+            .reverse()
+            .find((c) => c.kind() === C_KINDS.identifier || c.kind() === C_KINDS.fieldIdentifier);
         return last?.text();
     }
     return undefined;
@@ -74,11 +77,13 @@ function extractQualifiedClassName(node: SgNode): string {
     if (!declarator) {
         return '';
     }
-    const qualified = declarator.children().find((c) => c.kind() === 'qualified_identifier');
+    const qualified = declarator.children().find((c) => c.kind() === C_KINDS.qualifiedIdentifier);
     if (!qualified) {
         return '';
     }
-    const ns = qualified.children().find((c) => c.kind() === 'namespace_identifier' || c.kind() === 'type_identifier');
+    const ns = qualified
+        .children()
+        .find((c) => c.kind() === C_KINDS.namespaceIdentifier || c.kind() === C_KINDS.typeIdentifier);
     return ns?.text() || '';
 }
 
@@ -88,15 +93,15 @@ function extractQualifiedClassName(node: SgNode): string {
  */
 function findFunctionDeclarator(node: SgNode): SgNode | undefined {
     // Direct child
-    const direct = node.children().find((c) => c.kind() === 'function_declarator');
+    const direct = node.children().find((c) => c.kind() === C_KINDS.functionDeclarator);
     if (direct) {
         return direct;
     }
 
     // Nested inside pointer_declarator or reference_declarator (e.g., `int* foo()`)
     for (const child of node.children()) {
-        if (child.kind() === 'pointer_declarator' || child.kind() === 'reference_declarator') {
-            const nested = child.children().find((c) => c.kind() === 'function_declarator');
+        if (child.kind() === C_KINDS.pointerDeclarator || child.kind() === C_KINDS.referenceDeclarator) {
+            const nested = child.children().find((c) => c.kind() === C_KINDS.functionDeclarator);
             if (nested) {
                 return nested;
             }
@@ -113,7 +118,7 @@ function extractParams(node: SgNode): string {
     if (!declarator) {
         return '()';
     }
-    const paramList = declarator.children().find((c) => c.kind() === 'parameter_list');
+    const paramList = declarator.children().find((c) => c.kind() === C_KINDS.parameterList);
     return paramList?.text() || '()';
 }
 
@@ -125,14 +130,14 @@ function extractReturnType(node: SgNode): string {
     const parts: string[] = [];
     for (const child of node.children()) {
         const k = child.kind();
-        if (k === 'function_declarator' || k === 'pointer_declarator' || k === 'compound_statement') {
+        if (k === C_KINDS.functionDeclarator || k === C_KINDS.pointerDeclarator || k === C_KINDS.compoundStatement) {
             break;
         }
         if (
-            k === 'primitive_type' ||
-            k === 'type_identifier' ||
-            k === 'type_qualifier' ||
-            k === 'sized_type_specifier'
+            k === C_KINDS.primitiveType ||
+            k === C_KINDS.typeIdentifier ||
+            k === C_KINDS.typeQualifier ||
+            k === C_KINDS.sizedTypeSpecifier
         ) {
             parts.push(child.text());
         }
@@ -144,14 +149,14 @@ function extractReturnType(node: SgNode): string {
  * Check if a function has the `static` storage class specifier.
  */
 function hasStaticSpecifier(node: SgNode): boolean {
-    return node.children().some((c) => c.kind() === 'storage_class_specifier' && c.text() === 'static');
+    return node.children().some((c) => c.kind() === C_KINDS.storageClassSpecifier && c.text() === 'static');
 }
 
 /**
  * Check if a function/declaration has the `extern` storage class specifier.
  */
 function hasExternSpecifier(node: SgNode): boolean {
-    return node.children().some((c) => c.kind() === 'storage_class_specifier' && c.text() === 'extern');
+    return node.children().some((c) => c.kind() === C_KINDS.storageClassSpecifier && c.text() === 'extern');
 }
 
 /**
@@ -163,7 +168,7 @@ function hasExternSpecifier(node: SgNode): boolean {
 function getAccessSpecifier(node: SgNode, isStruct: boolean): string {
     // Walk previous siblings of the node
     for (const sib of node.prevAll()) {
-        if (sib.kind() === 'access_specifier') {
+        if (sib.kind() === C_KINDS.accessSpecifier) {
             return sib.text().replace(':', '').trim();
         }
     }
@@ -177,8 +182,8 @@ function getAccessSpecifier(node: SgNode, isStruct: boolean): string {
 function findEnclosingClassName(node: SgNode): string {
     for (const ancestor of node.ancestors()) {
         const k = ancestor.kind();
-        if (k === 'class_specifier' || k === 'struct_specifier') {
-            const nameNode = ancestor.children().find((c) => c.kind() === 'type_identifier');
+        if (k === C_KINDS.classSpecifier || k === C_KINDS.structSpecifier) {
+            const nameNode = ancestor.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
             return nameNode?.text() || '';
         }
     }
@@ -190,10 +195,10 @@ function findEnclosingClassName(node: SgNode): string {
  */
 function isEnclosingStruct(node: SgNode): boolean {
     for (const ancestor of node.ancestors()) {
-        if (ancestor.kind() === 'struct_specifier') {
+        if (ancestor.kind() === C_KINDS.structSpecifier) {
             return true;
         }
-        if (ancestor.kind() === 'class_specifier') {
+        if (ancestor.kind() === C_KINDS.classSpecifier) {
             return false;
         }
     }
@@ -210,15 +215,15 @@ interface IncludeInfo {
 }
 
 function extractInclude(node: SgNode): IncludeInfo | null {
-    const sysLib = node.children().find((c) => c.kind() === 'system_lib_string');
+    const sysLib = node.children().find((c) => c.kind() === C_KINDS.systemLibString);
     if (sysLib) {
         // Strip angle brackets: <stdio.h> -> stdio.h
         return { path: sysLib.text().replace(/^<|>$/g, ''), isSystem: true };
     }
 
-    const strLit = node.children().find((c) => c.kind() === 'string_literal');
+    const strLit = node.children().find((c) => c.kind() === C_KINDS.stringLiteral);
     if (strLit) {
-        const content = strLit.children().find((c) => c.kind() === 'string_content');
+        const content = strLit.children().find((c) => c.kind() === C_KINDS.stringContent);
         if (content) {
             return { path: content.text(), isSystem: false };
         }
@@ -242,16 +247,16 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 
             // ── C: type_definition (typedef struct { ... } Name;) ───────
             if (!isCpp) {
-                for (const node of root.findAll({ rule: { kind: 'type_definition' } })) {
+                for (const node of root.findAll({ rule: { kind: C_KINDS.typeDefinition } })) {
                     // The typedef name is the type_identifier child of type_definition
-                    const nameNode = node.children().find((c) => c.kind() === 'type_identifier');
+                    const nameNode = node.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                     if (!nameNode) {
                         continue;
                     }
                     const name = nameNode.text();
 
                     // Check if it's a typedef struct (class) or just a typedef alias
-                    const hasStruct = node.children().some((c) => c.kind() === 'struct_specifier');
+                    const hasStruct = node.children().some((c) => c.kind() === C_KINDS.structSpecifier);
 
                     if (hasStruct) {
                         const range = nodeRange(node);
@@ -261,7 +266,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                             line_end: range.line_end,
                             extends: '',
                             implements: [],
-                            ast_kind: 'type_definition',
+                            ast_kind: C_KINDS.typeDefinition,
                             modifiers: 'typedef',
                             content_hash: computeContentHash(node.text()),
                             is_exported: isHeader || hasExternSpecifier(node),
@@ -272,8 +277,8 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
             }
 
             // ── Structs (standalone, with name) ────────────────────────
-            for (const node of root.findAll({ rule: { kind: 'struct_specifier' } })) {
-                const nameNode = node.children().find((c) => c.kind() === 'type_identifier');
+            for (const node of root.findAll({ rule: { kind: C_KINDS.structSpecifier } })) {
+                const nameNode = node.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                 if (!nameNode) {
                     continue; // anonymous struct (part of typedef or local)
                 }
@@ -282,7 +287,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 // — already handled above
                 if (!isCpp) {
                     const parent = node.parent();
-                    if (parent && parent.kind() === 'type_definition') {
+                    if (parent && parent.kind() === C_KINDS.typeDefinition) {
                         continue;
                     }
                 }
@@ -294,9 +299,9 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 let extendsName = '';
                 const implementsList: string[] = [];
                 if (isCpp) {
-                    const baseClause = node.children().find((c) => c.kind() === 'base_class_clause');
+                    const baseClause = node.children().find((c) => c.kind() === C_KINDS.baseClassClause);
                     if (baseClause) {
-                        const typeIds = baseClause.children().filter((c) => c.kind() === 'type_identifier');
+                        const typeIds = baseClause.children().filter((c) => c.kind() === C_KINDS.typeIdentifier);
                         if (typeIds.length > 0) {
                             extendsName = typeIds[0].text();
                         }
@@ -312,7 +317,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     line_end: range.line_end,
                     extends: extendsName,
                     implements: implementsList,
-                    ast_kind: 'struct_specifier',
+                    ast_kind: C_KINDS.structSpecifier,
                     modifiers: '',
                     content_hash: computeContentHash(node.text()),
                     is_exported: isHeader,
@@ -322,8 +327,8 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 
             // ── C++ classes ─────────────────────────────────────────────
             if (isCpp) {
-                for (const node of root.findAll({ rule: { kind: 'class_specifier' } })) {
-                    const nameNode = node.children().find((c) => c.kind() === 'type_identifier');
+                for (const node of root.findAll({ rule: { kind: C_KINDS.classSpecifier } })) {
+                    const nameNode = node.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                     if (!nameNode) {
                         continue;
                     }
@@ -332,9 +337,9 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     // Heritage from base_class_clause
                     let extendsName = '';
                     const implementsList: string[] = [];
-                    const baseClause = node.children().find((c) => c.kind() === 'base_class_clause');
+                    const baseClause = node.children().find((c) => c.kind() === C_KINDS.baseClassClause);
                     if (baseClause) {
-                        const typeIds = baseClause.children().filter((c) => c.kind() === 'type_identifier');
+                        const typeIds = baseClause.children().filter((c) => c.kind() === C_KINDS.typeIdentifier);
                         if (typeIds.length > 0) {
                             extendsName = typeIds[0].text();
                         }
@@ -350,7 +355,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                         line_end: range.line_end,
                         extends: extendsName,
                         implements: implementsList,
-                        ast_kind: 'class_specifier',
+                        ast_kind: C_KINDS.classSpecifier,
                         modifiers: '',
                         content_hash: computeContentHash(node.text()),
                         is_exported: isHeader,
@@ -359,14 +364,14 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 }
 
                 // ── C++ template declarations wrapping classes ──────────
-                for (const node of root.findAll({ rule: { kind: 'template_declaration' } })) {
+                for (const node of root.findAll({ rule: { kind: C_KINDS.templateDeclaration } })) {
                     const classNode =
-                        node.children().find((c) => c.kind() === 'class_specifier') ||
-                        node.children().find((c) => c.kind() === 'struct_specifier');
+                        node.children().find((c) => c.kind() === C_KINDS.classSpecifier) ||
+                        node.children().find((c) => c.kind() === C_KINDS.structSpecifier);
                     if (!classNode) {
                         continue; // template function or other, skip here
                     }
-                    const nameNode = classNode.children().find((c) => c.kind() === 'type_identifier');
+                    const nameNode = classNode.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                     if (!nameNode) {
                         continue;
                     }
@@ -388,9 +393,9 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
 
                     let extendsName = '';
                     const implementsList: string[] = [];
-                    const baseClause = classNode.children().find((c) => c.kind() === 'base_class_clause');
+                    const baseClause = classNode.children().find((c) => c.kind() === C_KINDS.baseClassClause);
                     if (baseClause) {
-                        const typeIds = baseClause.children().filter((c) => c.kind() === 'type_identifier');
+                        const typeIds = baseClause.children().filter((c) => c.kind() === C_KINDS.typeIdentifier);
                         if (typeIds.length > 0) {
                             extendsName = typeIds[0].text();
                         }
@@ -406,7 +411,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                         line_end: range.line_end,
                         extends: extendsName,
                         implements: implementsList,
-                        ast_kind: 'template_declaration',
+                        ast_kind: C_KINDS.templateDeclaration,
                         modifiers: 'template',
                         content_hash: computeContentHash(node.text()),
                         is_exported: isHeader,
@@ -420,8 +425,8 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
             }
 
             // ── Enums ───────────────────────────────────────────────────
-            for (const node of root.findAll({ rule: { kind: 'enum_specifier' } })) {
-                const nameNode = node.children().find((c) => c.kind() === 'type_identifier');
+            for (const node of root.findAll({ rule: { kind: C_KINDS.enumSpecifier } })) {
+                const nameNode = node.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                 if (!nameNode) {
                     continue; // anonymous enum
                 }
@@ -431,14 +436,14 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     name,
                     line_start: range.line_start,
                     line_end: range.line_end,
-                    ast_kind: 'enum_specifier',
+                    ast_kind: C_KINDS.enumSpecifier,
                     content_hash: computeContentHash(node.text()),
                     is_exported: isHeader,
                 });
             }
 
             // ── Functions ───────────────────────────────────────────────
-            for (const node of root.findAll({ rule: { kind: 'function_definition' } })) {
+            for (const node of root.findAll({ rule: { kind: C_KINDS.functionDefinition } })) {
                 const name = extractFuncName(node);
                 if (!name) {
                     continue;
@@ -504,7 +509,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     params: extractParams(node),
                     returnType: extractReturnType(node),
                     kind,
-                    ast_kind: 'function_definition',
+                    ast_kind: C_KINDS.functionDefinition,
                     className,
                     modifiers: isStatic ? 'static' : '',
                     content_hash: computeContentHash(node.text()),
@@ -518,7 +523,7 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
             }
 
             // ── Includes (imports) ──────────────────────────────────────
-            for (const node of root.findAll({ rule: { kind: 'preproc_include' } })) {
+            for (const node of root.findAll({ rule: { kind: C_KINDS.preprocInclude } })) {
                 const inc = extractInclude(node);
                 if (!inc) {
                     continue;
@@ -546,11 +551,11 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
             const findEnclosingClass = (node: SgNode): SgNode | null =>
                 node.ancestors().find((a) => {
                     const k = String(a.kind());
-                    return k === 'class_specifier' || k === 'struct_specifier';
+                    return k === C_KINDS.classSpecifier || k === C_KINDS.structSpecifier;
                 }) ?? null;
 
-            for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
-                const fn = ce.field('function');
+            for (const ce of root.findAll({ rule: { kind: C_KINDS.callExpression } })) {
+                const fn = ce.field(C_FIELDS.function);
                 if (!fn) {
                     continue;
                 }
@@ -560,10 +565,10 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                 let chainedFromLine: number | undefined;
                 let chainedFromColumn: number | undefined;
 
-                if (fnKind === 'identifier') {
+                if (fnKind === C_KINDS.identifier) {
                     callName = fn.text();
-                } else if (fnKind === 'field_expression') {
-                    const fid = fn.children().find((c) => c.kind() === 'field_identifier');
+                } else if (fnKind === C_KINDS.fieldExpression) {
+                    const fid = fn.children().find((c) => c.kind() === C_KINDS.fieldIdentifier);
                     if (!fid) {
                         continue;
                     }
@@ -571,25 +576,27 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
                     if (langKey === 'cpp') {
                         // `this->method()` / `this.method()` resolves in current class.
                         const baseChild = fn.children()[0];
-                        if (baseChild?.kind() === 'this' || baseChild?.text() === 'this') {
+                        if (baseChild?.kind() === C_KINDS.thisExpression || baseChild?.text() === 'this') {
                             const classNode = findEnclosingClass(ce);
-                            const nameNode = classNode?.children().find((c) => c.kind() === 'type_identifier');
+                            const nameNode = classNode?.children().find((c) => c.kind() === C_KINDS.typeIdentifier);
                             resolveInClass = nameNode?.text();
                         }
                     }
                     // Chain detection: receiver (first child) is itself a call.
                     const baseChild = fn.children()[0];
-                    if (baseChild?.kind() === 'call_expression') {
-                        const innerFn = baseChild.field('function');
+                    if (baseChild?.kind() === C_KINDS.callExpression) {
+                        const innerFn = baseChild.field(C_FIELDS.function);
                         const innerR = (innerFn ?? baseChild).range().end;
                         chainedFromLine = innerR.line;
                         chainedFromColumn = innerR.column;
                     }
-                } else if (fnKind === 'qualified_identifier' && langKey === 'cpp') {
+                } else if (fnKind === C_KINDS.qualifiedIdentifier && langKey === 'cpp') {
                     // `Foo::bar()` — qualified static / namespaced call.
                     const subs = fn.children();
-                    const ns = subs.find((c) => c.kind() === 'namespace_identifier' || c.kind() === 'type_identifier');
-                    const last = [...subs].reverse().find((c) => c.kind() === 'identifier');
+                    const ns = subs.find(
+                        (c) => c.kind() === C_KINDS.namespaceIdentifier || c.kind() === C_KINDS.typeIdentifier,
+                    );
+                    const last = [...subs].reverse().find((c) => c.kind() === C_KINDS.identifier);
                     if (!last) {
                         continue;
                     }
@@ -628,14 +635,14 @@ function createCExtractor(langKey: 'c' | 'cpp'): LanguageExtractors {
  * Returns null when no identifier is reachable through the declarator chain.
  */
 function findDeclaredName(node: SgNode): string | null {
-    if (node.kind() === 'identifier') {
+    if (node.kind() === C_KINDS.identifier) {
         return node.text();
     }
     if (
-        node.kind() === 'pointer_declarator' ||
-        node.kind() === 'reference_declarator' ||
-        node.kind() === 'init_declarator' ||
-        node.kind() === 'array_declarator'
+        node.kind() === C_KINDS.pointerDeclarator ||
+        node.kind() === C_KINDS.referenceDeclarator ||
+        node.kind() === C_KINDS.initDeclarator ||
+        node.kind() === C_KINDS.arrayDeclarator
     ) {
         for (const c of node.children()) {
             const name = findDeclaredName(c);
@@ -650,9 +657,9 @@ function findDeclaredName(node: SgNode): string | null {
 function extractReceiverTypesC(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const decl of root.findAll({ rule: { kind: 'declaration' } })) {
-        const typeNode = decl.field('type');
-        const typeName = typeNode?.kind() === 'type_identifier' ? typeNode.text() : undefined;
+    for (const decl of root.findAll({ rule: { kind: C_KINDS.declaration } })) {
+        const typeNode = decl.field(C_FIELDS.type);
+        const typeName = typeNode?.kind() === C_KINDS.typeIdentifier ? typeNode.text() : undefined;
         if (!typeName) {
             continue;
         }
@@ -663,13 +670,13 @@ function extractReceiverTypesC(root: SgNode, fp: string): ReceiverTypeMap {
             }
         }
     }
-    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
-        const fn = ce.field('function');
-        if (!fn || fn.kind() !== 'field_expression') {
+    for (const ce of root.findAll({ rule: { kind: C_KINDS.callExpression } })) {
+        const fn = ce.field(C_FIELDS.function);
+        if (!fn || fn.kind() !== C_KINDS.fieldExpression) {
             continue;
         }
-        const base = fn.field('argument') ?? fn.children()[0];
-        if (!base || base.kind() !== 'identifier') {
+        const base = fn.field(C_FIELDS.argument) ?? fn.children()[0];
+        if (!base || base.kind() !== C_KINDS.identifier) {
             continue;
         }
         const typeName = bindings.get(base.text());

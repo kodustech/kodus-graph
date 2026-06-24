@@ -5,8 +5,16 @@ import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
-import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractModifiers,
+    isTestByNaming,
+    nodeRange,
+    stripImportKeyword,
+} from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { SCALA_FIELDS, SCALA_KINDS } from './kinds';
 
 // Branch kinds for Scala cyclomatic complexity.
 // `case_clause` is reused for BOTH match-arms AND catch-arms (Scala catch
@@ -15,11 +23,11 @@ import type { ExtractionResult, LanguageExtractors } from '../spec';
 // Pick `case_clause` alone — it naturally covers match cases and catch cases.
 // `if_expression` alone covers `else if` (nested if in alternative).
 const SCALA_BRANCH_KINDS = [
-    'if_expression',
-    'for_expression',
-    'while_expression',
-    'do_while_expression',
-    'case_clause',
+    SCALA_KINDS.ifExpression,
+    SCALA_KINDS.forExpression,
+    SCALA_KINDS.whileExpression,
+    SCALA_KINDS.doWhileExpression,
+    SCALA_KINDS.caseClause,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -32,7 +40,7 @@ const SCALA_BRANCH_KINDS = [
 function scalaTypeName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'identifier')
+        .find((c) => c.kind() === SCALA_KINDS.identifier)
         ?.text();
 }
 
@@ -46,12 +54,12 @@ function scalaTypeName(node: SgNode): string | undefined {
  * The first type_identifier in extends_clause is the superclass.
  */
 function scalaExtends(node: SgNode): string | undefined {
-    const extendsClause = node.children().find((c) => c.kind() === 'extends_clause');
+    const extendsClause = node.children().find((c) => c.kind() === SCALA_KINDS.extendsClause);
     if (!extendsClause) {
         return undefined;
     }
     // The first type_identifier in the extends_clause is the parent class/trait
-    const typeId = extendsClause.children().find((c) => c.kind() === 'type_identifier');
+    const typeId = extendsClause.children().find((c) => c.kind() === SCALA_KINDS.typeIdentifier);
     return typeId?.text();
 }
 
@@ -61,7 +69,7 @@ function scalaExtends(node: SgNode): string | undefined {
  * is a mixed-in trait.
  */
 function scalaImplements(node: SgNode): string[] {
-    const extendsClause = node.children().find((c) => c.kind() === 'extends_clause');
+    const extendsClause = node.children().find((c) => c.kind() === SCALA_KINDS.extendsClause);
     if (!extendsClause) {
         return [];
     }
@@ -69,11 +77,11 @@ function scalaImplements(node: SgNode): string[] {
     const traits: string[] = [];
     let afterWith = false;
     for (const child of extendsClause.children()) {
-        if (child.kind() === 'with') {
+        if (child.kind() === SCALA_KINDS.with) {
             afterWith = true;
             continue;
         }
-        if (afterWith && child.kind() === 'type_identifier') {
+        if (afterWith && child.kind() === SCALA_KINDS.typeIdentifier) {
             traits.push(child.text());
             afterWith = false;
         }
@@ -94,9 +102,9 @@ function extractImportModule(node: SgNode): string {
     const parts: string[] = [];
     for (const child of node.children()) {
         const k = child.kind();
-        if (k === 'identifier') {
+        if (k === SCALA_KINDS.identifier) {
             parts.push(child.text());
-        } else if (k === 'namespace_wildcard') {
+        } else if (k === SCALA_KINDS.namespaceWildcard) {
             parts.push('_');
         }
     }
@@ -106,11 +114,7 @@ function extractImportModule(node: SgNode): string {
     }
 
     // Fallback: strip import keyword
-    return node
-        .text()
-        .replace(/^\s*import\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +142,7 @@ function scalaDecorators(node: SgNode): string[] {
     const decorators: string[] = [];
 
     for (const child of node.children()) {
-        if (child.kind() === 'annotation') {
+        if (child.kind() === SCALA_KINDS.annotation) {
             decorators.push(child.text());
         }
     }
@@ -154,7 +158,7 @@ function scalaThrows(node: SgNode): string[] {
     const throws: string[] = [];
 
     for (const child of node.children()) {
-        if (child.kind() === 'annotation') {
+        if (child.kind() === SCALA_KINDS.annotation) {
             const text = child.text();
             const match = text.match(/@throws\[([^\]]+)\]/);
             if (match) {
@@ -171,7 +175,7 @@ function scalaThrows(node: SgNode): string[] {
 // ---------------------------------------------------------------------------
 
 function scalaParams(node: SgNode): string {
-    const params = node.children().find((c) => c.kind() === 'parameters');
+    const params = node.children().find((c) => c.kind() === SCALA_KINDS.parameters);
     return params ? params.text() : '()';
 }
 
@@ -180,13 +184,13 @@ function scalaReturnType(node: SgNode): string {
     const children = node.children();
     let afterColon = false;
     for (const child of children) {
-        if (child.kind() === ':') {
+        if (child.kind() === SCALA_KINDS.colon) {
             afterColon = true;
             continue;
         }
         if (afterColon) {
             const k = child.kind();
-            if (k === 'type_identifier' || k === 'generic_type') {
+            if (k === SCALA_KINDS.typeIdentifier || k === SCALA_KINDS.genericType) {
                 return child.text();
             }
         }
@@ -204,15 +208,15 @@ function scalaReturnType(node: SgNode): string {
  * and concrete methods (function_definition).
  */
 function scalaTraitMethods(node: SgNode): string[] {
-    const body = node.children().find((c) => c.kind() === 'template_body');
+    const body = node.children().find((c) => c.kind() === SCALA_KINDS.templateBody);
     if (!body) {
         return [];
     }
 
     const methods: string[] = [];
     for (const child of body.children()) {
-        if (child.kind() === 'function_declaration' || child.kind() === 'function_definition') {
-            const name = child.children().find((c) => c.kind() === 'identifier');
+        if (child.kind() === SCALA_KINDS.functionDeclaration || child.kind() === SCALA_KINDS.functionDefinition) {
+            const name = child.children().find((c) => c.kind() === SCALA_KINDS.identifier);
             if (name) {
                 methods.push(name.text());
             }
@@ -237,7 +241,7 @@ export const scalaExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes (class_definition) ──────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'class_definition' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.classDefinition } })) {
             const name = scalaTypeName(node);
             if (!name) {
                 continue;
@@ -249,7 +253,7 @@ export const scalaExtractors: LanguageExtractors = {
             const range = nodeRange(node);
 
             // Check if it's a case class
-            const isCaseClass = node.children().some((c) => c.kind() === 'case');
+            const isCaseClass = node.children().some((c) => c.kind() === SCALA_KINDS.case);
             const modStr = isCaseClass ? (classModifiers ? `case ${classModifiers}` : 'case') : classModifiers;
 
             result.classes.push({
@@ -267,7 +271,7 @@ export const scalaExtractors: LanguageExtractors = {
         }
 
         // ── Objects (object_definition) ─────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'object_definition' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.objectDefinition } })) {
             const name = scalaTypeName(node);
             if (!name) {
                 continue;
@@ -279,7 +283,7 @@ export const scalaExtractors: LanguageExtractors = {
             const range = nodeRange(node);
 
             // Check if it's a case object
-            const isCaseObject = node.children().some((c) => c.kind() === 'case');
+            const isCaseObject = node.children().some((c) => c.kind() === SCALA_KINDS.case);
             const modStr = isCaseObject ? (classModifiers ? `case ${classModifiers}` : 'case') : classModifiers;
 
             result.classes.push({
@@ -297,7 +301,7 @@ export const scalaExtractors: LanguageExtractors = {
         }
 
         // ── Traits (trait_definition) → interfaces ──────────────────────
-        for (const node of root.findAll({ rule: { kind: 'trait_definition' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.traitDefinition } })) {
             const name = scalaTypeName(node);
             if (!name) {
                 continue;
@@ -316,7 +320,7 @@ export const scalaExtractors: LanguageExtractors = {
         }
 
         // ── Functions with body (function_definition) ───────────────────
-        for (const node of root.findAll({ rule: { kind: 'function_definition' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.functionDefinition } })) {
             const name = scalaTypeName(node);
             if (!name) {
                 continue;
@@ -325,7 +329,11 @@ export const scalaExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_definition' || k === 'object_definition' || k === 'trait_definition';
+                return (
+                    k === SCALA_KINDS.classDefinition ||
+                    k === SCALA_KINDS.objectDefinition ||
+                    k === SCALA_KINDS.traitDefinition
+                );
             });
             if (classAncestor) {
                 className = scalaTypeName(classAncestor) || '';
@@ -360,7 +368,7 @@ export const scalaExtractors: LanguageExtractors = {
         }
 
         // ── Abstract functions (function_declaration — no body) ─────────
-        for (const node of root.findAll({ rule: { kind: 'function_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.functionDeclaration } })) {
             const name = scalaTypeName(node);
             if (!name) {
                 continue;
@@ -369,7 +377,11 @@ export const scalaExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_definition' || k === 'object_definition' || k === 'trait_definition';
+                return (
+                    k === SCALA_KINDS.classDefinition ||
+                    k === SCALA_KINDS.objectDefinition ||
+                    k === SCALA_KINDS.traitDefinition
+                );
             });
             if (classAncestor) {
                 className = scalaTypeName(classAncestor) || '';
@@ -403,7 +415,7 @@ export const scalaExtractors: LanguageExtractors = {
         }
 
         // ── Imports ─────────────────────────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'import_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: SCALA_KINDS.importDeclaration } })) {
             const module = extractImportModule(node);
             if (!module) {
                 continue;
@@ -424,7 +436,11 @@ export const scalaExtractors: LanguageExtractors = {
             return (
                 node.ancestors().find((a) => {
                     const k = String(a.kind());
-                    return k === 'class_definition' || k === 'object_definition' || k === 'trait_definition';
+                    return (
+                        k === SCALA_KINDS.classDefinition ||
+                        k === SCALA_KINDS.objectDefinition ||
+                        k === SCALA_KINDS.traitDefinition
+                    );
                 }) ?? null
             );
         };
@@ -446,27 +462,29 @@ export const scalaExtractors: LanguageExtractors = {
 function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
-    for (const vd of root.findAll({ rule: { kind: 'val_definition' } })) {
+    for (const vd of root.findAll({ rule: { kind: SCALA_KINDS.valDefinition } })) {
         const kids = vd.children();
-        const name = kids.find((c: SgNode) => c.kind() === 'identifier')?.text();
+        const name = kids.find((c: SgNode) => c.kind() === SCALA_KINDS.identifier)?.text();
         if (!name) {
             continue;
         }
-        const explicitType = kids.find((c: SgNode) => c.kind() === 'type_identifier');
+        const explicitType = kids.find((c: SgNode) => c.kind() === SCALA_KINDS.typeIdentifier);
         let typeName: string | undefined = explicitType?.text();
         if (!typeName) {
-            const inst = kids.find((c: SgNode) => c.kind() === 'instance_expression');
+            const inst = kids.find((c: SgNode) => c.kind() === SCALA_KINDS.instanceExpression);
             if (inst) {
                 // `new Foo()` — final identifier inside is the type.
                 const ti = inst
                     .children()
-                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'identifier');
+                    .find(
+                        (c: SgNode) => c.kind() === SCALA_KINDS.typeIdentifier || c.kind() === SCALA_KINDS.identifier,
+                    );
                 typeName = ti?.text();
                 if (!typeName) {
                     // Might wrap call_expression → function identifier.
-                    const innerCall = inst.children().find((c: SgNode) => c.kind() === 'call_expression');
-                    const fn = innerCall?.field('function');
-                    if (fn?.kind() === 'identifier' || fn?.kind() === 'type_identifier') {
+                    const innerCall = inst.children().find((c: SgNode) => c.kind() === SCALA_KINDS.callExpression);
+                    const fn = innerCall?.field(SCALA_FIELDS.function);
+                    if (fn?.kind() === SCALA_KINDS.identifier || fn?.kind() === SCALA_KINDS.typeIdentifier) {
                         typeName = fn.text();
                     }
                 }
@@ -477,9 +495,9 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
         // factory function). Uppercase identifiers go through the
         // instance_expression / new path above.
         if (!typeName) {
-            const call = kids.find((c: SgNode) => c.kind() === 'call_expression');
-            const fn = call?.field('function');
-            if (fn?.kind() === 'identifier') {
+            const call = kids.find((c: SgNode) => c.kind() === SCALA_KINDS.callExpression);
+            const fn = call?.field(SCALA_FIELDS.function);
+            if (fn?.kind() === SCALA_KINDS.identifier) {
                 const fnName = fn.text();
                 if (fnName.length > 0 && fnName[0] === fnName[0].toLowerCase()) {
                     typeName = `@CALLEE:${fnName}`;
@@ -493,28 +511,30 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
     // Function/method parameters with explicit types — `def handle(repo: Repo)` —
     // become bindings inside the body so `repo.find()` resolves at the receiver
     // tier. Scala tree-sitter exposes `parameters > parameter > [identifier, type]`.
-    for (const fn of root.findAll({ rule: { kind: 'function_definition' } })) {
-        const paramsNodes = fn.children().filter((c: SgNode) => c.kind() === 'parameters');
+    for (const fn of root.findAll({ rule: { kind: SCALA_KINDS.functionDefinition } })) {
+        const paramsNodes = fn.children().filter((c: SgNode) => c.kind() === SCALA_KINDS.parameters);
         for (const params of paramsNodes) {
             for (const p of params.children()) {
-                if (p.kind() !== 'parameter') {
+                if (p.kind() !== SCALA_KINDS.parameter) {
                     continue;
                 }
                 const name = p
                     .children()
-                    .find((c: SgNode) => c.kind() === 'identifier')
+                    .find((c: SgNode) => c.kind() === SCALA_KINDS.identifier)
                     ?.text();
                 const typeNode = p
                     .children()
-                    .find((c: SgNode) => c.kind() === 'type_identifier' || c.kind() === 'generic_type');
+                    .find(
+                        (c: SgNode) => c.kind() === SCALA_KINDS.typeIdentifier || c.kind() === SCALA_KINDS.genericType,
+                    );
                 if (!name || !typeNode) {
                     continue;
                 }
                 const typeName =
-                    typeNode.kind() === 'generic_type'
+                    typeNode.kind() === SCALA_KINDS.genericType
                         ? (typeNode
                               .children()
-                              .find((c: SgNode) => c.kind() === 'type_identifier')
+                              .find((c: SgNode) => c.kind() === SCALA_KINDS.typeIdentifier)
                               ?.text() ?? typeNode.text())
                         : typeNode.text();
                 if (typeName) {
@@ -524,13 +544,13 @@ function extractReceiverTypesScala(root: SgNode, fp: string): ReceiverTypeMap {
         }
     }
 
-    for (const ce of root.findAll({ rule: { kind: 'call_expression' } })) {
-        const fn = ce.field('function');
-        if (!fn || fn.kind() !== 'field_expression') {
+    for (const ce of root.findAll({ rule: { kind: SCALA_KINDS.callExpression } })) {
+        const fn = ce.field(SCALA_FIELDS.function);
+        if (!fn || fn.kind() !== SCALA_KINDS.fieldExpression) {
             continue;
         }
         const base = fn.children()[0];
-        if (!base || base.kind() !== 'identifier') {
+        if (!base || base.kind() !== SCALA_KINDS.identifier) {
             continue;
         }
         const baseText = base.text();

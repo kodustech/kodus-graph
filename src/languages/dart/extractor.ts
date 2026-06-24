@@ -6,19 +6,20 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { DART_FORMAL_PARAMETER_SUFFIX, DART_KINDS } from './kinds';
 
 // Branch kinds for Dart cyclomatic complexity.
 // Empirically verified: Dart uses `switch_label` (NOT `case_statement`) as
 // the per-case kind. `if_statement` alone covers `else if`. Dart has two
 // `for_statement` forms (classic + for-in) but both share the kind.
 const DART_BRANCH_KINDS = [
-    'if_statement',
-    'for_statement',
-    'while_statement',
-    'do_statement',
-    'switch_label',
-    'catch_clause',
-    'conditional_expression',
+    DART_KINDS.ifStatement,
+    DART_KINDS.forStatement,
+    DART_KINDS.whileStatement,
+    DART_KINDS.doStatement,
+    DART_KINDS.switchLabel,
+    DART_KINDS.catchClause,
+    DART_KINDS.conditionalExpression,
 ] as const;
 
 /**
@@ -28,7 +29,7 @@ const DART_BRANCH_KINDS = [
  */
 function dartComplexityRoot(sigNode: SgNode): SgNode {
     const nextSib = sigNode.next();
-    if (nextSib && nextSib.kind() === 'function_body') {
+    if (nextSib && nextSib.kind() === DART_KINDS.functionBody) {
         return nextSib;
     }
     return sigNode;
@@ -44,7 +45,7 @@ function dartComplexityRoot(sigNode: SgNode): SgNode {
 function dartName(node: SgNode): string | undefined {
     return node
         .children()
-        .find((c) => c.kind() === 'identifier')
+        .find((c) => c.kind() === DART_KINDS.identifier)
         ?.text();
 }
 
@@ -58,11 +59,11 @@ function dartName(node: SgNode): string | undefined {
  * `extends Bar` (and optionally `with Mixin`).
  */
 function dartExtends(node: SgNode): string | undefined {
-    const superclass = node.children().find((c) => c.kind() === 'superclass');
+    const superclass = node.children().find((c) => c.kind() === DART_KINDS.superclass);
     if (!superclass) {
         return undefined;
     }
-    const typeId = superclass.children().find((c) => c.kind() === 'type_identifier');
+    const typeId = superclass.children().find((c) => c.kind() === DART_KINDS.typeIdentifier);
     return typeId?.text();
 }
 
@@ -71,13 +72,13 @@ function dartExtends(node: SgNode): string | undefined {
  * Dart: `class Foo implements Bar, Baz`
  */
 function dartImplements(node: SgNode): string[] {
-    const interfaces = node.children().find((c) => c.kind() === 'interfaces');
+    const interfaces = node.children().find((c) => c.kind() === DART_KINDS.interfaces);
     if (!interfaces) {
         return [];
     }
     return interfaces
         .children()
-        .filter((c) => c.kind() === 'type_identifier')
+        .filter((c) => c.kind() === DART_KINDS.typeIdentifier)
         .map((c) => c.text());
 }
 
@@ -87,13 +88,13 @@ function dartImplements(node: SgNode): string[] {
  * The `mixins` node lives inside the `superclass` node.
  */
 function dartMixins(node: SgNode): string[] {
-    const superclass = node.children().find((c) => c.kind() === 'superclass');
+    const superclass = node.children().find((c) => c.kind() === DART_KINDS.superclass);
     if (superclass) {
-        const mixins = superclass.children().find((c) => c.kind() === 'mixins');
+        const mixins = superclass.children().find((c) => c.kind() === DART_KINDS.mixins);
         if (mixins) {
             return mixins
                 .children()
-                .filter((c) => c.kind() === 'type_identifier')
+                .filter((c) => c.kind() === DART_KINDS.typeIdentifier)
                 .map((c) => c.text());
         }
     }
@@ -124,17 +125,19 @@ function dartIsExported(name: string): boolean {
 function dartIsAsync(node: SgNode): boolean {
     // For method_signature nodes, look at the next sibling (function_body)
     const nextSib = node.next();
-    if (nextSib && nextSib.kind() === 'function_body') {
-        if (nextSib.children().some((c) => c.kind() === 'async')) {
+    if (nextSib && nextSib.kind() === DART_KINDS.functionBody) {
+        if (nextSib.children().some((c) => c.kind() === DART_KINDS.async)) {
             return true;
         }
     }
 
     // Check for Future return type
     const funcSig =
-        node.kind() === 'function_signature' ? node : node.children().find((c) => c.kind() === 'function_signature');
+        node.kind() === DART_KINDS.functionSignature
+            ? node
+            : node.children().find((c) => c.kind() === DART_KINDS.functionSignature);
     if (funcSig) {
-        const returnType = funcSig.children().find((c) => c.kind() === 'type_identifier');
+        const returnType = funcSig.children().find((c) => c.kind() === DART_KINDS.typeIdentifier);
         if (returnType && returnType.text() === 'Future') {
             return true;
         }
@@ -157,7 +160,7 @@ function dartDecorators(node: SgNode): string[] {
 
     for (const sib of node.prevAll()) {
         const k = sib.kind();
-        if (k === 'marker_annotation' || k === 'annotation') {
+        if (k === DART_KINDS.markerAnnotation || k === DART_KINDS.annotation) {
             decorators.push(sib.text());
         }
     }
@@ -171,17 +174,21 @@ function dartDecorators(node: SgNode): string[] {
 
 function dartParams(node: SgNode): string {
     const funcSig =
-        node.kind() === 'function_signature' ? node : node.children().find((c) => c.kind() === 'function_signature');
+        node.kind() === DART_KINDS.functionSignature
+            ? node
+            : node.children().find((c) => c.kind() === DART_KINDS.functionSignature);
     if (!funcSig) {
         return '()';
     }
-    const params = funcSig.children().find((c) => c.kind() === 'formal_parameter_list');
+    const params = funcSig.children().find((c) => c.kind() === DART_KINDS.formalParameterList);
     return params ? params.text() : '()';
 }
 
 function dartReturnType(node: SgNode): string {
     const funcSig =
-        node.kind() === 'function_signature' ? node : node.children().find((c) => c.kind() === 'function_signature');
+        node.kind() === DART_KINDS.functionSignature
+            ? node
+            : node.children().find((c) => c.kind() === DART_KINDS.functionSignature);
     if (!funcSig) {
         return '';
     }
@@ -190,10 +197,10 @@ function dartReturnType(node: SgNode): string {
     // Return type is the first type_identifier or void_type before the function name
     for (const child of children) {
         const k = child.kind();
-        if (k === 'type_identifier' || k === 'void_type') {
+        if (k === DART_KINDS.typeIdentifier || k === DART_KINDS.voidType) {
             return child.text();
         }
-        if (k === 'identifier') {
+        if (k === DART_KINDS.identifier) {
             break; // reached the function name without finding a return type
         }
     }
@@ -210,17 +217,17 @@ function dartReturnType(node: SgNode): string {
  * (without a function_body).
  */
 function dartAbstractMethods(node: SgNode): string[] {
-    const body = node.children().find((c) => c.kind() === 'class_body');
+    const body = node.children().find((c) => c.kind() === DART_KINDS.classBody);
     if (!body) {
         return [];
     }
 
     const methods: string[] = [];
     for (const child of body.children()) {
-        if (child.kind() === 'declaration') {
-            const funcSig = child.children().find((c) => c.kind() === 'function_signature');
+        if (child.kind() === DART_KINDS.declaration) {
+            const funcSig = child.children().find((c) => c.kind() === DART_KINDS.functionSignature);
             if (funcSig) {
-                const name = funcSig.children().find((c) => c.kind() === 'identifier');
+                const name = funcSig.children().find((c) => c.kind() === DART_KINDS.identifier);
                 if (name) {
                     methods.push(name.text());
                 }
@@ -246,8 +253,8 @@ export const dartExtractors: LanguageExtractors = {
         const result = emptyResult();
 
         // ── Classes (class_definition — non-abstract) ──────────────────
-        for (const node of root.findAll({ rule: { kind: 'class_definition' } })) {
-            const isAbstract = node.children().some((c) => c.kind() === 'abstract');
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.classDefinition } })) {
+            const isAbstract = node.children().some((c) => c.kind() === DART_KINDS.abstract);
 
             // Abstract classes are treated as interfaces
             if (isAbstract) {
@@ -298,7 +305,7 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Mixins (mixin_declaration) ────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'mixin_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.mixinDeclaration } })) {
             const name = dartName(node);
             if (!name) {
                 continue;
@@ -308,15 +315,15 @@ export const dartExtractors: LanguageExtractors = {
             const onTypes: string[] = [];
             let foundOn = false;
             for (const child of node.children()) {
-                if (child.kind() === 'on') {
+                if (child.kind() === DART_KINDS.on) {
                     foundOn = true;
                     continue;
                 }
-                if (foundOn && child.kind() === 'type_identifier') {
+                if (foundOn && child.kind() === DART_KINDS.typeIdentifier) {
                     onTypes.push(child.text());
                     foundOn = false;
                 }
-                if (child.kind() === 'class_body') {
+                if (child.kind() === DART_KINDS.classBody) {
                     break;
                 }
             }
@@ -337,7 +344,7 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Enums (enum_declaration) ──────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'enum_declaration' } })) {
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.enumDeclaration } })) {
             const name = dartName(node);
             if (!name) {
                 continue;
@@ -355,12 +362,12 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Methods (method_signature inside class_body) ──────────────
-        for (const node of root.findAll({ rule: { kind: 'method_signature' } })) {
-            const funcSig = node.children().find((c) => c.kind() === 'function_signature');
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.methodSignature } })) {
+            const funcSig = node.children().find((c) => c.kind() === DART_KINDS.functionSignature);
             // Also handle factory_constructor_signature, getter_signature, setter_signature
-            const factorySig = node.children().find((c) => c.kind() === 'factory_constructor_signature');
-            const getterSig = node.children().find((c) => c.kind() === 'getter_signature');
-            const setterSig = node.children().find((c) => c.kind() === 'setter_signature');
+            const factorySig = node.children().find((c) => c.kind() === DART_KINDS.factoryConstructorSignature);
+            const getterSig = node.children().find((c) => c.kind() === DART_KINDS.getterSignature);
+            const setterSig = node.children().find((c) => c.kind() === DART_KINDS.setterSignature);
 
             let name: string | undefined;
             let params = '()';
@@ -370,29 +377,29 @@ export const dartExtractors: LanguageExtractors = {
             if (funcSig) {
                 name = funcSig
                     .children()
-                    .find((c) => c.kind() === 'identifier')
+                    .find((c) => c.kind() === DART_KINDS.identifier)
                     ?.text();
                 params = dartParams(funcSig);
                 returnType = dartReturnType(funcSig);
-                isStatic = node.children().some((c) => c.kind() === 'static');
+                isStatic = node.children().some((c) => c.kind() === DART_KINDS.static);
             } else if (factorySig) {
                 // Factory constructor: factory Foo.create()
-                const ids = factorySig.children().filter((c) => c.kind() === 'identifier');
+                const ids = factorySig.children().filter((c) => c.kind() === DART_KINDS.identifier);
                 name = ids.length >= 2 ? `${ids[0].text()}.${ids[1].text()}` : ids[0]?.text();
-                const fparams = factorySig.children().find((c) => c.kind() === 'formal_parameter_list');
+                const fparams = factorySig.children().find((c) => c.kind() === DART_KINDS.formalParameterList);
                 params = fparams ? fparams.text() : '()';
             } else if (getterSig) {
                 name = getterSig
                     .children()
-                    .find((c) => c.kind() === 'identifier')
+                    .find((c) => c.kind() === DART_KINDS.identifier)
                     ?.text();
                 returnType = dartReturnType(getterSig);
             } else if (setterSig) {
                 name = setterSig
                     .children()
-                    .find((c) => c.kind() === 'identifier')
+                    .find((c) => c.kind() === DART_KINDS.identifier)
                     ?.text();
-                const sparams = setterSig.children().find((c) => c.kind() === 'formal_parameter_list');
+                const sparams = setterSig.children().find((c) => c.kind() === DART_KINDS.formalParameterList);
                 params = sparams ? sparams.text() : '()';
             }
 
@@ -404,7 +411,11 @@ export const dartExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_definition' || k === 'mixin_declaration' || k === 'extension_declaration';
+                return (
+                    k === DART_KINDS.classDefinition ||
+                    k === DART_KINDS.mixinDeclaration ||
+                    k === DART_KINDS.extensionDeclaration
+                );
             });
             if (classAncestor) {
                 className = dartName(classAncestor) || '';
@@ -428,12 +439,15 @@ export const dartExtractors: LanguageExtractors = {
             // Get the full text including the function_body (next sibling)
             const nextSib = node.next();
             const fullText =
-                nextSib && nextSib.kind() === 'function_body' ? `${node.text()} ${nextSib.text()}` : node.text();
+                nextSib && nextSib.kind() === DART_KINDS.functionBody
+                    ? `${node.text()} ${nextSib.text()}`
+                    : node.text();
 
             result.functions.push({
                 name,
                 line_start: range.line_start,
-                line_end: nextSib && nextSib.kind() === 'function_body' ? nextSib.range().end.line : range.line_end,
+                line_end:
+                    nextSib && nextSib.kind() === DART_KINDS.functionBody ? nextSib.range().end.line : range.line_end,
                 params,
                 returnType,
                 kind,
@@ -451,10 +465,10 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Constructors (constructor_signature inside declaration) ────
-        for (const node of root.findAll({ rule: { kind: 'constructor_signature' } })) {
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.constructorSignature } })) {
             const name = node
                 .children()
-                .find((c) => c.kind() === 'identifier')
+                .find((c) => c.kind() === DART_KINDS.identifier)
                 ?.text();
             if (!name) {
                 continue;
@@ -464,13 +478,13 @@ export const dartExtractors: LanguageExtractors = {
             let className = '';
             const classAncestor = node.ancestors().find((a: SgNode) => {
                 const k = String(a.kind());
-                return k === 'class_definition';
+                return k === DART_KINDS.classDefinition;
             });
             if (classAncestor) {
                 className = dartName(classAncestor) || '';
             }
 
-            const params = node.children().find((c) => c.kind() === 'formal_parameter_list');
+            const params = node.children().find((c) => c.kind() === DART_KINDS.formalParameterList);
             const range = nodeRange(node);
 
             result.functions.push({
@@ -494,23 +508,23 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Top-level functions (function_signature at program level) ─
-        for (const node of root.findAll({ rule: { kind: 'function_signature' } })) {
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.functionSignature } })) {
             // Skip function_signatures inside method_signature, declaration, etc.
             const parent = node.parent();
-            if (parent && (parent.kind() === 'method_signature' || parent.kind() === 'declaration')) {
+            if (parent && (parent.kind() === DART_KINDS.methodSignature || parent.kind() === DART_KINDS.declaration)) {
                 continue;
             }
 
             const name = node
                 .children()
-                .find((c) => c.kind() === 'identifier')
+                .find((c) => c.kind() === DART_KINDS.identifier)
                 ?.text();
             if (!name) {
                 continue;
             }
 
             // Make sure it's not inside a class body (abstract method declarations)
-            const inClassBody = node.ancestors().some((a: SgNode) => a.kind() === 'class_body');
+            const inClassBody = node.ancestors().some((a: SgNode) => a.kind() === DART_KINDS.classBody);
             if (inClassBody) {
                 continue;
             }
@@ -520,7 +534,7 @@ export const dartExtractors: LanguageExtractors = {
 
             // Get the function_body (next sibling)
             const nextSib = node.next();
-            const hasBody = nextSib && nextSib.kind() === 'function_body';
+            const hasBody = nextSib && nextSib.kind() === DART_KINDS.functionBody;
             const fullText = hasBody ? `${node.text()} ${nextSib.text()}` : node.text();
 
             result.functions.push({
@@ -544,8 +558,8 @@ export const dartExtractors: LanguageExtractors = {
         }
 
         // ── Imports (import_or_export) ─────────────────────────────────
-        for (const node of root.findAll({ rule: { kind: 'import_or_export' } })) {
-            const uriNode = node.findAll({ rule: { kind: 'uri' } })[0];
+        for (const node of root.findAll({ rule: { kind: DART_KINDS.importOrExport } })) {
+            const uriNode = node.findAll({ rule: { kind: DART_KINDS.uri } })[0];
             if (!uriNode) {
                 continue;
             }
@@ -585,15 +599,15 @@ export const dartExtractors: LanguageExtractors = {
         const findEnclosingClass = (node: SgNode): SgNode | null =>
             node.ancestors().find((a) => {
                 const k = String(a.kind());
-                return k === 'class_definition' || k === 'mixin_declaration';
+                return k === DART_KINDS.classDefinition || k === DART_KINDS.mixinDeclaration;
             }) ?? null;
 
         const getParentClass = (classNode: SgNode): string | undefined => {
-            const superclass = classNode.children().find((c) => c.kind() === 'superclass');
+            const superclass = classNode.children().find((c) => c.kind() === DART_KINDS.superclass);
             if (!superclass) {
                 return undefined;
             }
-            const typeId = superclass.children().find((c) => c.kind() === 'type_identifier');
+            const typeId = superclass.children().find((c) => c.kind() === DART_KINDS.typeIdentifier);
             return typeId?.text();
         };
 
@@ -603,34 +617,34 @@ export const dartExtractors: LanguageExtractors = {
             // (for regular `x.method`) OR a bare `unconditional_assignable_selector`
             // (for `super.method`).
             const inner =
-                access.kind() === 'unconditional_assignable_selector'
+                access.kind() === DART_KINDS.unconditionalAssignableSelector
                     ? access
-                    : access.children().find((c) => c.kind() === 'unconditional_assignable_selector');
+                    : access.children().find((c) => c.kind() === DART_KINDS.unconditionalAssignableSelector);
             if (!inner) {
                 return undefined;
             }
             return inner
                 .children()
-                .find((c) => c.kind() === 'identifier')
+                .find((c) => c.kind() === DART_KINDS.identifier)
                 ?.text();
         };
 
         /** Is `node` an access-selector (`.method` lookup, no args)? */
         const isAccessSelector = (node: SgNode): boolean => {
             const k = node.kind();
-            if (k === 'unconditional_assignable_selector') {
+            if (k === DART_KINDS.unconditionalAssignableSelector) {
                 return true;
             }
-            if (k !== 'selector') {
+            if (k !== DART_KINDS.selector) {
                 return false;
             }
-            const hasArgs = node.children().some((c) => c.kind() === 'argument_part');
-            const hasAccess = node.children().some((c) => c.kind() === 'unconditional_assignable_selector');
+            const hasArgs = node.children().some((c) => c.kind() === DART_KINDS.argumentPart);
+            const hasAccess = node.children().some((c) => c.kind() === DART_KINDS.unconditionalAssignableSelector);
             return hasAccess && !hasArgs;
         };
 
-        for (const callSel of root.findAll({ rule: { kind: 'selector' } })) {
-            const hasArgs = callSel.children().some((c) => c.kind() === 'argument_part');
+        for (const callSel of root.findAll({ rule: { kind: DART_KINDS.selector } })) {
+            const hasArgs = callSel.children().some((c) => c.kind() === DART_KINDS.argumentPart);
             if (!hasArgs) {
                 continue;
             }
@@ -649,15 +663,15 @@ export const dartExtractors: LanguageExtractors = {
                 const beforeAccess = prev.prev();
                 if (beforeAccess) {
                     const bk = beforeAccess.kind();
-                    if (bk === 'this') {
+                    if (bk === DART_KINDS.this) {
                         receiverKind = 'this';
-                    } else if (bk === 'super') {
+                    } else if (bk === DART_KINDS.super) {
                         receiverKind = 'super';
                     } else {
                         receiverKind = 'other';
                     }
                 }
-            } else if (prev.kind() === 'identifier') {
+            } else if (prev.kind() === DART_KINDS.identifier) {
                 // `bare(args)` — the identifier is the callee.
                 callName = prev.text();
             } else {
@@ -708,21 +722,21 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
     const out: ReceiverTypeMap = new Map();
     const bindings = new Map<string, string>();
 
-    for (const ivd of root.findAll({ rule: { kind: 'initialized_variable_definition' } })) {
+    for (const ivd of root.findAll({ rule: { kind: DART_KINDS.initializedVariableDefinition } })) {
         const childs = ivd.children();
 
         // Variable name is the first `identifier` child that isn't the RHS.
         // Dart places the declared type (`type_identifier`) or `inferred_type`
         // before the name, then `=`, then the initializer.
-        const eqIdx = childs.findIndex((c) => c.kind() === '=');
+        const eqIdx = childs.findIndex((c) => c.kind() === DART_KINDS.eq);
         if (eqIdx < 0) {
             continue;
         }
         const lhs = childs.slice(0, eqIdx);
         const rhs = childs.slice(eqIdx + 1);
 
-        const declaredType = lhs.find((c) => c.kind() === 'type_identifier')?.text();
-        const nameNode = lhs.find((c) => c.kind() === 'identifier');
+        const declaredType = lhs.find((c) => c.kind() === DART_KINDS.typeIdentifier)?.text();
+        const nameNode = lhs.find((c) => c.kind() === DART_KINDS.identifier);
         const name = nameNode?.text();
         if (!name) {
             continue;
@@ -735,16 +749,18 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
             // `var x = Foo(...)` — infer from the constructor call on the RHS.
             // RHS shape: `identifier[Foo]` + `selector[(args)]`  OR
             //            `new_expression` wrapping `type_identifier[Foo]`.
-            const newExpr = rhs.find((c) => c.kind() === 'new_expression');
+            const newExpr = rhs.find((c) => c.kind() === DART_KINDS.newExpression);
             if (newExpr) {
                 typeName = newExpr
                     .children()
-                    .find((c) => c.kind() === 'type_identifier')
+                    .find((c) => c.kind() === DART_KINDS.typeIdentifier)
                     ?.text();
             } else {
-                const ctorId = rhs.find((c) => c.kind() === 'identifier');
+                const ctorId = rhs.find((c) => c.kind() === DART_KINDS.identifier);
                 const nextIsCall = rhs.some(
-                    (c) => c.kind() === 'selector' && c.children().some((cc) => cc.kind() === 'argument_part'),
+                    (c) =>
+                        c.kind() === DART_KINDS.selector &&
+                        c.children().some((cc) => cc.kind() === DART_KINDS.argumentPart),
                 );
                 if (ctorId && nextIsCall) {
                     const t = ctorId.text();
@@ -767,20 +783,18 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
     // Function/method parameters with explicit types — `void handle(Repo repo)` —
     // become bindings inside the body. Dart tree-sitter exposes parameters as
     // `formal_parameter_list > normal_formal_parameter` nodes.
-    for (const fnList of root.findAll({ rule: { kind: 'formal_parameter_list' } })) {
+    for (const fnList of root.findAll({ rule: { kind: DART_KINDS.formalParameterList } })) {
         for (const p of fnList.children()) {
-            const k = String(p.kind());
-            // Default-valued params wrap the inner formal_parameter.
-            const inner =
-                k === 'default_formal_parameter'
-                    ? p.children().find((c) => String(c.kind()).endsWith('formal_parameter'))
-                    : p;
-            if (!inner || !String(inner.kind()).endsWith('formal_parameter')) {
+            // NOTE: the grammar wraps optional/named params in
+            // `optional_formal_parameters` (plural), so typed optional params
+            // aren't reached by the `formal_parameter` suffix match here — a
+            // known seeding gap tracked separately, not changed by this pass.
+            if (!String(p.kind()).endsWith(DART_FORMAL_PARAMETER_SUFFIX)) {
                 continue;
             }
-            const childs = inner.children();
-            const typeNode = childs.find((c) => c.kind() === 'type_identifier');
-            const idents = childs.filter((c) => c.kind() === 'identifier');
+            const childs = p.children();
+            const typeNode = childs.find((c) => c.kind() === DART_KINDS.typeIdentifier);
+            const idents = childs.filter((c) => c.kind() === DART_KINDS.identifier);
             const name = idents[idents.length - 1]?.text();
             if (!name || !typeNode) {
                 continue;
@@ -792,8 +806,8 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
     // Cross-reference each receiver-qualified call site with its binding.
     // The call-extractor records location at the argument selector's start,
     // so we scan the same shape here to stay in sync.
-    for (const callSel of root.findAll({ rule: { kind: 'selector' } })) {
-        if (!callSel.children().some((c) => c.kind() === 'argument_part')) {
+    for (const callSel of root.findAll({ rule: { kind: DART_KINDS.selector } })) {
+        if (!callSel.children().some((c) => c.kind() === DART_KINDS.argumentPart)) {
             continue;
         }
         const accessor = callSel.prev();
@@ -802,14 +816,14 @@ function extractReceiverTypesDart(root: SgNode, fp: string): ReceiverTypeMap {
         }
         // Only `selector[.method]` (not `unconditional_assignable_selector` — that
         // path is reserved for `super.method` which doesn't bind to a local).
-        if (accessor.kind() !== 'selector') {
+        if (accessor.kind() !== DART_KINDS.selector) {
             continue;
         }
-        if (!accessor.children().some((c) => c.kind() === 'unconditional_assignable_selector')) {
+        if (!accessor.children().some((c) => c.kind() === DART_KINDS.unconditionalAssignableSelector)) {
             continue;
         }
         const receiver = accessor.prev();
-        if (!receiver || receiver.kind() !== 'identifier') {
+        if (!receiver || receiver.kind() !== DART_KINDS.identifier) {
             continue;
         }
         const receiverText = receiver.text();

@@ -23,6 +23,7 @@ import { registerExtractor, registerReceiverTypes } from '../engine';
 import type { ReceiverTypeMap } from '../receiver-types';
 import { computeContentHash, emptyResult, nodeRange } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
+import { ELIXIR_FIELDS, ELIXIR_KINDS } from './kinds';
 
 // ---------------------------------------------------------------------------
 // Elixir-specific cyclomatic complexity
@@ -81,14 +82,14 @@ function computeElixirComplexity(fn: SgNode): number {
         const node = stack.pop()!;
         if (node.isNamed()) {
             const kind = String(node.kind());
-            if (kind === 'call') {
-                const target = node.field('target')?.text();
+            if (kind === ELIXIR_KINDS.call) {
+                const target = node.field(ELIXIR_FIELDS.target)?.text();
                 if (target && ELIXIR_SCALAR_BRANCH_CALLS.has(target)) {
                     scalarBranchCount++;
                 } else if (target && ELIXIR_MULTI_ARM_BRANCH_CALLS.has(target)) {
                     multiArmBlockCount++;
                 }
-            } else if (kind === 'stab_clause') {
+            } else if (kind === ELIXIR_KINDS.stabClause) {
                 stabClauseCount++;
             }
         }
@@ -110,7 +111,7 @@ function computeElixirComplexity(fn: SgNode): number {
  * Check if a call node is a specific macro call (defmodule, def, defp, etc.).
  */
 function _isCallTarget(node: SgNode, target: string): boolean {
-    return node.kind() === 'call' && node.field('target')?.text() === target;
+    return node.kind() === ELIXIR_KINDS.call && node.field(ELIXIR_FIELDS.target)?.text() === target;
 }
 
 /**
@@ -118,8 +119,8 @@ function _isCallTarget(node: SgNode, target: string): boolean {
  * defmodule call → arguments → first alias child = module name.
  */
 function getModuleName(defmoduleNode: SgNode): string | undefined {
-    const args = defmoduleNode.children().find((c) => c.kind() === 'arguments');
-    const aliasNode = args?.children().find((c) => c.kind() === 'alias');
+    const args = defmoduleNode.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
+    const aliasNode = args?.children().find((c) => c.kind() === ELIXIR_KINDS.alias);
     return aliasNode?.text();
 }
 
@@ -131,7 +132,7 @@ function getModuleName(defmoduleNode: SgNode): string | undefined {
  *   → that call's arguments are the params
  */
 function getFunctionInfo(defNode: SgNode): { name: string; params: string } | undefined {
-    const args = defNode.children().find((c) => c.kind() === 'arguments');
+    const args = defNode.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
     if (!args) {
         return undefined;
     }
@@ -141,19 +142,19 @@ function getFunctionInfo(defNode: SgNode): { name: string; params: string } | un
         return undefined;
     }
 
-    if (firstArg.kind() === 'call') {
-        const fnName = firstArg.field('target')?.text();
+    if (firstArg.kind() === ELIXIR_KINDS.call) {
+        const fnName = firstArg.field(ELIXIR_FIELDS.target)?.text();
         if (!fnName) {
             return undefined;
         }
 
-        const fnArgs = firstArg.children().find((c) => c.kind() === 'arguments');
+        const fnArgs = firstArg.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
         const params = fnArgs?.text() || '()';
         return { name: fnName, params };
     }
 
     // Guard-less function with no params: `def name, do: ...`
-    if (firstArg.kind() === 'identifier') {
+    if (firstArg.kind() === ELIXIR_KINDS.identifier) {
         return { name: firstArg.text(), params: '()' };
     }
 
@@ -164,14 +165,19 @@ function getFunctionInfo(defNode: SgNode): { name: string; params: string } | un
  * Get the do_block from a call node (defmodule, def, defp).
  */
 function getDoBlock(node: SgNode): SgNode | undefined {
-    return node.children().find((c) => c.kind() === 'do_block');
+    return node.children().find((c) => c.kind() === ELIXIR_KINDS.doBlock);
 }
 
 /**
  * Find the enclosing defmodule call for a given node.
  */
 function findEnclosingModule(node: SgNode): SgNode | null {
-    return node.ancestors().find((a) => a.kind() === 'call' && a.field('target')?.text() === 'defmodule') ?? null;
+    return (
+        node
+            .ancestors()
+            .find((a) => a.kind() === ELIXIR_KINDS.call && a.field(ELIXIR_FIELDS.target)?.text() === 'defmodule') ??
+        null
+    );
 }
 
 /**
@@ -187,14 +193,14 @@ function collectModuleAttributes(doBlock: SgNode): {
     const uses: string[] = [];
 
     for (const child of doBlock.children()) {
-        if (child.kind() === 'unary_operator') {
-            const operand = child.field('operand');
-            if (!operand || operand.kind() !== 'call') {
+        if (child.kind() === ELIXIR_KINDS.unaryOperator) {
+            const operand = child.field(ELIXIR_FIELDS.operand);
+            if (!operand || operand.kind() !== ELIXIR_KINDS.call) {
                 continue;
             }
 
-            const attrName = operand.field('target')?.text();
-            const attrArgs = operand.children().find((c) => c.kind() === 'arguments');
+            const attrName = operand.field(ELIXIR_FIELDS.target)?.text();
+            const attrArgs = operand.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
             const firstArg = attrArgs?.children().find((c) => c.isNamed());
             const value = firstArg?.text() || '';
 
@@ -202,17 +208,17 @@ function collectModuleAttributes(doBlock: SgNode): {
                 behaviours.push(value);
             } else if (attrName === 'callback') {
                 // Extract callback name from the binary_operator (name(args) :: type)
-                if (firstArg?.kind() === 'binary_operator') {
-                    const callNode = firstArg.children().find((c) => c.kind() === 'call');
-                    const cbName = callNode?.field('target')?.text();
+                if (firstArg?.kind() === ELIXIR_KINDS.binaryOperator) {
+                    const callNode = firstArg.children().find((c) => c.kind() === ELIXIR_KINDS.call);
+                    const cbName = callNode?.field(ELIXIR_FIELDS.target)?.text();
                     if (cbName) {
                         callbacks.push(cbName);
                     }
                 }
             }
-        } else if (child.kind() === 'call' && child.field('target')?.text() === 'use') {
-            const useArgs = child.children().find((c) => c.kind() === 'arguments');
-            const aliasNode = useArgs?.children().find((c) => c.kind() === 'alias');
+        } else if (child.kind() === ELIXIR_KINDS.call && child.field(ELIXIR_FIELDS.target)?.text() === 'use') {
+            const useArgs = child.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
+            const aliasNode = useArgs?.children().find((c) => c.kind() === ELIXIR_KINDS.alias);
             if (aliasNode) {
                 uses.push(aliasNode.text());
             }
@@ -229,10 +235,10 @@ function collectModuleAttributes(doBlock: SgNode): {
 const elixirExtractors: LanguageExtractors = {
     extract(rootNode: SgNode, _fp: string): ExtractionResult {
         const result = emptyResult();
-        const allCalls = rootNode.findAll({ rule: { kind: 'call' } });
+        const allCalls = rootNode.findAll({ rule: { kind: ELIXIR_KINDS.call } });
 
         // ── Modules (defmodule) ──────────────────────────────────────────
-        const defmoduleCalls = allCalls.filter((n) => n.field('target')?.text() === 'defmodule');
+        const defmoduleCalls = allCalls.filter((n) => n.field(ELIXIR_FIELDS.target)?.text() === 'defmodule');
 
         for (const node of defmoduleCalls) {
             const name = getModuleName(node);
@@ -278,12 +284,12 @@ const elixirExtractors: LanguageExtractors = {
 
         // ── Functions (def / defp) ───────────────────────────────────────
         const defCalls = allCalls.filter((n) => {
-            const target = n.field('target')?.text();
+            const target = n.field(ELIXIR_FIELDS.target)?.text();
             return target === 'def' || target === 'defp';
         });
 
         for (const node of defCalls) {
-            const target = node.field('target')!.text();
+            const target = node.field(ELIXIR_FIELDS.target)!.text();
             const isPublic = target === 'def';
             const fnInfo = getFunctionInfo(node);
             if (!fnInfo) {
@@ -297,7 +303,9 @@ const elixirExtractors: LanguageExtractors = {
             // Check for @impl annotation on the preceding sibling
             const prevSiblings = node.prevAll();
             const _hasImpl = prevSiblings.some(
-                (sib) => sib.kind() === 'unary_operator' && sib.field('operand')?.field('target')?.text() === 'impl',
+                (sib) =>
+                    sib.kind() === ELIXIR_KINDS.unaryOperator &&
+                    sib.field(ELIXIR_FIELDS.operand)?.field(ELIXIR_FIELDS.target)?.text() === 'impl',
             );
 
             // Test detection: function name starts with "test " or "test_"
@@ -325,10 +333,10 @@ const elixirExtractors: LanguageExtractors = {
 
         // ── ExUnit test macros ─────────────────────────────────────────
         // ExUnit tests: `test "description" do ... end`
-        const testCalls = allCalls.filter((n) => n.field('target')?.text() === 'test');
+        const testCalls = allCalls.filter((n) => n.field(ELIXIR_FIELDS.target)?.text() === 'test');
         for (const node of testCalls) {
-            const args = node.children().find((c) => c.kind() === 'arguments');
-            const strNode = args?.children().find((c) => c.kind() === 'string');
+            const args = node.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
+            const strNode = args?.children().find((c) => c.kind() === ELIXIR_KINDS.string);
             if (!strNode) {
                 continue;
             }
@@ -364,14 +372,14 @@ const elixirExtractors: LanguageExtractors = {
         // ── Imports (use / alias / import) ───────────────────────────────
         const importTargets = ['use', 'alias', 'import'];
         const importCalls = allCalls.filter((n) => {
-            const target = n.field('target')?.text();
+            const target = n.field(ELIXIR_FIELDS.target)?.text();
             return target !== undefined && importTargets.includes(target);
         });
 
         for (const node of importCalls) {
-            const _kind = node.field('target')!.text();
-            const args = node.children().find((c) => c.kind() === 'arguments');
-            const aliasNode = args?.children().find((c) => c.kind() === 'alias');
+            const _kind = node.field(ELIXIR_FIELDS.target)!.text();
+            const args = node.children().find((c) => c.kind() === ELIXIR_KINDS.arguments);
+            const aliasNode = args?.children().find((c) => c.kind() === ELIXIR_KINDS.alias);
             const modulePath = aliasNode?.text();
             if (!modulePath) {
                 continue;
@@ -379,17 +387,17 @@ const elixirExtractors: LanguageExtractors = {
 
             // Collect named imports (for `import Ecto.Query, only: [...]`)
             const names: string[] = [];
-            const keywordsNode = args?.children().find((c) => c.kind() === 'keywords');
+            const keywordsNode = args?.children().find((c) => c.kind() === ELIXIR_KINDS.keywords);
             if (keywordsNode) {
                 // Extract function names from `only: [func1: arity, ...]`
-                const pairs = keywordsNode.children().filter((c) => c.kind() === 'pair');
+                const pairs = keywordsNode.children().filter((c) => c.kind() === ELIXIR_KINDS.pair);
                 for (const pair of pairs) {
-                    const key = pair.children().find((c) => c.kind() === 'keyword');
+                    const key = pair.children().find((c) => c.kind() === ELIXIR_KINDS.keyword);
                     if (key?.text()?.startsWith('only:')) {
-                        const list = pair.children().find((c) => c.kind() === 'list');
+                        const list = pair.children().find((c) => c.kind() === ELIXIR_KINDS.list);
                         if (list) {
                             for (const item of list.children()) {
-                                if (item.kind() === 'keyword') {
+                                if (item.kind() === ELIXIR_KINDS.keyword) {
                                     const fnName = item.text().replace(/:$/, '');
                                     if (fnName) {
                                         names.push(fnName);
@@ -414,10 +422,10 @@ const elixirExtractors: LanguageExtractors = {
 
     extractCalls(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
         const seenLines = new Set<string>();
-        const allCalls = rootNode.findAll({ rule: { kind: 'call' } });
+        const allCalls = rootNode.findAll({ rule: { kind: ELIXIR_KINDS.call } });
 
         for (const node of allCalls) {
-            const target = node.field('target');
+            const target = node.field(ELIXIR_FIELDS.target);
             if (!target) {
                 continue;
             }
@@ -467,7 +475,7 @@ const elixirExtractors: LanguageExtractors = {
                 'opaque',
             ]);
 
-            if (target.kind() === 'identifier') {
+            if (target.kind() === ELIXIR_KINDS.identifier) {
                 if (macroKeywords.has(targetText)) {
                     continue;
                 }
@@ -487,7 +495,7 @@ const elixirExtractors: LanguageExtractors = {
                     callName: targetText,
                     line,
                 });
-            } else if (target.kind() === 'dot') {
+            } else if (target.kind() === ELIXIR_KINDS.dot) {
                 // Dot call: Module.function(args) or var.function(args)
                 const children = target.children().filter((c) => c.isNamed());
                 if (children.length < 2) {
@@ -507,7 +515,7 @@ const elixirExtractors: LanguageExtractors = {
                 // Check if left side is an alias (module) vs identifier (variable)
                 const receiver = children[0];
                 let resolveInClass: string | undefined;
-                if (receiver.kind() === 'alias') {
+                if (receiver.kind() === ELIXIR_KINDS.alias) {
                     // Module call: Repo.get(...) → resolve in that module
                     resolveInClass = receiver.text();
                 }

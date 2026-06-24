@@ -245,6 +245,51 @@ kodus-graph search --graph graph.json --callers-of "src/db.ts::query"
 kodus-graph search --graph graph.json --callees-of "src/auth.ts::authenticate"
 ```
 
+### `outline`
+
+Prints a compact structural outline of files — every symbol with its signature, line range, and flags (`export`, `async`, `test`, cyclomatic `cx<n>`, decorators), with methods nested under their class. Parse-on-demand and **local-only** (no cross-file resolution, no graph file needed), so it's cheap to run on a single file.
+
+**When to use:** To give an AI agent (or yourself) the structure of a file before reading the whole thing — the "table of contents before the full text" pattern. Pipe `--format json` into a tool, or read the text form directly.
+
+```bash
+# Text outline of specific files
+kodus-graph outline --files src/auth.ts src/db.ts --repo-dir .
+
+# Whole directory, exported symbols only
+kodus-graph outline --dir ./src --exported-only
+
+# Machine-readable JSON for an agent / pipe
+kodus-graph outline --files src/auth.ts --format json --out - | jq '.[0].symbols'
+
+# Enrich with cross-file impact from an existing graph: CALLS fan-in/fan-out
+# (and blast-radius size with --blast). This is what a purely syntactic
+# outline (e.g. ast-grep's) can't do.
+kodus-graph outline --files src/db.ts --graph graph.json --blast
+```
+
+Example text output:
+
+```
+src/auth.ts
+  interface AuthConfig  L2-5  [export]
+  class AuthService  L7-19  [export]
+      ctor AuthService.constructor(private readonly config: AuthConfig)  L8-8  [export]
+      method authenticate(ctx: Context): Promise<Result>  L10-14  [export async cx2]
+      method verifyToken(token: string): boolean  L16-18  [export]
+  fn hashPassword(password: string): string  L21-23  [export]
+  fn validateEmail(email: string): boolean  L25-27
+```
+
+With `--graph --blast`, each symbol also carries `↑<callers> ↓<callees>` (CALLS
+fan-in / fan-out) and `⌀<n>` (blast-radius size — downstream functions impacted
+if it changes):
+
+```
+src/db.ts
+  fn findUser(id: number): Promise<User | null>  L0-2  [export async ↑3 ↓0 ⌀6]
+  fn saveUser(user: User): Promise<void>  L4-4  [export async ↑2 ↓0 ⌀3]
+```
+
 ## Graph Schema
 
 A summary follows; see [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full payload reference covering every command's input and output.
