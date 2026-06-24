@@ -5,7 +5,14 @@ import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
-import { computeContentHash, emptyResult, extractModifiers, isTestByNaming, nodeRange } from '../shared';
+import {
+    computeContentHash,
+    emptyResult,
+    extractModifiers,
+    isTestByNaming,
+    nodeRange,
+    stripImportKeyword,
+} from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { SCALA_FIELDS, SCALA_KINDS } from './kinds';
 
@@ -107,11 +114,7 @@ function extractImportModule(node: SgNode): string {
     }
 
     // Fallback: strip import keyword
-    return node
-        .text()
-        .replace(/^\s*import\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 // ---------------------------------------------------------------------------

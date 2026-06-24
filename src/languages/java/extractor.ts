@@ -12,6 +12,7 @@ import {
     hasTestAnnotation,
     isExported,
     nodeRange,
+    stripImportKeyword,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { JAVA_FIELDS, JAVA_KINDS } from './kinds';
@@ -49,11 +50,7 @@ function extractImportModule(node: SgNode): string {
         }
     }
 
-    return node
-        .text()
-        .replace(/^\s*import\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 function extractImportNames(node: SgNode): string[] {

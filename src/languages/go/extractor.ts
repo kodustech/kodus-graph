@@ -5,7 +5,7 @@ import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
 import { locationKey, type ReceiverTypeMap } from '../receiver-types';
-import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange } from '../shared';
+import { computeContentHash, emptyResult, isExported, isTestByNaming, nodeRange, stripImportKeyword } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { GO_FIELDS, GO_KINDS } from './kinds';
 
@@ -75,11 +75,7 @@ function extractImportModule(node: SgNode): string {
     }
 
     // Fallback: strip import/use/using/require prefix from full text
-    return node
-        .text()
-        .replace(/^\s*(import|use|using|require)\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 function extractImportNames(node: SgNode): string[] {

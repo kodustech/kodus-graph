@@ -13,6 +13,7 @@ import {
     isExported,
     isTestByNaming,
     nodeRange,
+    stripImportKeyword,
 } from '../shared';
 import type { ExtractionResult, LanguageExtractors } from '../spec';
 import { SWIFT_KINDS } from './kinds';
@@ -152,11 +153,7 @@ function extractImportModule(node: SgNode): string {
     }
 
     // Fallback: strip the import keyword
-    return node
-        .text()
-        .replace(/^\s*import\s+/i, '')
-        .replace(/[;{}]/g, '')
-        .trim();
+    return stripImportKeyword(node);
 }
 
 // ---------------------------------------------------------------------------
