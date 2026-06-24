@@ -250,8 +250,18 @@ function renderText(files: OutlineFile[]): string {
  * fan-in (callers) and fan-out (callees) per symbol, plus optional
  * blast-radius size. This is the cross-file enrichment a syntactic outline
  * can't produce on its own.
+ *
+ * Only `queryNodes` (the symbols actually being outlined) are computed — NOT
+ * every node in the graph. With `--blast`, blast-radius is an O(E) traversal
+ * per node, so iterating the whole repo graph would be O(V × E) and OOM on a
+ * large codebase even when the user asked for a single file.
  */
-function buildImpactMap(graphPath: string, withBlast: boolean, maxDepth: number): Map<string, SymbolImpact> {
+function buildImpactMap(
+    graphPath: string,
+    withBlast: boolean,
+    maxDepth: number,
+    queryNodes: GraphNode[],
+): Map<string, SymbolImpact> {
     const idx = loadGraph(graphPath);
     const graphData: GraphData = { nodes: idx.nodes, edges: idx.edges };
     const gi = new GraphIndex(graphData);
@@ -259,8 +269,11 @@ function buildImpactMap(graphPath: string, withBlast: boolean, maxDepth: number)
         (edges ?? []).reduce((n, e) => (e.kind === 'CALLS' ? n + 1 : n), 0);
 
     const impacts = new Map<string, SymbolImpact>();
-    for (const node of idx.nodes) {
+    for (const node of queryNodes) {
         const qn = node.qualified_name;
+        if (impacts.has(qn)) {
+            continue;
+        }
         const impact: SymbolImpact = {
             callers: countCalls(idx.reverseAdjacency.get(qn)),
             callees: countCalls(idx.adjacency.get(qn)),
@@ -317,7 +330,9 @@ export async function executeOutline(opts: OutlineOptions): Promise<void> {
     // Optional cross-file enrichment from a resolved graph: CALLS fan-in /
     // fan-out, and (with --blast) blast-radius size. This is the part a purely
     // syntactic outline can't do.
-    const impacts = opts.graph ? buildImpactMap(opts.graph, opts.blast ?? false, opts.maxDepth ?? 2) : undefined;
+    const impacts = opts.graph
+        ? buildImpactMap(opts.graph, opts.blast ?? false, opts.maxDepth ?? 2, graphData.nodes)
+        : undefined;
 
     const outlines: OutlineFile[] = [...byFile.keys()]
         .sort()
