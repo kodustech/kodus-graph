@@ -255,7 +255,7 @@ export function buildGraphData(
     }
 
     // Derived edges
-    const derived = deriveEdges(raw, importEdges, symbolTable, importMap);
+    const derived = deriveEdges(raw, importEdges, symbolTable, importMap, callEdges);
 
     // Release raw graph arrays — no longer needed after deriveEdges
     (raw as any).functions = [];

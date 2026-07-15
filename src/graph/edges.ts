@@ -1,5 +1,6 @@
 import { basename, extname } from 'path';
-import type { ImportEdge, RawGraph } from './types';
+import { languageOfFile } from '../languages/language-of-file';
+import type { ImportEdge, RawCallEdge, RawGraph } from './types';
 
 interface DerivedEdge {
     source: string;
@@ -35,6 +36,48 @@ export function extractTestStem(testFile: string): string | null {
         return null;
     }
     return cleaned;
+}
+
+/** Count leading path segments two files share. `a/b/c.ts` vs `a/b/d.ts` → 2. */
+function sharedPrefixDepth(a: string, b: string): number {
+    const as = a.split('/');
+    const bs = b.split('/');
+    let n = 0;
+    while (n < as.length - 1 && n < bs.length - 1 && as[n] === bs[n]) {
+        n++;
+    }
+    return n;
+}
+
+/**
+ * Pick the one source file a test file most plausibly covers, by path proximity.
+ *
+ * Filename matching is keyed on the bare basename, so a stem can hit several
+ * files at once — `tests/user.test.ts` matches both `src/user.ts` and
+ * `src/admin/user.ts`. Claiming all of them is how a test for `createUser` came
+ * to mark `deleteAllUsers` covered.
+ *
+ * Returns null on a tie: if two candidates sit equally close, nothing here can
+ * say which one is meant, and inventing coverage is worse than reporting a gap.
+ */
+function nearestByPath(testFile: string, candidates: readonly string[]): string | null {
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+    let best: string | null = null;
+    let bestDepth = -1;
+    let tied = false;
+    for (const c of candidates) {
+        const depth = sharedPrefixDepth(testFile, c);
+        if (depth > bestDepth) {
+            bestDepth = depth;
+            best = c;
+            tied = false;
+        } else if (depth === bestDepth) {
+            tied = true;
+        }
+    }
+    return tied ? null : best;
 }
 
 /**
@@ -95,6 +138,11 @@ export function deriveEdges(
     importEdges: ImportEdge[],
     symbolTable?: { lookupGlobal(name: string): string[] },
     importMap?: { lookup(file: string, name: string): string | null },
+    /**
+     * Resolved call edges. TESTED_BY is derived from these: a test that calls a
+     * function is the only direct evidence that the function is exercised.
+     */
+    callEdges: readonly RawCallEdge[] = [],
 ): DerivedEdges {
     // INHERITS: class extends another class — resolve to qualified names
     const inherits: DerivedEdge[] = [];
@@ -122,7 +170,23 @@ export function deriveEdges(
         }
     }
 
-    // TESTED_BY: two heuristics, deduplicated
+    // TESTED_BY — "a test exercises this", in two tiers.
+    //
+    // Primary evidence is a resolved CALL from a test file to a symbol: the test
+    // demonstrably runs that function. It is emitted per SYMBOL, because that is
+    // the granularity the question actually has. Whole-file coverage claims are
+    // where this went wrong before: a test importing one constant marked every
+    // function in the file tested, and `test_gaps` — 30% of the risk score —
+    // silently reported "0/3 untested" for three untested functions.
+    //
+    // The old import-based heuristic is gone. It fired on `import { CURRENCY }`
+    // just as readily as on a call, and it has no regime of its own: where
+    // imports resolve, calls resolve too and carry strictly more information;
+    // where they don't, it never fires at all.
+    //
+    // File-name matching survives as a fallback, but only for languages whose
+    // test calls we could not resolve at all (rust, today). Where call
+    // resolution works, a filename coincidence adds nothing but false coverage.
     const testFiles = new Set(graph.tests.map((t) => t.file));
     const testedBySet = new Set<string>();
     const testedBy: DerivedEdge[] = [];
@@ -136,15 +200,26 @@ export function deriveEdges(
         testedBy.push({ source, target });
     };
 
-    // Heuristic 1: Resolved imports from test files (high signal)
-    for (const e of importEdges) {
-        if (testFiles.has(e.source) && e.resolved) {
-            addTestedBy(e.target, e.source);
+    // Tier 1: resolved calls out of test files → symbol-level TESTED_BY.
+    const langsWithResolvedTestCalls = new Set<string>();
+    for (const ce of callEdges) {
+        const callerFile = String(ce.source).split('::')[0];
+        if (!testFiles.has(callerFile)) {
+            continue;
+        }
+        const target = String(ce.target);
+        // Only in-repo symbols; `foo.ts::bar`, never a bare file or a package.
+        if (!target.includes('::')) {
+            continue;
+        }
+        addTestedBy(target, callerFile);
+        const lang = languageOfFile(callerFile);
+        if (lang) {
+            langsWithResolvedTestCalls.add(lang);
         }
     }
 
-    // Heuristic 2: File-name matching (catches Ruby, Python, and any
-    // language where imports don't resolve)
+    // Tier 2: file-name matching, for languages tier 1 could not speak for.
     const allSourceFiles = new Set<string>();
     for (const f of graph.functions) {
         allSourceFiles.add(f.file);
@@ -174,6 +249,12 @@ export function deriveEdges(
     }
 
     for (const testFile of testFiles) {
+        const lang = languageOfFile(testFile);
+        // Tier 1 already spoke for this language; a filename coincidence can only
+        // add false coverage on top of real call evidence.
+        if (lang && langsWithResolvedTestCalls.has(lang)) {
+            continue;
+        }
         const stem = extractTestStem(testFile);
         if (!stem) {
             continue;
@@ -182,8 +263,15 @@ export function deriveEdges(
         if (!matches) {
             continue;
         }
-        for (const sourceFile of matches) {
-            addTestedBy(sourceFile, testFile);
+        // Match on the nearest path, not on the bare name. `sourceByBase` is
+        // keyed by basename, so `tests/user.test.ts` used to claim EVERY `user.*`
+        // in the repo — including `src/admin/user.ts`, whose `deleteAllUsers` the
+        // test has never heard of. Prefer the closest shared directory prefix and
+        // take exactly one match; if several tie, the evidence is too weak to
+        // name a file and we report the gap instead.
+        const best = nearestByPath(testFile, matches);
+        if (best) {
+            addTestedBy(best, testFile);
         }
     }
 

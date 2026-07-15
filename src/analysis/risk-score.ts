@@ -32,8 +32,7 @@ export function computeRiskScore(
     let untestedCount = 0;
     const changedFunctions = changedNodes.filter((n) => n.kind === 'Function' || n.kind === 'Method');
     if (!options?.skipTests) {
-        const testedFiles = idx.testedFiles;
-        untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
+        untestedCount = changedFunctions.filter((n) => !idx.isTested(n.qualified_name, n.file_path)).length;
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
 
@@ -57,9 +56,9 @@ export function computeRiskScore(
         cxDetail = `avg ${Math.round(avgSize)} lines (legacy)`;
     }
 
-    // Factor 4: Inheritance
-    const hasInheritance = idx.hasInheritanceInFiles(changedSet);
-    const ihValue = hasInheritance ? 1 : 0;
+    // Factor 4: Inheritance — what share of the changed symbols sits in a
+    // hierarchy, not merely whether the touched files contain one anywhere.
+    const ihValue = idx.hierarchyShare(changedNodes);
 
     const score =
         brValue * weights.blast_radius +
@@ -89,8 +88,11 @@ export function computeRiskScore(
             },
             inheritance: {
                 weight: weights.inheritance,
-                value: ihValue,
-                detail: hasInheritance ? 'has inheritance' : 'no inheritance',
+                value: Math.round(ihValue * 100) / 100,
+                detail:
+                    ihValue > 0
+                        ? `${Math.round(ihValue * changedNodes.length)}/${changedNodes.length} symbols in a hierarchy`
+                        : 'no inheritance',
             },
         },
     };
