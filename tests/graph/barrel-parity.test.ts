@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { execSync } from 'child_process';
 import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 
 import type { GraphData, GraphEdge } from '../../src/graph/types';
+import { runCli } from '../helpers/run-cli';
 
 /**
  * Barrel parity.
@@ -26,13 +26,12 @@ import type { GraphData, GraphEdge } from '../../src/graph/types';
  * No pre-existing fixture used a barrel, so 1219 passing tests said nothing.
  */
 
-const CLI = resolve('src/cli.ts');
 const BARREL = resolve('tests/fixtures/barrel-repo');
 const DIRECT = resolve('tests/fixtures/direct-repo');
 
 function parseRepo(repoDir: string, tag: string): GraphData {
     const out = `/tmp/kodus-graph-barrel-parity-${tag}.json`;
-    execSync(`bun run ${CLI} parse --all --repo-dir ${repoDir} --out ${out}`, { stdio: 'pipe' });
+    runCli(['parse', '--all', '--repo-dir', repoDir, '--out', out]);
     const graph = JSON.parse(readFileSync(out, 'utf-8')) as GraphData;
     rmSync(out, { force: true });
     return graph;

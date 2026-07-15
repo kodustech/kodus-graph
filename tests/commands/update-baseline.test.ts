@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { execSync } from 'child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 import type { GraphData, GraphEdge } from '../../src/graph/types';
+import { runCli } from '../helpers/run-cli';
 
 /**
  * `update` must agree with `parse` about the same repository.
@@ -22,7 +22,6 @@ import type { GraphData, GraphEdge } from '../../src/graph/types';
  * `update` never called it, even though it loads the previous graph anyway.
  */
 
-const CLI = resolve('src/cli.ts');
 const FIXTURE = resolve('tests/fixtures/ambiguity-repo');
 
 const tmpDirs: string[] = [];
@@ -47,7 +46,7 @@ const handleErrorEdge = (g: GraphData): GraphEdge | undefined =>
 
 function parseAll(repoDir: string): GraphData {
     const out = join(repoDir, 'graph.json');
-    execSync(`bun run ${CLI} parse --all --repo-dir ${repoDir} --out ${out}`, { stdio: 'pipe' });
+    runCli(['parse', '--all', '--repo-dir', repoDir, '--out', out]);
     return JSON.parse(readFileSync(out, 'utf-8')) as GraphData;
 }
 
@@ -63,7 +62,7 @@ function updateAfterEditingSlice(repoDir: string): GraphData {
         join(repoDir, 'src/mod1.ts'),
         "export function handleError(e: Error): string {\n    return 'mod1-changed:' + e.message;\n}\n",
     );
-    execSync(`bun run ${CLI} update --repo-dir ${repoDir} --graph ${out} --out ${out}`, { stdio: 'pipe' });
+    runCli(['update', '--repo-dir', repoDir, '--graph', out, '--out', out]);
     return JSON.parse(readFileSync(out, 'utf-8')) as GraphData;
 }
 
@@ -124,10 +123,9 @@ describe('update: symbol table is seeded from the baseline graph', () => {
             "export function handleError(e: Error): string {\n    return 'piped:' + e.message;\n}\n",
         );
 
-        const stdout = execSync(
-            `bun run ${CLI} update --repo-dir ${repoDir} --graph ${join(repoDir, 'graph.json')} --out -`,
-            { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
-        );
+        const stdout = runCli(['update', '--repo-dir', repoDir, '--graph', join(repoDir, 'graph.json'), '--out', '-'], {
+            capture: true,
+        });
 
         const parsed = JSON.parse(stdout) as GraphData;
         expect(parsed.nodes.length).toBeGreaterThan(0);

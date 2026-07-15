@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { execSync } from 'child_process';
 import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 
 import type { BlastRadiusResult, GraphData, GraphEdge } from '../../src/graph/types';
+import { runCli } from '../helpers/run-cli';
 
 /**
  * Types are a dependency the call graph cannot see.
@@ -21,12 +21,11 @@ import type { BlastRadiusResult, GraphData, GraphEdge } from '../../src/graph/ty
  * `order` all fail and disappear.
  */
 
-const CLI = resolve('src/cli.ts');
 const FIXTURE = resolve('tests/fixtures/type-only-repo');
 
 function parseFixture(): GraphData {
     const out = '/tmp/kodus-graph-uses-type.json';
-    execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --out ${out}`, { stdio: 'pipe' });
+    runCli(['parse', '--all', '--repo-dir', FIXTURE, '--out', out]);
     const g = JSON.parse(readFileSync(out, 'utf-8')) as GraphData;
     rmSync(out, { force: true });
     return g;
@@ -36,10 +35,8 @@ function analyze(files: string): BlastRadiusResult {
     const graph = '/tmp/kodus-graph-uses-type-graph.json';
     const out = '/tmp/kodus-graph-uses-type-analysis.json';
     try {
-        execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --out ${graph}`, { stdio: 'pipe' });
-        execSync(`bun run ${CLI} analyze --files ${files} --graph ${graph} --repo-dir ${FIXTURE} --out ${out}`, {
-            stdio: 'pipe',
-        });
+        runCli(['parse', '--all', '--repo-dir', FIXTURE, '--out', graph]);
+        runCli(['analyze', '--files', files, '--graph', graph, '--repo-dir', FIXTURE, '--out', out]);
         return (JSON.parse(readFileSync(out, 'utf-8')) as { blast_radius: BlastRadiusResult }).blast_radius;
     } finally {
         rmSync(graph, { force: true });
@@ -112,12 +109,9 @@ describe('USES_TYPE: a signature naming a repo type is a dependency', () => {
         const graphPath = '/tmp/kodus-graph-uses-type-roundtrip.json';
         const out = '/tmp/kodus-graph-uses-type-roundtrip-analysis.json';
         try {
-            execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --out ${graphPath}`, { stdio: 'pipe' });
+            runCli(['parse', '--all', '--repo-dir', FIXTURE, '--out', graphPath]);
             // Throws on a validation error rather than degrading quietly.
-            execSync(
-                `bun run ${CLI} analyze --files src/types.ts --graph ${graphPath} --repo-dir ${FIXTURE} --out ${out}`,
-                { stdio: 'pipe' },
-            );
+            runCli(['analyze', '--files', 'src/types.ts', '--graph', graphPath, '--repo-dir', FIXTURE, '--out', out]);
             expect(usesType(JSON.parse(readFileSync(graphPath, 'utf-8')) as GraphData).length).toBeGreaterThan(0);
         } finally {
             rmSync(graphPath, { force: true });

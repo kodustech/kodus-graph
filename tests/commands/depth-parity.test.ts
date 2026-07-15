@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { execSync } from 'child_process';
 import { readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 
 import { DEFAULT_BLAST_MAX_DEPTH } from '../../src/shared/constants';
+import { runCli } from '../helpers/run-cli';
 
 /**
  * Blast-radius depth is one number.
@@ -20,25 +20,19 @@ import { DEFAULT_BLAST_MAX_DEPTH } from '../../src/shared/constants';
  * that far.
  */
 
-const CLI = resolve('src/cli.ts');
 const FIXTURE = resolve('tests/fixtures/depth-chain-repo');
 
 interface Analysis {
     blast_radius: { total_functions: number; by_depth: Record<string, Array<{ qualified_name: string }>> };
 }
 
-function analyze(graph: string, out: string, extraArgs = ''): Analysis {
-    execSync(
-        `bun run ${CLI} analyze --files src/core.ts --graph ${graph} --repo-dir ${FIXTURE} ${extraArgs} --out ${out}`,
-        {
-            stdio: 'pipe',
-        },
-    );
+function analyze(graph: string, out: string, extraArgs: string[] = []): Analysis {
+    runCli(['analyze', '--files', 'src/core.ts', '--graph', graph, '--repo-dir', FIXTURE, ...extraArgs, '--out', out]);
     return JSON.parse(readFileSync(out, 'utf-8')) as Analysis;
 }
 
 function parseFixture(graph: string): void {
-    execSync(`bun run ${CLI} parse --all --repo-dir ${FIXTURE} --out ${graph}`, { stdio: 'pipe' });
+    runCli(['parse', '--all', '--repo-dir', FIXTURE, '--out', graph]);
 }
 
 describe('blast-radius depth', () => {
@@ -66,8 +60,8 @@ describe('blast-radius depth', () => {
         const deep = '/tmp/kodus-graph-depth-flag-3.json';
         try {
             parseFixture(graph);
-            const at1 = analyze(graph, shallow, '--max-depth 1');
-            const at3 = analyze(graph, deep, '--max-depth 3');
+            const at1 = analyze(graph, shallow, ['--max-depth', '1']);
+            const at3 = analyze(graph, deep, ['--max-depth', '3']);
 
             expect(Object.keys(at1.blast_radius.by_depth)).toEqual(['1']);
             expect(at1.blast_radius.total_functions).toBeLessThan(at3.blast_radius.total_functions);
