@@ -43,11 +43,11 @@ describe('risk-config', () => {
         const blast: BlastRadiusResult = { total_functions: 10, total_files: 1, by_depth: {} };
         const cfgCap20: RiskConfig = {
             weights: DEFAULT_RISK_CONFIG.weights,
-            caps: { blast_functions: 20, complexity: DEFAULT_RISK_CONFIG.caps.complexity },
+            caps: { ...DEFAULT_RISK_CONFIG.caps, blast_functions: 20 },
         };
         const cfgCap5: RiskConfig = {
             weights: DEFAULT_RISK_CONFIG.weights,
-            caps: { blast_functions: 5, complexity: DEFAULT_RISK_CONFIG.caps.complexity },
+            caps: { ...DEFAULT_RISK_CONFIG.caps, blast_functions: 5 },
         };
         const resultCap20 = computeRiskScore(emptyGraph, [], blast, { riskConfig: cfgCap20 });
         const resultCap5 = computeRiskScore(emptyGraph, [], blast, { riskConfig: cfgCap5 });
@@ -68,7 +68,7 @@ describe('risk-config', () => {
                         complexity: 0.2,
                         inheritance: 0.1,
                     },
-                    caps: { blast_functions: 25, complexity: 60 },
+                    caps: { blast_functions: 25, cyclomatic: 12, lines_of_code: 60 },
                 };
                 writeFileSync(configPath, JSON.stringify(contents), 'utf-8');
                 const loaded = loadRiskConfig(configPath);
@@ -77,7 +77,8 @@ describe('risk-config', () => {
                 expect(loaded.weights.complexity).toBe(0.2);
                 expect(loaded.weights.inheritance).toBe(0.1);
                 expect(loaded.caps.blast_functions).toBe(25);
-                expect(loaded.caps.complexity).toBe(60);
+                expect(loaded.caps.cyclomatic).toBe(12);
+                expect(loaded.caps.lines_of_code).toBe(60);
             } finally {
                 rmSync(tmpDir, { recursive: true });
             }

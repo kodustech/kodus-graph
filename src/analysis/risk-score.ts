@@ -37,20 +37,23 @@ export function computeRiskScore(
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
 
-    // Factor 3: Complexity — prefer cyclomatic when nodes have it, fall back to LoC for legacy graphs.
+    // Factor 3: Complexity — prefer cyclomatic when nodes have it, fall back to
+    // LoC for legacy graphs. The two are different units and normalize against
+    // their own caps; sharing one cap left the cyclomatic path (the default)
+    // divided by a lines-of-code figure and effectively disabled.
     const nodesWithComplexity = changedNodes.filter((n) => typeof n.complexity === 'number');
     let cxValue: number;
     let cxDetail: string;
     if (nodesWithComplexity.length > 0) {
         const avgCx = nodesWithComplexity.reduce((s, n) => s + (n.complexity ?? 0), 0) / nodesWithComplexity.length;
-        cxValue = Math.min(avgCx / caps.complexity, 1);
+        cxValue = Math.min(avgCx / caps.cyclomatic, 1);
         cxDetail = `avg cyclomatic ${Math.round(avgCx)}`;
     } else {
         const avgSize =
             changedNodes.length > 0
                 ? changedNodes.reduce((s, n) => s + (n.line_end - n.line_start), 0) / changedNodes.length
                 : 0;
-        cxValue = Math.min(avgSize / caps.complexity, 1);
+        cxValue = Math.min(avgSize / caps.lines_of_code, 1);
         cxDetail = `avg ${Math.round(avgSize)} lines (legacy)`;
     }
 

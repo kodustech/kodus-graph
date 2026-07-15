@@ -12,13 +12,26 @@ export interface RiskCaps {
     /** Blast radius normalization cap (total functions). */
     blast_functions: number;
     /**
-     * Complexity normalization cap. Used for cyclomatic complexity on graphs
-     * that have the field (default units: decision points), and as a lines-of-code
-     * cap for legacy graphs without `complexity`. The default value (50) is
-     * calibrated for the LoC fallback; callers reading cyclomatic-heavy graphs
-     * should lower it (e.g. 10) via --risk-config.
+     * Cyclomatic-complexity cap, in decision points. A function at or above this
+     * contributes the complexity factor's full weight.
+     *
+     * 10 is McCabe's recommended per-function ceiling: 1–10 simple, 11–20
+     * moderate, 20+ hard to test.
+     *
+     * Previously a single `complexity` cap of 50 normalized BOTH this and the
+     * lines-of-code fallback below. 50 is reasonable for lines and nonsense for
+     * decision points: a genuinely gnarly function at cyclomatic 10 scored
+     * 10/50 = 0.2, contributing 0.04 of an available 0.20 and leaving the
+     * factor all but switched off. The old doc comment described the mismatch
+     * and told callers to fix it themselves with --risk-config; the two units
+     * now just have two caps.
      */
-    complexity: number;
+    cyclomatic: number;
+    /**
+     * Lines-of-code cap, used only for legacy graphs whose nodes carry no
+     * `complexity` field.
+     */
+    lines_of_code: number;
 }
 
 export interface RiskConfig {
@@ -35,7 +48,8 @@ export const DEFAULT_RISK_CONFIG: RiskConfig = Object.freeze({
     }),
     caps: Object.freeze({
         blast_functions: 20,
-        complexity: 50,
+        cyclomatic: 10,
+        lines_of_code: 50,
     }),
 });
 
@@ -52,7 +66,8 @@ const riskConfigSchema = z
         caps: z
             .object({
                 blast_functions: z.number().positive(),
-                complexity: z.number().positive(),
+                cyclomatic: z.number().positive(),
+                lines_of_code: z.number().positive(),
             })
             .strict(),
     })
