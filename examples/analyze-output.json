@@ -1,6 +1,6 @@
 {
   "blast_radius": {
-    "total_functions": 13,
+    "total_functions": 15,
     "total_files": 4,
     "by_depth": {
       "1": [
@@ -43,6 +43,22 @@
           "impact_category": "behavior_affected",
           "flows": [],
           "impact_score": 0
+        },
+        {
+          "qualified_name": "src/controller.ts::AuthController.AuthController.constructor",
+          "accumulated_confidence": 0.8,
+          "edge_kind": "USES_TYPE",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/services.ts::AccountService.AccountService.constructor",
+          "accumulated_confidence": 0.8,
+          "edge_kind": "USES_TYPE",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
         }
       ],
       "2": [
@@ -59,12 +75,12 @@
   },
   "risk_score": {
     "level": "MEDIUM",
-    "score": 0.55,
+    "score": 0.57,
     "factors": {
       "blast_radius": {
         "weight": 0.35,
-        "value": 0.87,
-        "detail": "13 functions, 4 files"
+        "value": 0.91,
+        "detail": "15 functions, 4 files"
       },
       "test_gaps": {
         "weight": 0.3,

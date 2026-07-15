@@ -44,7 +44,7 @@
   },
   "risk_by_file": {
     "src/auth.ts": {
-      "dependents": 5,
+      "dependents": 7,
       "risk": "MEDIUM"
     }
   }

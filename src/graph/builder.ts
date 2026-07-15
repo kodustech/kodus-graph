@@ -292,6 +292,15 @@ export function buildGraphData(
             line: 0,
         });
     }
+    for (const e of derived.usesType) {
+        edges.push({
+            kind: 'USES_TYPE',
+            source_qualified: e.source,
+            target_qualified: e.target,
+            file_path: e.file || '',
+            line: 0,
+        });
+    }
     for (const e of derived.contains) {
         edges.push({
             kind: 'CONTAINS',

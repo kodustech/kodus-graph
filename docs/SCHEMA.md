@@ -2,7 +2,7 @@
 
 Authoritative reference for every payload kodus-graph reads or writes. All shapes are defined as TypeScript interfaces in `src/graph/types.ts` and validated by Zod schemas in `src/shared/schemas.ts`.
 
-**Schema version**: `2.0` (pinned in `src/shared/constants.ts`). Loaders enforce major-version compatibility — graphs from v1.x are rejected; v2.x is accepted with warnings on minor mismatches.
+**Schema version**: `2.1` (pinned in `src/shared/constants.ts`). Loaders enforce major-version compatibility — graphs from v1.x are rejected; v2.x is accepted with warnings on minor mismatches.
 
 ## Index
 
@@ -29,7 +29,7 @@ Test nodes are emitted only for functions matched by language-specific test dete
 ### `EdgeKind`
 
 ```ts
-type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 'CONTAINS'
+type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 'CONTAINS' | 'USES_TYPE'
 ```
 
 ### `EdgeTier`
@@ -38,7 +38,17 @@ type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 
 type EdgeTier = 'receiver' | 'di' | 'same' | 'import' | 'unique' | 'ambiguous'
 ```
 
-The 5-tier resolver's outcomes that produce edges. `noise` and `ambiguousNoise` are *drop* outcomes (no edge); they appear in `tier_distribution` but never on edges.
+The 5-tier resolver's outcomes that produce edges. `noise` and `ambiguousNoise` are *drop* outcomes (no edge); they appear in `tier_distribution` but never on edges. `USES_TYPE` edges carry no tier — they come from type resolution, not the call resolver.
+
+#### `USES_TYPE` (added in schema 2.1)
+
+`source_qualified` is a function; `target_qualified` is a Class, Interface or Enum this repo declares and whose name appears in the function's signature.
+
+Types are a dependency a call graph cannot see: `checkout(o: Order)` calls nothing in `types.ts`, so before 2.1, changing `Order` reported a blast radius of zero while every function taking one broke. (The IMPORTS edges were there, but they are file-to-file while the blast radius seeds from symbols, so the two never met.)
+
+Emitted conservatively — the name must resolve through the file's import map, or be declared beside it, and land on a type. Primitives, external types and parameter names resolve to nothing and produce no edge. The traversal weights these at **0.8**: naming a type is real evidence of dependency, but not proof that every change to it breaks the signature — widening a union or adding an optional field usually doesn't.
+
+Graphs parsed before 2.1 simply lack these edges; type-only dependencies stay invisible to their blast radius until re-parsed.
 
 ### `GraphNode`
 
@@ -170,7 +180,7 @@ interface BlastRadiusResult {
 interface BlastRadiusEntry {
   qualified_name: string;
   accumulated_confidence: number;             // multiplied across the path
-  edge_kind: 'CALLS' | 'IMPORTS';
+  edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE';
   impact_category: ImpactCategory;
   flows: FlowRef[];                           // entry points reaching this fn
   impact_score: number;

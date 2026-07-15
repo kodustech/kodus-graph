@@ -36,7 +36,7 @@ Real output, reproducible with [`scripts/generate-examples.sh`](scripts/generate
 ## Features
 
 - **Multi-language support.** 14 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
-- **Structural graph** — Functions, methods, constructors, classes, interfaces, enums, tests as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS as edges. Each node carries `is_exported`, `is_async`, `decorators`, `throws`, `complexity`.
+- **Structural graph** — Functions, methods, constructors, classes, interfaces, enums, tests as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS, USES_TYPE as edges. Each node carries `is_exported`, `is_async`, `decorators`, `throws`, `complexity`.
 - **5-tier call resolver** — `receiver` (0.95/0.90) → `noise` filter → `di` (0.90/0.95) → `class` (0.85/0.90) → `cascade` (same/import/unique/ambiguous, 0.85→0.30). Each CALLS edge records its tier and confidence.
 - **Receiver-type inference** — From `new Foo()`, typed parameters, type cast `as Foo`, factory deferred (`const x = factory()` resolved cross-file via the `@CALLEE:` mechanism), method-chain return type, and singleton patterns (`Foo.getInstance()`).
 - **Inheritance-aware lookup** — When `Foo.method` isn't directly indexed but Foo extends Bar (or implements an interface) where the method exists, walks the hierarchy with cycle protection.
@@ -45,6 +45,7 @@ Real output, reproducible with [`scripts/generate-examples.sh`](scripts/generate
 - **JSX/TSX components as calls** — `<UserCard />` becomes a CALLS edge to the component function/class.
 - **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits).
 - **Function-level blast radius** — Impact analysis per function, not per file. Log-scaled: 0 callers vs 1 is the jump that decides a review, and it reads as one.
+- **Type dependencies are edges** — `checkout(o: Order)` calls nothing in `types.ts`, so a call graph alone reports a blast radius of zero when `Order` changes. `USES_TYPE` links a signature to the repo types it names, so changing an interface shows who breaks.
 - **Call-based test coverage** — `TESTED_BY` comes from a test **calling** a symbol, recorded per symbol. Importing a file does not make it tested; a filename match is the fallback only for languages whose test calls don't resolve.
 - **Confidence reaches the consumer** — Every caller carries the `tier` and `confidence` it was resolved with, so a 0.95 receiver-typed edge and a 0.60 name guess don't read as the same claim. Output also states its own limits: absence from the graph is not absence from the codebase.
 - **Smart import resolution** — tsconfig extends/rootDirs/project references, monorepo workspace exports, package.json `#imports`, Webpack/Vite aliases, Go workspaces/vendor, Maven/Gradle multi-module (with test source roots and `<sourceDirectory>` overrides), Cargo workspace path deps.
@@ -343,7 +344,7 @@ A summary follows; see [`docs/SCHEMA.md`](docs/SCHEMA.md) for the full payload r
 
 | Field | Type | Description |
 |---|---|---|
-| `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS |
+| `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS, USES_TYPE |
 | `source_qualified` | `string` | Caller/parent node |
 | `target_qualified` | `string` | Callee/child node |
 | `file_path` | `string` | File where the edge originates |

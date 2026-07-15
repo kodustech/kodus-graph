@@ -591,6 +591,34 @@
         "line": 0
       },
       {
+        "kind": "USES_TYPE",
+        "source_qualified": "src/controller.ts::AuthController.AuthController.constructor",
+        "target_qualified": "src/auth.ts::AuthService",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "USES_TYPE",
+        "source_qualified": "src/controller.ts::AuthController.AuthController.constructor",
+        "target_qualified": "src/user.service.ts::UserService",
+        "file_path": "src/controller.ts",
+        "line": 0
+      },
+      {
+        "kind": "USES_TYPE",
+        "source_qualified": "src/services.ts::AccountService.AccountService.constructor",
+        "target_qualified": "src/auth.ts::AuthService",
+        "file_path": "src/services.ts",
+        "line": 0
+      },
+      {
+        "kind": "USES_TYPE",
+        "source_qualified": "src/services.ts::AccountService.AccountService.constructor",
+        "target_qualified": "src/user.service.ts::UserService",
+        "file_path": "src/services.ts",
+        "line": 0
+      },
+      {
         "kind": "CONTAINS",
         "source_qualified": "src/db.ts",
         "target_qualified": "src/db.ts::findUser",
@@ -719,6 +747,13 @@
         "line": 0
       },
       {
+        "kind": "USES_TYPE",
+        "source_qualified": "src/auth.ts::AuthService.AuthService.constructor",
+        "target_qualified": "src/auth.ts::AuthConfig",
+        "file_path": "src/auth.ts",
+        "line": 0
+      },
+      {
         "kind": "CONTAINS",
         "source_qualified": "src/auth.ts",
         "target_qualified": "src/auth.ts::AuthService.AuthService.constructor",
@@ -765,7 +800,7 @@
       "repo_dir": "",
       "files_parsed": 1,
       "total_nodes": 26,
-      "total_edges": 44,
+      "total_edges": 49,
       "duration_ms": 0,
       "parse_errors": 0,
       "extract_errors": 0
@@ -867,14 +902,14 @@
       },
       "risk_by_file": {
         "src/auth.ts": {
-          "dependents": 5,
+          "dependents": 7,
           "risk": "MEDIUM"
         }
       }
     },
     "blast_radius": {
-      "total_functions": 3,
-      "total_files": 2,
+      "total_functions": 5,
+      "total_files": 4,
       "by_depth": {
         "1": [
           {
@@ -890,6 +925,22 @@
               }
             ],
             "impact_score": 0.13
+          },
+          {
+            "qualified_name": "src/controller.ts::AuthController.AuthController.constructor",
+            "accumulated_confidence": 0.8,
+            "edge_kind": "USES_TYPE",
+            "impact_category": "behavior_affected",
+            "flows": [],
+            "impact_score": 0.08
+          },
+          {
+            "qualified_name": "src/services.ts::AccountService.AccountService.constructor",
+            "accumulated_confidence": 0.8,
+            "edge_kind": "USES_TYPE",
+            "impact_category": "behavior_affected",
+            "flows": [],
+            "impact_score": 0.08
           }
         ]
       }
@@ -935,12 +986,12 @@
     ],
     "risk": {
       "level": "MEDIUM",
-      "score": 0.41,
+      "score": 0.45,
       "factors": {
         "blast_radius": {
           "weight": 0.35,
-          "value": 0.46,
-          "detail": "3 functions, 2 files"
+          "value": 0.59,
+          "detail": "5 functions, 4 files"
         },
         "test_gaps": {
           "weight": 0.3,
@@ -965,7 +1016,7 @@
       "total_callees": 0,
       "untested_count": 3,
       "affected_flows_count": 1,
-      "duration_ms": 6,
+      "duration_ms": 5,
       "min_confidence": 0.5
     }
   }

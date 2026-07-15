@@ -52,6 +52,16 @@ before comparing across versions.
 
 ### Added
 
+- **`USES_TYPE` edges (schema 2.1).** A function's signature naming a type this
+  repo declares is a dependency the call graph cannot see: `checkout(o: Order)`
+  calls nothing in `types.ts`, so changing `Order` — renaming a field, adding a
+  required one — reported a blast radius of **zero** while every function taking
+  one broke. The IMPORTS edges existed but are file-to-file, and the blast radius
+  seeds from symbols, so they never met. Emitted only when the name resolves
+  through the file's import map and lands on a Class/Interface/Enum, so
+  primitives and parameter names produce nothing; weighted 0.8, below the
+  receiver tier, because naming a type is not proof that every change to it
+  breaks the signature. Additive — graphs parsed before 2.1 simply lack them.
 - `<Caller confidence tier>` and `<ChangedFunction exported>` in XML output;
   `CallerRef.tier`, `CalleeRef.confidence` / `tier`, `EnrichedFunction.is_exported`.
 - A header on `<CallGraph>` naming what static analysis cannot see — reflection,
@@ -93,6 +103,11 @@ before comparing across versions.
 
 ### Fixed
 
+- `EdgeKind` is one list (`EDGE_KINDS`), which the Zod schemas in `graph/loader`
+  and `shared/schemas` now derive from. All three spelled the members out
+  separately, so adding a kind left both validators rejecting graphs this code
+  had just written — and `analyze --graph` answered by silently falling back to a
+  graph-less path rather than failing on the mismatch.
 - `graph/builder.ts` reports CALLS edges dropped for targeting an in-repo file
   that declares no symbols, instead of swallowing them. That silence is how the
   barrel bug survived 1219 passing tests.

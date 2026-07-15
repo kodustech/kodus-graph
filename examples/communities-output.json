@@ -78,17 +78,17 @@
       "source": "src/auth.ts",
       "target": "src/controller.ts",
       "edges": 1,
-      "strength": "HIGH"
-    },
-    {
-      "source": "src/auth.ts",
-      "target": "src/db.ts",
-      "edges": 1,
-      "strength": "HIGH"
+      "strength": "MEDIUM"
     },
     {
       "source": "src/auth.ts",
       "target": "tests/auth.test.ts",
+      "edges": 1,
+      "strength": "MEDIUM"
+    },
+    {
+      "source": "src/auth.ts",
+      "target": "src/db.ts",
       "edges": 1,
       "strength": "HIGH"
     }
@@ -96,6 +96,6 @@
   "summary": {
     "total_communities": 6,
     "avg_cohesion": 0.01,
-    "high_coupling_pairs": 4
+    "high_coupling_pairs": 2
   }
 }

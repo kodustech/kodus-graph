@@ -1,4 +1,4 @@
-1 changed (0 untested) | 3 impacted | 2 files | risk MEDIUM 0.41
+1 changed (0 untested) | 5 impacted | 4 files | risk MEDIUM 0.45
 
 CHANGED:
   verifyToken(token: string, opts: VerifyOpts) -> Promise<boolean> [src/auth.ts:16-18] modified | 1 callers | tested
@@ -18,3 +18,4 @@ BLAST RADIUS:
   depth 1 [contract_breaking]: verifyToken returns true for non-empty (95%, score 0.13) (1)
     flows: TEST verifyToken returns true for non-empty
     ⚠ callers may need update (contract changed)
+  depth 1 [behavior_affected]: AuthController.AuthController.constructor (80%, score 0.08), AccountService.AccountService.constructor (80%, score 0.08) (2)

@@ -3,7 +3,7 @@
        reflection, dynamic dispatch and external consumers are invisible. Each edge carries the
        tier and confidence it was resolved with — verify low-confidence claims with the tools
        before acting on them. Reason from this map; answer from the code. -->
-  <Summary changedFunctions="1" untestedFunctions="0" impactedCallers="1" riskLevel="MEDIUM" riskScore="0.41" />
+  <Summary changedFunctions="1" untestedFunctions="0" impactedCallers="1" riskLevel="MEDIUM" riskScore="0.45" />
 
   <ReviewFocus>
     <Focus>Verify 1 callers of AuthService.verifyToken pass correct params after signature change (return type change: boolean → Promise&lt;boolean&gt;)</Focus>

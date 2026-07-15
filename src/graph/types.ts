@@ -1,10 +1,27 @@
 import type { ContractDiff } from '../analysis/diff';
 
 // ── Node kinds (aligned with Postgres ast_nodes.kind) ──
-export type NodeKind = 'Function' | 'Method' | 'Constructor' | 'Class' | 'Interface' | 'Enum' | 'Test';
+export const NODE_KINDS = ['Function', 'Method', 'Constructor', 'Class', 'Interface', 'Enum', 'Test'] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
 
 // ── Edge kinds (aligned with Postgres ast_edges.kind) ──
-export type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 'CONTAINS';
+//
+// The single list. Zod schemas in `graph/loader` and `shared/schemas` derive
+// from it — they used to spell the members out again, so adding `USES_TYPE` to
+// the type left both validators rejecting graphs this very code had just
+// written, and `analyze --graph` fell back to a graph-less path rather than
+// failing on the mismatch.
+export const EDGE_KINDS = [
+    'CALLS',
+    'IMPORTS',
+    'INHERITS',
+    'IMPLEMENTS',
+    'TESTED_BY',
+    'CONTAINS',
+    /** A function's signature names a type this repo declares. See `graph/edges.ts`. */
+    'USES_TYPE',
+] as const;
+export type EdgeKind = (typeof EDGE_KINDS)[number];
 
 // ── Graph node (matches ast_nodes table) ──
 export interface GraphNode {
@@ -120,7 +137,8 @@ export type ImpactCategory = 'contract_breaking' | 'behavior_affected' | 'transi
 export interface BlastRadiusEntry {
     qualified_name: string;
     accumulated_confidence: number;
-    edge_kind: 'CALLS' | 'IMPORTS';
+    /** How the change reaches this symbol: it calls it, imports it, or names it in a signature. */
+    edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE';
     impact_category: ImpactCategory;
     flows: FlowRef[];
     impact_score: number;

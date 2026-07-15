@@ -13,6 +13,32 @@ export interface DerivedEdges {
     implements: DerivedEdge[];
     testedBy: DerivedEdge[];
     contains: DerivedEdge[];
+    usesType: DerivedEdge[];
+}
+
+/**
+ * Identifiers appearing in a signature, as candidate type references.
+ *
+ * Deliberately not a per-language type parser. Signatures come in two shapes —
+ * `(o: Order)` in TS/Kotlin/Rust/Python, `(Order o)` in Java/C#/PHP — plus
+ * pointers, generics, and defaults, and writing 14 parsers to tell a type from a
+ * parameter name would be a lot of surface for a question already answered
+ * downstream: `resolveTypeName` only resolves names that this repo actually
+ * declares and this file actually imported. `string`, `int`, `Promise` and a
+ * parameter named `o` all fail to resolve and disappear.
+ *
+ * So: pull every identifier, let the resolver be the filter, and require the
+ * resolution to land on a type (see `deriveEdges`).
+ */
+function typeCandidates(signature: string): string[] {
+    if (!signature) {
+        return [];
+    }
+    const out = new Set<string>();
+    for (const m of signature.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
+        out.add(m[0]);
+    }
+    return [...out];
 }
 
 /**
@@ -275,6 +301,49 @@ export function deriveEdges(
         }
     }
 
+    // USES_TYPE: function references a repo type in its signature.
+    //
+    // Types are a dependency the call graph cannot see. `checkout(o: Order)`
+    // never calls anything in `types.ts`, so with CALLS and IMPORTS alone,
+    // changing `Order` — renaming a field, adding a required one — reported a
+    // blast radius of zero while two functions broke. IMPORTS edges exist but are
+    // file-to-file, and the blast radius seeds from symbols, so they never meet.
+    //
+    // Only types this repo declares produce an edge. `resolveTypeName` goes
+    // through the import map first, so `string`, `int` and `Promise` resolve to
+    // nothing and vanish; requiring the resolution to be a Class/Interface/Enum
+    // drops parameter names that happen to collide with a function's.
+    const typeKinds = new Set<string>();
+    for (const c of graph.classes) {
+        typeKinds.add(c.qualified);
+    }
+    for (const i of graph.interfaces) {
+        typeKinds.add(i.qualified);
+    }
+    for (const e of graph.enums) {
+        typeKinds.add(e.qualified);
+    }
+
+    const usesType: DerivedEdge[] = [];
+    const usesTypeSeen = new Set<string>();
+    for (const f of graph.functions) {
+        for (const candidate of typeCandidates(`${f.params} ${f.returnType}`)) {
+            const resolved = resolveTypeName(candidate, f.file, graph, symbolTable, importMap);
+            if (!resolved || !typeKinds.has(resolved)) {
+                continue;
+            }
+            if (resolved === f.qualified) {
+                continue;
+            }
+            const key = `${f.qualified}|${resolved}`;
+            if (usesTypeSeen.has(key)) {
+                continue;
+            }
+            usesTypeSeen.add(key);
+            usesType.push({ source: f.qualified, target: resolved, file: f.file });
+        }
+    }
+
     // CONTAINS: file contains function/class
     const contains: DerivedEdge[] = [];
     for (const f of graph.functions) {
@@ -284,5 +353,5 @@ export function deriveEdges(
         contains.push({ source: c.file, target: c.qualified });
     }
 
-    return { inherits, implements: implements_, testedBy, contains };
+    return { inherits, implements: implements_, testedBy, contains, usesType };
 }

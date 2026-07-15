@@ -5,6 +5,7 @@ import { SCHEMA_VERSION } from '../shared/constants';
 import { log } from '../shared/logger';
 import { compareSchemaVersions } from './schema-version-check';
 import type { GraphData, GraphEdge, GraphNode, ParseMetadata } from './types';
+import { EDGE_KINDS } from './types';
 
 const ParseOutputSchema = z.object({
     metadata: z.object({
@@ -38,7 +39,7 @@ const ParseOutputSchema = z.object({
     ),
     edges: z.array(
         z.object({
-            kind: z.enum(['CALLS', 'IMPORTS', 'INHERITS', 'IMPLEMENTS', 'TESTED_BY', 'CONTAINS']),
+            kind: z.enum(EDGE_KINDS),
             source_qualified: z.string(),
             target_qualified: z.string(),
             file_path: z.string(),

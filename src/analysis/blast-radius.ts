@@ -2,7 +2,19 @@ import type { BlastRadiusEntry, BlastRadiusResult, EdgeKind, GraphData, ImpactCa
 import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { GraphIndex } from './graph-index';
 
-type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS'>;
+type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS' | 'USES_TYPE'>;
+
+/**
+ * Confidence carried by a USES_TYPE edge.
+ *
+ * `deriveEdges` only emits one when the name was imported into that file (or
+ * declared beside it) AND resolves to a type this repo declares — so the
+ * dependency is real, not guessed. It sits below the receiver tier because the
+ * edge says the signature mentions the type, not that every change to the type
+ * breaks the function: widening a union or adding an optional field usually
+ * doesn't. Decays across depth like CALLS.
+ */
+const USES_TYPE_CONFIDENCE = 0.8;
 
 interface AdjEntry {
     neighbor: string;
@@ -93,6 +105,15 @@ export function computeBlastRadius(
         // CALLS: only edges with sufficient confidence, reverse direction
         addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
     }
+    for (const edge of idx.edgesByKind('USES_TYPE')) {
+        if (USES_TYPE_CONFIDENCE < minConf) {
+            continue;
+        }
+        // Reverse, like CALLS: a change to the type reaches the signature that
+        // names it. Unlike IMPORTS these are symbol-to-symbol, so they meet the
+        // symbol seeds the traversal actually starts from.
+        addEdge(edge.target_qualified, edge.source_qualified, USES_TYPE_CONFIDENCE, 'USES_TYPE');
+    }
 
     // Consolidated state per node
     const nodeState = new Map<string, NodeState>();
@@ -111,7 +132,9 @@ export function computeBlastRadius(
                 continue;
             }
 
-            const childAccumulated = entry.edgeKind === 'CALLS' ? entry.confidence : 1.0; // IMPORTS always 1.0
+            // IMPORTS is the only deterministic kind (confidence 1.0); CALLS and
+            // USES_TYPE both carry a resolution confidence worth propagating.
+            const childAccumulated = entry.edgeKind === 'IMPORTS' ? 1.0 : entry.confidence;
 
             const existing = nodeState.get(entry.neighbor);
             if (existing === undefined || childAccumulated > existing.confidence) {
@@ -171,9 +194,9 @@ export function computeBlastRadius(
                 }
 
                 const childAccumulated =
-                    adjEntry.edgeKind === 'CALLS'
-                        ? parentEntry.accumulated * adjEntry.confidence
-                        : parentEntry.accumulated; // IMPORTS: deterministic, confidence = 1.0
+                    adjEntry.edgeKind === 'IMPORTS'
+                        ? parentEntry.accumulated // deterministic, confidence = 1.0
+                        : parentEntry.accumulated * adjEntry.confidence;
 
                 // Check if already visited at a previous depth with better confidence
                 const prevState = nodeState.get(adjEntry.neighbor);

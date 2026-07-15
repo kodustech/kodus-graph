@@ -3,11 +3,11 @@
     "repo_dir": "tests/fixtures/sample-repo",
     "files_parsed": 6,
     "total_nodes": 26,
-    "total_edges": 44,
-    "duration_ms": 54,
+    "total_edges": 49,
+    "duration_ms": 33,
     "parse_errors": 0,
     "extract_errors": 0,
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "tier_distribution": {
       "receiver": 1,
       "di": 4,
@@ -112,6 +112,48 @@
       "complexity": 1
     },
     {
+      "kind": "Function",
+      "ast_kind": "call_expression",
+      "name": "AuthService",
+      "qualified_name": "tests/auth.test.ts::AuthService",
+      "file_path": "tests/auth.test.ts",
+      "line_start": 2,
+      "line_end": 12,
+      "language": "TypeScript",
+      "is_test": false,
+      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+      "content_hash": "27a5760e1484f2780ba1056b833f0dc9111f4e7e332ca63d61ad5995310ab49a",
+      "complexity": 1
+    },
+    {
+      "kind": "Function",
+      "ast_kind": "call_expression",
+      "name": "should authenticate valid user",
+      "qualified_name": "tests/auth.test.ts::should authenticate valid user",
+      "file_path": "tests/auth.test.ts",
+      "line_start": 3,
+      "line_end": 6,
+      "language": "TypeScript",
+      "is_test": false,
+      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+      "content_hash": "a05fd413d73d474cacb0f096940838e7c08a91b4e7ef99bd3e75c7bf3b6bdd13",
+      "complexity": 1
+    },
+    {
+      "kind": "Function",
+      "ast_kind": "call_expression",
+      "name": "verifyToken returns true for non-empty",
+      "qualified_name": "tests/auth.test.ts::verifyToken returns true for non-empty",
+      "file_path": "tests/auth.test.ts",
+      "line_start": 8,
+      "line_end": 11,
+      "language": "TypeScript",
+      "is_test": false,
+      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
+      "content_hash": "fc57696babdd2781291da0e8a38a411f84de6ef5357a98b85834109e72e2319c",
+      "complexity": 1
+    },
+    {
       "kind": "Constructor",
       "ast_kind": "method_definition",
       "name": "AuthService.constructor",
@@ -196,48 +238,6 @@
       "is_test": false,
       "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
       "content_hash": "cf5e26647fb5296b40576c2563e934f9c8450a97bdc48639ce0263c254102e3c",
-      "complexity": 1
-    },
-    {
-      "kind": "Function",
-      "ast_kind": "call_expression",
-      "name": "AuthService",
-      "qualified_name": "tests/auth.test.ts::AuthService",
-      "file_path": "tests/auth.test.ts",
-      "line_start": 2,
-      "line_end": 12,
-      "language": "TypeScript",
-      "is_test": false,
-      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
-      "content_hash": "27a5760e1484f2780ba1056b833f0dc9111f4e7e332ca63d61ad5995310ab49a",
-      "complexity": 1
-    },
-    {
-      "kind": "Function",
-      "ast_kind": "call_expression",
-      "name": "should authenticate valid user",
-      "qualified_name": "tests/auth.test.ts::should authenticate valid user",
-      "file_path": "tests/auth.test.ts",
-      "line_start": 3,
-      "line_end": 6,
-      "language": "TypeScript",
-      "is_test": false,
-      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
-      "content_hash": "a05fd413d73d474cacb0f096940838e7c08a91b4e7ef99bd3e75c7bf3b6bdd13",
-      "complexity": 1
-    },
-    {
-      "kind": "Function",
-      "ast_kind": "call_expression",
-      "name": "verifyToken returns true for non-empty",
-      "qualified_name": "tests/auth.test.ts::verifyToken returns true for non-empty",
-      "file_path": "tests/auth.test.ts",
-      "line_start": 8,
-      "line_end": 11,
-      "language": "TypeScript",
-      "is_test": false,
-      "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a",
-      "content_hash": "fc57696babdd2781291da0e8a38a411f84de6ef5357a98b85834109e72e2319c",
       "complexity": 1
     },
     {
@@ -454,21 +454,21 @@
     },
     {
       "kind": "CALLS",
-      "source_qualified": "src/auth.ts::AuthService.authenticate",
-      "target_qualified": "src/db.ts::findUser",
-      "file_path": "src/auth.ts",
-      "line": 11,
-      "confidence": 0.9,
-      "tier": "import"
-    },
-    {
-      "kind": "CALLS",
       "source_qualified": "tests/auth.test.ts::verifyToken returns true for non-empty",
       "target_qualified": "src/auth.ts::AuthService.verifyToken",
       "file_path": "tests/auth.test.ts",
       "line": 10,
       "confidence": 0.95,
       "tier": "receiver"
+    },
+    {
+      "kind": "CALLS",
+      "source_qualified": "src/auth.ts::AuthService.authenticate",
+      "target_qualified": "src/db.ts::findUser",
+      "file_path": "src/auth.ts",
+      "line": 11,
+      "confidence": 0.9,
+      "tier": "import"
     },
     {
       "kind": "CALLS",
@@ -585,16 +585,16 @@
     },
     {
       "kind": "IMPORTS",
-      "source_qualified": "src/auth.ts",
-      "target_qualified": "src/db.ts",
-      "file_path": "src/auth.ts",
+      "source_qualified": "tests/auth.test.ts",
+      "target_qualified": "src/auth.ts",
+      "file_path": "tests/auth.test.ts",
       "line": 0
     },
     {
       "kind": "IMPORTS",
-      "source_qualified": "tests/auth.test.ts",
-      "target_qualified": "src/auth.ts",
-      "file_path": "tests/auth.test.ts",
+      "source_qualified": "src/auth.ts",
+      "target_qualified": "src/db.ts",
+      "file_path": "src/auth.ts",
       "line": 0
     },
     {
@@ -623,6 +623,41 @@
       "source_qualified": "src/auth.ts::AuthService.verifyToken",
       "target_qualified": "tests/auth.test.ts",
       "file_path": "tests/auth.test.ts",
+      "line": 0
+    },
+    {
+      "kind": "USES_TYPE",
+      "source_qualified": "src/controller.ts::AuthController.AuthController.constructor",
+      "target_qualified": "src/auth.ts::AuthService",
+      "file_path": "src/controller.ts",
+      "line": 0
+    },
+    {
+      "kind": "USES_TYPE",
+      "source_qualified": "src/controller.ts::AuthController.AuthController.constructor",
+      "target_qualified": "src/user.service.ts::UserService",
+      "file_path": "src/controller.ts",
+      "line": 0
+    },
+    {
+      "kind": "USES_TYPE",
+      "source_qualified": "src/auth.ts::AuthService.AuthService.constructor",
+      "target_qualified": "src/auth.ts::AuthConfig",
+      "file_path": "src/auth.ts",
+      "line": 0
+    },
+    {
+      "kind": "USES_TYPE",
+      "source_qualified": "src/services.ts::AccountService.AccountService.constructor",
+      "target_qualified": "src/auth.ts::AuthService",
+      "file_path": "src/services.ts",
+      "line": 0
+    },
+    {
+      "kind": "USES_TYPE",
+      "source_qualified": "src/services.ts::AccountService.AccountService.constructor",
+      "target_qualified": "src/user.service.ts::UserService",
+      "file_path": "src/services.ts",
       "line": 0
     },
     {
@@ -662,6 +697,27 @@
     },
     {
       "kind": "CONTAINS",
+      "source_qualified": "tests/auth.test.ts",
+      "target_qualified": "tests/auth.test.ts::AuthService",
+      "file_path": "tests/auth.test.ts",
+      "line": 0
+    },
+    {
+      "kind": "CONTAINS",
+      "source_qualified": "tests/auth.test.ts",
+      "target_qualified": "tests/auth.test.ts::should authenticate valid user",
+      "file_path": "tests/auth.test.ts",
+      "line": 0
+    },
+    {
+      "kind": "CONTAINS",
+      "source_qualified": "tests/auth.test.ts",
+      "target_qualified": "tests/auth.test.ts::verifyToken returns true for non-empty",
+      "file_path": "tests/auth.test.ts",
+      "line": 0
+    },
+    {
+      "kind": "CONTAINS",
       "source_qualified": "src/auth.ts",
       "target_qualified": "src/auth.ts::AuthService.AuthService.constructor",
       "file_path": "src/auth.ts",
@@ -693,27 +749,6 @@
       "source_qualified": "src/auth.ts",
       "target_qualified": "src/auth.ts::validateEmail",
       "file_path": "src/auth.ts",
-      "line": 0
-    },
-    {
-      "kind": "CONTAINS",
-      "source_qualified": "tests/auth.test.ts",
-      "target_qualified": "tests/auth.test.ts::AuthService",
-      "file_path": "tests/auth.test.ts",
-      "line": 0
-    },
-    {
-      "kind": "CONTAINS",
-      "source_qualified": "tests/auth.test.ts",
-      "target_qualified": "tests/auth.test.ts::should authenticate valid user",
-      "file_path": "tests/auth.test.ts",
-      "line": 0
-    },
-    {
-      "kind": "CONTAINS",
-      "source_qualified": "tests/auth.test.ts",
-      "target_qualified": "tests/auth.test.ts::verifyToken returns true for non-empty",
-      "file_path": "tests/auth.test.ts",
       "line": 0
     },
     {
