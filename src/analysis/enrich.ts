@@ -97,6 +97,7 @@ export function enrichChangedFunctions(
                         file_path: sourceNode?.file_path || edge.file_path,
                         line: edge.line,
                         confidence: edge.confidence ?? 1.0,
+                        ...(edge.tier ? { tier: edge.tier } : {}),
                         ...(edge.alternatives && edge.alternatives.length > 0
                             ? { alternatives: edge.alternatives }
                             : {}),
@@ -139,6 +140,8 @@ export function enrichChangedFunctions(
                     name,
                     file_path: targetNode?.file_path || '',
                     signature: `${name}${params}${ret}`,
+                    confidence: edge.confidence ?? 1.0,
+                    ...(edge.tier ? { tier: edge.tier } : {}),
                 });
             }
 

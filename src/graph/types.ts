@@ -192,6 +192,8 @@ export interface CallerRef {
     file_path: string;
     line: number;
     confidence: number;
+    /** How the resolver reached this edge. Mirrors GraphEdge.tier. */
+    tier?: EdgeTier;
     /** Non-picked resolver candidates — mirrors GraphEdge.alternatives for ambiguous CALLS. */
     alternatives?: string[];
 }
@@ -201,6 +203,17 @@ export interface CalleeRef {
     name: string;
     file_path: string;
     signature: string;
+    /**
+     * Resolver confidence, same scale as CallerRef.
+     *
+     * Callees previously carried no confidence at all, so a 0.60 unique-name
+     * guess and a 0.95 receiver-typed resolution reached consumers as equally
+     * asserted fact — the resolver does the work of five tiers and the callee
+     * direction threw it away.
+     */
+    confidence: number;
+    /** How the resolver reached this edge. Mirrors GraphEdge.tier. */
+    tier?: EdgeTier;
 }
 
 export interface EnrichedFunction {

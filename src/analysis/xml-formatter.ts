@@ -29,6 +29,27 @@ function escapeXml(str: string): string {
         .replace(/'/g, '&apos;');
 }
 
+/**
+ * Render how a CALLS edge was resolved, as XML attributes.
+ *
+ * The resolver grades every edge across five tiers — `receiver` (0.95, the
+ * receiver's type is known), `di`, `same`, `import`, `unique` (0.60, nothing but
+ * the name was unique) down to `ambiguous` (0.30, one of several candidates was
+ * picked) — and this formatter used to emit them all identically:
+ *
+ *     <Caller name="login" file="src/app/login.ts" line="1" />
+ *
+ * A byte-identical rendering for a typed resolution and a name guess makes every
+ * edge read as equally-asserted fact, which is precisely how a caller list turns
+ * into a confident wrong answer. Naming the tier tells a reader *why* to trust
+ * the edge, which is more actionable than a bare float; the number is kept for
+ * anything that wants to threshold on it.
+ */
+function resolutionAttrs(ref: { confidence: number; tier?: string }): string {
+    const tier = ref.tier ? ` tier="${escapeXml(ref.tier)}"` : '';
+    return ` confidence="${ref.confidence.toFixed(2)}"${tier}`;
+}
+
 function _shortName(qualifiedName: string): string {
     return qualifiedName.split('::').pop() || qualifiedName;
 }
@@ -485,7 +506,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
                 if (isAmbiguous && c.alternatives && c.alternatives.length > 0) {
                     const alts = c.alternatives;
                     lines.push(
-                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}">`,
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}"${resolutionAttrs(c)}>`,
                     );
                     lines.push('        <Alternatives>');
                     const shownAlts = alts.slice(0, MAX_ALTERNATIVES_RENDERED);
@@ -499,7 +520,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
                     lines.push('      </Caller>');
                 } else {
                     lines.push(
-                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}" />`,
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}"${resolutionAttrs(c)} />`,
                     );
                 }
             }
