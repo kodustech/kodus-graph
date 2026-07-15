@@ -202,7 +202,55 @@ interface RiskFactor {
 }
 ```
 
-Weights override via `--risk-config <path>` (a JSON object). The shape is validated with Zod; unknown keys cause an error.
+Each factor normalizes against its own cap — they are different units, and one
+shared cap silently disables whichever it wasn't calibrated for:
+
+```ts
+interface RiskCaps {
+  blast_functions: number;   // default 20 — where blast_radius saturates
+  cyclomatic:      number;   // default 10 — decision points (McCabe's ceiling)
+  lines_of_code:   number;   // default 50 — legacy fallback only
+}
+```
+
+| Factor | Normalization |
+|---|---|
+| `blast_radius` | `log1p(n) / log1p(caps.blast_functions)`, capped at 1. Log rather than linear: the 0 → 1 caller jump is the one that decides a review; 40 vs 41 is not. Saturates at the cap. |
+| `test_gaps` | Fraction of changed functions no test calls. See `TESTED_BY` below. |
+| `complexity` | Cyclomatic against `caps.cyclomatic` when nodes carry `complexity`; lines-of-code against `caps.lines_of_code` otherwise. |
+| `inheritance` | Share of changed symbols sitting in a class hierarchy, counting a method through its owning class. |
+
+> **Changed in 0.6.0.** `caps.complexity` is gone, split into `caps.cyclomatic`
+> and `caps.lines_of_code`. The Zod schema is `.strict()`, so a config carrying
+> the old key errors instead of normalizing cyclomatic complexity against a
+> lines-of-code figure. Scores from before 0.6.0 are not comparable — three of
+> the four factors changed scale.
+
+Weights override via `--risk-config <path>` (a JSON object). The shape is validated with Zod; unknown keys cause an error. Weights must sum to 1.0.
+
+The score orders attention. It is not calibrated against defect data.
+
+### `TESTED_BY` semantics
+
+`source_qualified` is the tested entity, and its shape carries the evidence class:
+
+| Shape | Meaning | Produced by |
+|---|---|---|
+| `src/a.ts::foo` | A test **calls** `foo`. Precise. | A resolved CALLS edge whose source file is a test file. |
+| `src/a.ts` | Something in this file is probably covered. Coarse. | Filename matching — **only** for languages whose test calls don't resolve anywhere in the repo (rust, today). |
+
+`target_qualified` is the test file. Note `file_path` on a TESTED_BY edge points
+at the *test*, not the tested file.
+
+Consumers must keep the two apart: flattening `a.ts::foo` to `a.ts` lets one
+tested function vouch for every function beside it. Use
+`GraphIndex.isTested(qualifiedName, filePath)`, which asks symbol evidence first
+and falls back to the file-level signal.
+
+> **Changed in 0.6.0.** `TESTED_BY` previously came from *imports* — any resolved
+> import out of a test file marked the imported file, and every function in it,
+> as tested. A test importing a single constant reported "0/3 untested" across
+> three untested functions.
 
 ### `TestGap`
 
@@ -214,7 +262,7 @@ interface TestGap {
 }
 ```
 
-Changed functions that have no inbound `TESTED_BY` edge.
+Changed functions no test exercises — the complement of `GraphIndex.isTested`.
 
 ---
 
@@ -270,6 +318,7 @@ interface EnrichedFunction {
   caller_impact?: string;                     // human summary
   is_new: boolean;
   in_flows: string[];                         // entry-point qualified names
+  is_exported?: boolean;                      // see below
 }
 
 interface CallerRef {
@@ -278,6 +327,7 @@ interface CallerRef {
   file_path: string;
   line: number;
   confidence: number;
+  tier?: EdgeTier;                            // mirrors GraphEdge.tier
   alternatives?: string[];                    // mirrors GraphEdge.alternatives
 }
 
@@ -286,7 +336,36 @@ interface CalleeRef {
   name: string;
   file_path: string;
   signature: string;
+  confidence: number;
+  tier?: EdgeTier;
 }
+```
+
+**`is_exported` is load-bearing for reading `callers`.** For a non-exported
+symbol the caller list is exhaustive, and an empty one means nothing calls it.
+For an exported symbol it is a **lower bound** — the graph sees this repository
+only, and a package consumer, a dynamic import or a downstream service is
+invisible to it. "No callers" means "no callers here", not "unused".
+
+**`confidence` / `tier` say how much of a claim an edge is.** The resolver grades
+every CALLS edge from `receiver` (0.95, the receiver's type is known) down to
+`ambiguous` (0.30, one of several candidates was picked); an edge at 0.60 was
+reached by guessing that a name happened to be unique. Consumers that present
+edges to a model should carry the tier through, or a guess and a typed resolution
+arrive as the same assertion.
+
+> **Changed in 0.6.0.** `CallerRef.tier`, `CalleeRef.confidence` / `tier` and
+> `EnrichedFunction.is_exported` are new. `CalleeRef` previously carried no
+> confidence at all, so a 0.30 callee reached consumers as flat fact.
+
+`--format xml` surfaces all three as attributes:
+
+```xml
+<ChangedFunction name="AuthService.verifyToken" ... exported="true">
+  <Callers count="1" untestedCount="1">
+    <Caller name="..." file="tests/auth.test.ts" line="10" confidence="0.95" tier="receiver" />
+  </Callers>
+</ChangedFunction>
 ```
 
 ---

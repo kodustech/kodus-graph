@@ -69,16 +69,52 @@ describe('GraphIndex', () => {
         expect(idx.nodeByQualified('nonexistent')).toBeUndefined();
     });
 
-    it('testedFiles is the set of source files with TESTED_BY edges', () => {
+    it('testedFiles holds file-level TESTED_BY only; symbol-level lives in testedFunctions', () => {
         const idx = new GraphIndex(graph);
+        // `f1.ts` is covered by the coarse filename fallback (a bare file source).
         expect(idx.testedFiles.has('f1.ts')).toBe(true);
         expect(idx.testedFiles.has('f2.ts')).toBe(false);
+
+        // Splitting `::` off every edge would fold symbol-level evidence into
+        // this set, letting one tested function vouch for its whole file.
+        const withSymbolEvidence = new GraphIndex({
+            ...graph,
+            edges: [
+                {
+                    kind: 'TESTED_BY',
+                    source_qualified: 'f2.ts::b',
+                    target_qualified: 'f1.test.ts',
+                    file_path: 'f2.ts',
+                    line: 0,
+                },
+            ],
+        });
+        expect(withSymbolEvidence.testedFunctions.has('f2.ts::b')).toBe(true);
+        expect(withSymbolEvidence.testedFiles.has('f2.ts')).toBe(false);
     });
 
-    it('hasInheritanceInFiles returns true when any INHERITS/IMPLEMENTS edge is in the set', () => {
+    it('isTested answers from symbol evidence, falling back to the file-level signal', () => {
         const idx = new GraphIndex(graph);
-        expect(idx.hasInheritanceInFiles(new Set(['f1.ts']))).toBe(true);
-        expect(idx.hasInheritanceInFiles(new Set(['f2.ts']))).toBe(false);
+        // f1.ts has only file-level coverage — every symbol in it inherits that.
+        expect(idx.isTested('f1.ts::a', 'f1.ts')).toBe(true);
+        expect(idx.isTested('f2.ts::b', 'f2.ts')).toBe(false);
+    });
+
+    it('hierarchyShare is the fraction of symbols sitting in a hierarchy', () => {
+        const idx = new GraphIndex(graph);
+        const child = { qualified_name: 'f1.ts::Child', file_path: 'f1.ts' } as GraphData['nodes'][number];
+        const plain = { qualified_name: 'f1.ts::a', file_path: 'f1.ts' } as GraphData['nodes'][number];
+        const method = { qualified_name: 'f1.ts::Child.run', file_path: 'f1.ts' } as GraphData['nodes'][number];
+
+        // Replaces a file-scoped boolean that awarded full weight whenever ANY
+        // inheritance edge existed in a changed file — so touching `a`, which is
+        // in no hierarchy, scored the same as reworking `Child`.
+        expect(idx.hierarchyShare([child])).toBe(1);
+        expect(idx.hierarchyShare([plain])).toBe(0);
+        expect(idx.hierarchyShare([child, plain])).toBe(0.5);
+        // A method counts through its owning class.
+        expect(idx.hierarchyShare([method])).toBe(1);
+        expect(idx.hierarchyShare([])).toBe(0);
     });
 
     it('exposes the underlying graph read-only', () => {

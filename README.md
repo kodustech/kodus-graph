@@ -10,23 +10,26 @@ An LLM handed a raw diff sees changed lines. It doesn't see who calls the functi
 
 ```bash
 kodus-graph parse --all --repo-dir . --out graph.json
-kodus-graph context --files src/auth.ts --graph graph.json --format prompt --out -
+kodus-graph context --files src/auth.ts --graph graph.json --diff pr.diff --format prompt --out -
 ```
 
 ```
-=== Code Review Context ===
+1 changed (0 untested) | 3 impacted | 2 files | risk MEDIUM 0.41
 
-Risk Level: MEDIUM (score: 0.45)
-Blast Radius: 12 functions across 5 files
+CHANGED:
+  verifyToken(token: string, opts: VerifyOpts) -> Promise<boolean> [src/auth.ts:16-18] modified | 1 callers | tested
+    ⚠ params: (token: string) → (token: string, opts: VerifyOpts)
+    ⚠ return_type: boolean → Promise<boolean>
+    ⚠ 1 callers may need param update; 1 callers may assume old return type
+    ← verifyToken returns true for non-empty [tests/auth.test.ts:10]
+    flow: TEST verifyToken returns true for non-empty → AuthService.verifyToken
 
-1. src/auth.ts::authenticate
-   Status: modified
-     Changes: params, return_type, is_async
-     - is_async: false -> true
-     Impact: 5 callers must add await (sync->async)
-   Callers: [login, middleware.verify, api.handleAuth, ...]
-   Test coverage: YES (auth.test.ts)
+BLAST RADIUS:
+  depth 1 [contract_breaking]: verifyToken returns true for non-empty (95%, score 0.13) (1)
+    ⚠ callers may need update (contract changed)
 ```
+
+Real output, reproducible with [`scripts/generate-examples.sh`](scripts/generate-examples.sh) — see [`examples/`](#examples) for every command's.
 
 14 languages. Deterministic — there is no model in the parse path, so the graph is the same every run. Standalone CLI and library: it powers review at [Kodus](https://kodus.io), but nothing here is coupled to it.
 
@@ -41,7 +44,9 @@ Blast Radius: 12 functions across 5 files
 - **Kotlin extension functions** — `fun Foo.bar()` is indexed as `Foo.bar`, so `foo.bar()` resolves at the receiver tier.
 - **JSX/TSX components as calls** — `<UserCard />` becomes a CALLS edge to the component function/class.
 - **Contract diffs** — Detects changes to params, return types, modifiers, async, and decorators (not just body edits).
-- **Function-level blast radius** — Impact analysis per function, not per file.
+- **Function-level blast radius** — Impact analysis per function, not per file. Log-scaled: 0 callers vs 1 is the jump that decides a review, and it reads as one.
+- **Call-based test coverage** — `TESTED_BY` comes from a test **calling** a symbol, recorded per symbol. Importing a file does not make it tested; a filename match is the fallback only for languages whose test calls don't resolve.
+- **Confidence reaches the consumer** — Every caller carries the `tier` and `confidence` it was resolved with, so a 0.95 receiver-typed edge and a 0.60 name guess don't read as the same claim. Output also states its own limits: absence from the graph is not absence from the codebase.
 - **Smart import resolution** — tsconfig extends/rootDirs/project references, monorepo workspace exports, package.json `#imports`, Webpack/Vite aliases, Go workspaces/vendor, Maven/Gradle multi-module (with test source roots and `<sourceDirectory>` overrides), Cargo workspace path deps.
 - **External package detection** — Distinguishes internal code from npm, pip, Maven, Cargo, etc.
 - **Composable extractors** — Per-language extractor files behind generic `createLanguageRegistry<T>()` factory; same shape for extractors, noise, DI heuristics, capabilities, receiver-types.
@@ -649,25 +654,53 @@ This gives the AI agent full understanding of:
 | HIGH | 0.6-1.0 | Wide blast radius, missing tests, or inheritance chain affected |
 
 The score is computed from 4 factors (defaults — override via `--risk-config`):
-- **blast_radius** (35%) — how many functions are affected
-- **test_gaps** (30%) — how many changed functions lack tests
-- **complexity** (20%) — average lines-of-code in changed functions (switches to cyclomatic complexity in a later release)
-- **inheritance** (15%) — whether class hierarchy is affected
+
+| Factor | Weight | What it measures | How it normalizes |
+|---|:---:|---|---|
+| **blast_radius** | 35% | How many functions the change reaches | `log1p(n) / log1p(caps.blast_functions)`, saturating at the cap. Log rather than linear: the jump from 0 callers to 1 is the one that decides a review; 40 vs 41 is not. |
+| **test_gaps** | 30% | How many changed functions no test exercises | A function is tested when a test **calls** it — resolved per symbol, not inferred from an import. Languages whose test calls don't resolve fall back to a file-level filename match. |
+| **complexity** | 20% | How gnarly the changed functions are | Cyclomatic complexity against `caps.cyclomatic` (10 — McCabe's per-function ceiling). Lines-of-code against `caps.lines_of_code` only for legacy graphs whose nodes carry no `complexity`. |
+| **inheritance** | 15% | How much of the change sits in a class hierarchy | The share of changed symbols that extend or implement something, counting a method through its owning class. |
+
+Weights must sum to 1.0. Caps are per-unit and independent:
+
+```jsonc
+{
+  "weights": { "blast_radius": 0.35, "test_gaps": 0.3, "complexity": 0.2, "inheritance": 0.15 },
+  "caps": {
+    "blast_functions": 20,   // affected functions at which blast_radius saturates
+    "cyclomatic": 10,        // decision points at which complexity saturates
+    "lines_of_code": 50      // legacy fallback only — nodes with no complexity field
+  }
+}
+```
+
+The score orders attention; it is not a calibrated probability of defect. The
+weights are defaults chosen by judgement, not fitted against outcome data.
 
 ## Examples
 
-The `examples/` directory contains real output from running kodus-graph on a sample TypeScript project:
+The `examples/` directory is real output from running kodus-graph on
+[`tests/fixtures/sample-repo`](tests/fixtures/sample-repo), regenerated by
+[`scripts/generate-examples.sh`](scripts/generate-examples.sh). The script parses
+a baseline, changes `AuthService.verifyToken`'s signature, and asks for context —
+the case the tool exists for: the signature moves, the callers don't, and only
+the graph knows who breaks.
 
 | File | Command | Description |
 |---|---|---|
-| [`parse-output.json`](examples/parse-output.json) | `parse --all` | Full graph with nodes, edges, and new fields |
+| [`parse-output.json`](examples/parse-output.json) | `parse --all` | Full graph — nodes, edges, per-edge tier and confidence |
 | [`analyze-output.json`](examples/analyze-output.json) | `analyze --files src/auth.ts` | Blast radius, risk score, test gaps |
 | [`context-output.json`](examples/context-output.json) | `context --format json` | Enriched review context (JSON) |
 | [`context-prompt-output.txt`](examples/context-prompt-output.txt) | `context --format prompt` | Review context formatted for LLM agents |
+| [`context-xml-output.xml`](examples/context-xml-output.xml) | `context --format xml` | Same, as XML — `<ReviewFocus>`, `<CriticalPaths>`, `<ContractDiff>` |
 | [`diff-output.json`](examples/diff-output.json) | `diff --files src/auth.ts` | Structural diff with contract diffs |
 | [`search-output.json`](examples/search-output.json) | `search --query "auth*"` | Graph search results |
 | [`flows-output.json`](examples/flows-output.json) | `flows` | Execution flow traces |
 | [`communities-output.json`](examples/communities-output.json) | `communities` | Module clustering |
+
+Run the script after any change to output shape or scoring — these files are the
+showcase, and they drift silently otherwise.
 
 ## Architecture
 

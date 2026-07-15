@@ -161,18 +161,4 @@ export class GraphIndex {
         }
         return count / nodes.length;
     }
-
-    hasInheritanceInFiles(files: ReadonlySet<string>): boolean {
-        for (const edge of this.edgesByKind('INHERITS')) {
-            if (files.has(edge.file_path)) {
-                return true;
-            }
-        }
-        for (const edge of this.edgesByKind('IMPLEMENTS')) {
-            if (files.has(edge.file_path)) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

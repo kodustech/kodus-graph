@@ -5,6 +5,105 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-07-15
+
+The "say what you actually know" release. Barrel imports silently erased the call
+graph on any TS/JS repo that uses them; three of four risk factors measured
+something other than what they claimed; and the resolver's five confidence tiers
+were discarded at serialization, so a name guess and a typed resolution reached
+the model as the same assertion.
+
+**Risk scores will change, mostly upward.** That is corrected behaviour becoming
+visible, not a regression. The scores were never calibrated against outcome data
+and still aren't — they order attention, they don't predict defects. Re-baseline
+before comparing across versions.
+
+### ⚠ Breaking
+
+- **`caps.complexity` is replaced by `caps.cyclomatic` (default 10) and
+  `caps.lines_of_code` (default 50).** One cap normalized two different units:
+  `risk-score` prefers cyclomatic complexity whenever nodes carry it — the
+  default on any modern graph — and divided it by 50, a figure calibrated for
+  lines. A function at cyclomatic 10 scored 10/50 = 0.2, contributing 0.04 of an
+  available 0.20; the factor had a weight but no voice. The Zod schema is
+  `.strict()`, so a `--risk-config` carrying the old key now fails loudly rather
+  than normalizing against the wrong unit.
+
+### Highlights
+
+- **Barrel imports resolve.** `languageOfFile` returns `'TypeScript'` / `'Tsx'` /
+  `'JavaScript'` (ast-grep `Lang` casing) while the import-resolver registry was
+  keyed `'ts'` / `'typescript'` only. So `buildReExportMap` missed for every TS/JS
+  file, `export { x } from './x'` was never followed, imports stayed pointed at
+  the barrel — and because a pure barrel declares no symbol, the builder then
+  dropped every CALLS edge through it as an external target. A NestJS / Angular /
+  monorepo repo produced **zero call edges** and reported `impactedCallers="0"`,
+  which downstream is indistinguishable from code nothing calls. TS/JS/TSX only;
+  Python barrels (`__init__.py`) go through the ordinary import path and were
+  never affected.
+- **`TESTED_BY` means a test calls it.** It came from imports: any resolved
+  import out of a test file marked the imported file — and every function in it —
+  as tested. A test importing a single constant reported "0/3 untested" across
+  three untested functions, and `test_gaps` is 30% of the score.
+- **Confidence reaches the consumer.** Every `<Caller>` carries the `tier` and
+  `confidence` it was resolved with, and the output states its own limits.
+- **`analyze` and `context` agree.** They walked different blast-radius depths
+  over the same graph, each internally consistent.
+
+### Added
+
+- `<Caller confidence tier>` and `<ChangedFunction exported>` in XML output;
+  `CallerRef.tier`, `CalleeRef.confidence` / `tier`, `EnrichedFunction.is_exported`.
+- A header on `<CallGraph>` naming what static analysis cannot see — reflection,
+  dynamic dispatch, consumers outside the repo — so absence from the map is not
+  read as absence from the codebase.
+- `analyze --max-depth`, a flag it never accepted.
+- `resolveCallsForGraph(rawGraph, symbolTable, importMap)` — a resolver entry
+  point that cannot be called with the wrong arguments.
+- `GraphIndex.testedFunctions`, `GraphIndex.isTested`, `GraphIndex.hierarchyShare`.
+- `scripts/generate-examples.sh` — `examples/` is regenerated from a real
+  baseline-plus-diff run instead of being hand-maintained.
+
+### Changed
+
+- **blast_radius** normalizes as `log1p(n) / log1p(cap)`, saturating at the cap.
+  Under `n / 20` the 0 → 1 caller jump — dead code vs code something depends on —
+  was worth 0.017 of an available 0.35, and 40 callers scored the same as 20.
+- **inheritance** is the share of changed symbols sitting in a hierarchy,
+  counting a method through its owning class. It was a file-scoped boolean:
+  touching a comment beside one `class X implements Y` scored full weight.
+- **`update`** streams its output. `JSON.stringify(output, null, 2)` over the
+  whole merged graph throws `Invalid string length` past ~512MB, undoing the
+  adaptive batch sizing that holds parse memory down.
+- **`update`** seeds its symbol table from the baseline graph it already loads.
+  A slice-only table makes every name look unique, promoting genuinely ambiguous
+  calls from 0.30 to 0.60 — above the default `--min-confidence 0.5` — so
+  `update` published edges `parse` discards, aimed at whichever definition
+  happened to be in the slice.
+- **`analyze` / `diff` / `update`** pass all seven resolver arguments. They
+  passed four, and the rest default to empty maps: silently disabling the
+  receiver tier's inheritance walk (0.85 → 0.60 on an inherited method), the
+  chained-call pass, and `@IMPORT:` / `@CALLEE:` deferred resolution.
+- `DEFAULT_BLAST_MAX_DEPTH = 3` is the single spelling of a depth previously
+  written three times, with `analyze` silently taking a fourth.
+- Filename-matched `TESTED_BY` resolves by path proximity, and only for languages
+  whose test calls don't resolve at all. `tests/user.test.ts` claimed every
+  `user.*` in the repo, so a test for `createUser` vouched for
+  `src/admin/user.ts::deleteAllUsers`.
+
+### Fixed
+
+- `graph/builder.ts` reports CALLS edges dropped for targeting an in-repo file
+  that declares no symbols, instead of swallowing them. That silence is how the
+  barrel bug survived 1219 passing tests.
+- The symbol-to-file flattening of `TESTED_BY` in three places — `graph-index`,
+  `enrich`, `xml-formatter` — each letting one tested function vouch for its
+  whole file.
+
+### Removed
+
+- `GraphIndex.hasInheritanceInFiles`, superseded by `hierarchyShare`.
+
 ## [0.5.0] — 2026-06-24
 
 The "grammar-drift guard" release. Per-language extractors no longer carry

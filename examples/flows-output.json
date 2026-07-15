@@ -1,6 +1,19 @@
 {
   "flows": [
     {
+      "entry_point": "src/controller.ts::AuthController.login",
+      "type": "http",
+      "depth": 2,
+      "node_count": 3,
+      "file_count": 3,
+      "criticality": 9,
+      "path": [
+        "src/controller.ts::AuthController.login",
+        "src/auth.ts::AuthService.authenticate",
+        "src/db.ts::findUser"
+      ]
+    },
+    {
       "entry_point": "tests/auth.test.ts::verifyToken returns true for non-empty",
       "type": "test",
       "depth": 1,
@@ -10,18 +23,6 @@
       "path": [
         "tests/auth.test.ts::verifyToken returns true for non-empty",
         "src/auth.ts::AuthService.verifyToken"
-      ]
-    },
-    {
-      "entry_point": "src/controller.ts::AuthController.login",
-      "type": "http",
-      "depth": 1,
-      "node_count": 2,
-      "file_count": 1,
-      "criticality": 2,
-      "path": [
-        "src/controller.ts::AuthController.login",
-        "tests/auth.test.ts::AuthService.authenticate"
       ]
     },
     {
@@ -53,7 +54,7 @@
       "test": 3,
       "http": 1
     },
-    "avg_depth": 0.5,
-    "max_criticality": 4
+    "avg_depth": 0.8,
+    "max_criticality": 9
   }
 }

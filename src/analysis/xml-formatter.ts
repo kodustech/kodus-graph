@@ -50,10 +50,6 @@ function resolutionAttrs(ref: { confidence: number; tier?: string }): string {
     return ` confidence="${ref.confidence.toFixed(2)}"${tier}`;
 }
 
-function _shortName(qualifiedName: string): string {
-    return qualifiedName.split('::').pop() || qualifiedName;
-}
-
 function classQualifiedName(qualifiedName: string, name: string, parentName?: string): string {
     // Prefer parent_name when parser populated it — authoritative across languages
     // (Python emits `file::Class.method`, TS/Java emits `file::Class::method`, etc.).
