@@ -7,7 +7,7 @@
       "file_path": "src/auth.ts",
       "line_start": 2,
       "line_end": 5,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e"
     },
@@ -18,7 +18,7 @@
       "file_path": "src/auth.ts",
       "line_start": 7,
       "line_end": 19,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e"
     },
@@ -29,7 +29,7 @@
       "file_path": "src/auth.ts",
       "line_start": 8,
       "line_end": 8,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
       "parent_name": "AuthService",
@@ -42,7 +42,7 @@
       "file_path": "src/auth.ts",
       "line_start": 10,
       "line_end": 14,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "eeb3e626616885f9278dda74860345065a31937d19ce76199bd422cf286a5d9e",
       "parent_name": "AuthService",
@@ -56,7 +56,7 @@
       "file_path": "src/controller.ts",
       "line_start": 3,
       "line_end": 13,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "b3efa29415716f1ea22d6247e699e96c347856d6ba37752178c0f9c8a6e48cf2"
     },
@@ -67,7 +67,7 @@
       "file_path": "src/controller.ts",
       "line_start": 4,
       "line_end": 7,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "b3efa29415716f1ea22d6247e699e96c347856d6ba37752178c0f9c8a6e48cf2",
       "parent_name": "AuthController",
@@ -80,7 +80,7 @@
       "file_path": "tests/auth.test.ts",
       "line_start": 2,
       "line_end": 12,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": false,
       "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a"
     },
@@ -91,12 +91,13 @@
       "file_path": "tests/auth.test.ts",
       "line_start": 2,
       "line_end": 12,
-      "language": "typescript",
+      "language": "TypeScript",
       "is_test": true,
       "file_hash": "0eaee881e15b1779029ca9f1642b8165db0d0c3763c265b7262aa72bb15b9b9a"
     }
   ],
   "total": 8,
+  "returned": 8,
   "query": {
     "pattern": "auth*",
     "kind": null,

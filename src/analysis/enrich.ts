@@ -20,11 +20,18 @@ export function enrichChangedFunctions(
     const modifiedMap = new Map(diff.nodes.modified.map((m) => [m.qualified_name, m]));
 
     // Pre-index TESTED_BY — function-level when available, file-level as fallback.
-    // TESTED_BY edges: source_qualified = tested function/file, target_qualified = test.
-    // We collect both the qualified names (precise) and file path prefixes (fallback).
+    // `source_qualified` is the tested entity: a symbol (`a.ts::f`) when a test
+    // calls it, a bare file (`a.ts`) from the filename fallback for languages
+    // whose test calls don't resolve. Splitting `::` off EVERY edge is what
+    // defeated the fallback-only intent this comment already described: one
+    // tested function marked its whole file covered.
     const testedByEdges = graph.edges.filter((e) => e.kind === 'TESTED_BY');
-    const testedFunctions = new Set(testedByEdges.map((e) => e.source_qualified));
-    const testedFiles = new Set(testedByEdges.map((e) => e.source_qualified.split('::')[0]));
+    const testedFunctions = new Set(
+        testedByEdges.filter((e) => e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
+    const testedFiles = new Set(
+        testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
 
     // Pre-index flows by function
     const flowsByFunction = new Map<string, string[]>();
@@ -97,6 +104,7 @@ export function enrichChangedFunctions(
                         file_path: sourceNode?.file_path || edge.file_path,
                         line: edge.line,
                         confidence: edge.confidence ?? 1.0,
+                        ...(edge.tier ? { tier: edge.tier } : {}),
                         ...(edge.alternatives && edge.alternatives.length > 0
                             ? { alternatives: edge.alternatives }
                             : {}),
@@ -139,6 +147,8 @@ export function enrichChangedFunctions(
                     name,
                     file_path: targetNode?.file_path || '',
                     signature: `${name}${params}${ret}`,
+                    confidence: edge.confidence ?? 1.0,
+                    ...(edge.tier ? { tier: edge.tier } : {}),
                 });
             }
 
@@ -228,6 +238,7 @@ export function enrichChangedFunctions(
                 caller_impact: callerImpact,
                 is_new: isNew,
                 in_flows: flowsByFunction.get(node.qualified_name) || [],
+                ...(node.is_exported !== undefined ? { is_exported: node.is_exported } : {}),
             };
         });
 }

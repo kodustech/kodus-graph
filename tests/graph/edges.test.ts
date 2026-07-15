@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { deriveEdges, extractTestStem } from '../../src/graph/edges';
-import type { ImportEdge, RawGraph } from '../../src/graph/types';
+import type { ImportEdge, RawCallEdge, RawGraph } from '../../src/graph/types';
 
 describe('extractTestStem', () => {
     it('should extract stem from Ruby spec files', () => {
@@ -149,9 +149,20 @@ describe('deriveEdges', () => {
         expect(result.inherits).toHaveLength(0);
     });
 
-    it('should derive TESTED_BY edges from test file imports', () => {
+    it('derives TESTED_BY from a resolved call out of a test file, at symbol level', () => {
         const graph: RawGraph = {
-            functions: [],
+            functions: [
+                {
+                    name: 'authenticate',
+                    qualified: 'src/auth.ts::authenticate',
+                    file: 'src/auth.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    is_exported: true,
+                    is_async: false,
+                    lang: 'ts',
+                },
+            ] as unknown as RawGraph['functions'],
             classes: [],
             interfaces: [],
             enums: [],
@@ -159,7 +170,6 @@ describe('deriveEdges', () => {
             reExports: [],
             rawCalls: [],
             diMaps: new Map(),
-
             valueBindings: new Map(),
             tests: [
                 {
@@ -172,11 +182,133 @@ describe('deriveEdges', () => {
                 },
             ],
         };
+        const callEdges = [
+            { source: 'tests/auth.test.ts', target: 'src/auth.ts::authenticate', line: 3, confidence: 0.9 },
+        ] as unknown as RawCallEdge[];
+
+        const result = deriveEdges(graph, [], undefined, undefined, callEdges);
+
+        // Symbol-level, not file-level: the test exercises `authenticate`, and
+        // says nothing about whatever else lives in src/auth.ts.
+        expect(
+            result.testedBy.some((e) => e.source === 'src/auth.ts::authenticate' && e.target === 'tests/auth.test.ts'),
+        ).toBe(true);
+        expect(result.testedBy.some((e) => e.source === 'src/auth.ts')).toBe(false);
+    });
+
+    it('does not call a file tested just because a test imports it', () => {
+        // The old import heuristic fired on `import { CURRENCY }` exactly as it
+        // did on a call, so a test asserting one constant reported every function
+        // in the file as covered — and `test_gaps` is 30% of the risk score.
+        const graph: RawGraph = {
+            functions: [
+                {
+                    name: 'chargeCard',
+                    qualified: 'src/payment.ts::chargeCard',
+                    file: 'src/payment.ts',
+                    line_start: 3,
+                    line_end: 6,
+                    is_exported: true,
+                    is_async: false,
+                    lang: 'ts',
+                },
+                {
+                    name: 'createUser',
+                    qualified: 'src/user.ts::createUser',
+                    file: 'src/user.ts',
+                    line_start: 1,
+                    line_end: 3,
+                    is_exported: true,
+                    is_async: false,
+                    lang: 'ts',
+                },
+            ] as unknown as RawGraph['functions'],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            valueBindings: new Map(),
+            tests: [
+                {
+                    name: 'currency is BRL',
+                    file: 'tests/payment.test.ts',
+                    line_start: 1,
+                    line_end: 3,
+                    ast_kind: 'call_expression',
+                    qualified: 'tests/payment.test.ts::test:currency is BRL',
+                },
+                {
+                    name: 'creates',
+                    file: 'tests/user.test.ts',
+                    line_start: 1,
+                    line_end: 3,
+                    ast_kind: 'call_expression',
+                    qualified: 'tests/user.test.ts::test:creates',
+                },
+            ],
+        };
         const importEdges: ImportEdge[] = [
-            { source: 'tests/auth.test.ts', target: 'src/auth.ts', resolved: true, line: 1 },
+            // payment.test.ts imports the file but only asserts on a constant.
+            { source: 'tests/payment.test.ts', target: 'src/payment.ts', resolved: true, line: 1 },
+            { source: 'tests/user.test.ts', target: 'src/user.ts', resolved: true, line: 1 },
         ];
-        const result = deriveEdges(graph, importEdges);
-        expect(result.testedBy.some((e) => e.source === 'src/auth.ts' && e.target === 'tests/auth.test.ts')).toBe(true);
+        // user.test.ts calls into the repo; payment.test.ts calls nothing. The
+        // resolving call is what proves TS calls DO resolve here, so a TS test
+        // with none genuinely exercises nothing and the filename fallback stays
+        // out of it.
+        const callEdges = [
+            { source: 'tests/user.test.ts', target: 'src/user.ts::createUser', line: 2, confidence: 0.9 },
+        ] as unknown as RawCallEdge[];
+
+        const result = deriveEdges(graph, importEdges, undefined, undefined, callEdges);
+
+        expect(result.testedBy.some((e) => e.source.startsWith('src/payment.ts'))).toBe(false);
+        expect(result.testedBy.map((e) => e.source)).toEqual(['src/user.ts::createUser']);
+    });
+
+    it('falls back to file-name matching only for languages whose test calls do not resolve', () => {
+        // Rust today: `#[test]` fns exist but nothing resolves out of them. A
+        // filename match is the only signal left, so keep it — coarse, file-level,
+        // and confined to languages tier 1 could not speak for.
+        const graph: RawGraph = {
+            functions: [
+                {
+                    name: 'parse_config',
+                    qualified: 'src/config.rs::parse_config',
+                    file: 'src/config.rs',
+                    line_start: 1,
+                    line_end: 5,
+                    is_exported: true,
+                    is_async: false,
+                    lang: 'rust',
+                },
+            ] as unknown as RawGraph['functions'],
+            classes: [],
+            interfaces: [],
+            enums: [],
+            imports: [],
+            reExports: [],
+            rawCalls: [],
+            diMaps: new Map(),
+            valueBindings: new Map(),
+            tests: [
+                {
+                    name: 'parses',
+                    file: 'tests/config_test.rs',
+                    line_start: 1,
+                    line_end: 5,
+                    ast_kind: 'function_item',
+                    qualified: 'tests/config_test.rs::test:parses',
+                },
+            ],
+        };
+
+        const result = deriveEdges(graph, [], undefined, undefined, []);
+
+        expect(result.testedBy).toEqual([{ source: 'src/config.rs', target: 'tests/config_test.rs' }]);
     });
 
     it('should derive TESTED_BY edges from file-name matching (Ruby spec)', () => {

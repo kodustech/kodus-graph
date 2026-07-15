@@ -7,7 +7,7 @@
       ],
       "node_count": 7,
       "cohesion": 0,
-      "language": "typescript"
+      "language": "TypeScript"
     },
     {
       "name": "tests/auth.test.ts",
@@ -16,7 +16,16 @@
       ],
       "node_count": 6,
       "cohesion": 0,
-      "language": "typescript"
+      "language": "TypeScript"
+    },
+    {
+      "name": "src/services.ts",
+      "files": [
+        "src/services.ts"
+      ],
+      "node_count": 6,
+      "cohesion": 0.07,
+      "language": "TypeScript"
     },
     {
       "name": "src/controller.ts",
@@ -25,16 +34,7 @@
       ],
       "node_count": 3,
       "cohesion": 0,
-      "language": "typescript"
-    },
-    {
-      "name": "src/user.service.ts",
-      "files": [
-        "src/user.service.ts"
-      ],
-      "node_count": 2,
-      "cohesion": 0,
-      "language": "typescript"
+      "language": "TypeScript"
     },
     {
       "name": "src/db.ts",
@@ -43,15 +43,48 @@
       ],
       "node_count": 2,
       "cohesion": 0,
-      "language": "typescript"
+      "language": "TypeScript"
+    },
+    {
+      "name": "src/user.service.ts",
+      "files": [
+        "src/user.service.ts"
+      ],
+      "node_count": 2,
+      "cohesion": 0,
+      "language": "TypeScript"
     }
   ],
   "coupling": [
     {
+      "source": "src/db.ts",
+      "target": "src/services.ts",
+      "edges": 4,
+      "strength": "HIGH"
+    },
+    {
+      "source": "src/auth.ts",
+      "target": "src/services.ts",
+      "edges": 3,
+      "strength": "MEDIUM"
+    },
+    {
+      "source": "src/services.ts",
+      "target": "src/user.service.ts",
+      "edges": 2,
+      "strength": "MEDIUM"
+    },
+    {
+      "source": "src/auth.ts",
+      "target": "src/controller.ts",
+      "edges": 1,
+      "strength": "MEDIUM"
+    },
+    {
       "source": "src/auth.ts",
       "target": "tests/auth.test.ts",
       "edges": 1,
-      "strength": "HIGH"
+      "strength": "MEDIUM"
     },
     {
       "source": "src/auth.ts",
@@ -61,8 +94,8 @@
     }
   ],
   "summary": {
-    "total_communities": 5,
-    "avg_cohesion": 0,
+    "total_communities": 6,
+    "avg_cohesion": 0.01,
     "high_coupling_pairs": 2
   }
 }

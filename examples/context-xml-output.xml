@@ -1,0 +1,38 @@
+<CallGraph>
+  <!-- Static analysis of this repo at one commit. Absence here is not absence in the codebase:
+       reflection, dynamic dispatch and external consumers are invisible. Each edge carries the
+       tier and confidence it was resolved with — verify low-confidence claims with the tools
+       before acting on them. Reason from this map; answer from the code. -->
+  <Summary changedFunctions="1" untestedFunctions="0" impactedCallers="1" riskLevel="MEDIUM" riskScore="0.45" />
+
+  <ReviewFocus>
+    <Focus>Verify 1 callers of AuthService.verifyToken pass correct params after signature change (return type change: boolean → Promise&lt;boolean&gt;)</Focus>
+  </ReviewFocus>
+
+  <CriticalPaths>
+    <Path risk="high">
+      <Step>verifyToken returns true for non-empty</Step>
+      <Step annotation="return type changed">AuthService.verifyToken</Step>
+      <Risk>Caller verifyToken returns true for non-empty may assume old return type: boolean</Risk>
+    </Path>
+  </CriticalPaths>
+
+  <ChangedFunction name="AuthService.verifyToken" file="src/auth.ts" lines="16-18" tested="true" status="modified" exported="true">
+    <WhatChanged>Parameters changed: (token: string) → (token: string, opts: VerifyOpts). Return type changed: boolean → Promise&lt;boolean&gt;. Function body modified. 1 callers may need param update; 1 callers may assume old return type</WhatChanged>
+    <RiskSignals>
+      <Signal type="param-changed" severity="high">Parameters changed: (token: string) → (token: string, opts: VerifyOpts)</Signal>
+      <Signal type="return-type-changed" severity="high">Return type changed: boolean → Promise&lt;boolean&gt;</Signal>
+    </RiskSignals>
+    <Callers count="1" untestedCount="1">
+      <Caller name="verifyToken returns true for non-empty" file="tests/auth.test.ts" line="10" confidence="0.95" tier="receiver" />
+    </Callers>
+  </ChangedFunction>
+
+  <Imports>
+    <Import source="src/auth.ts" target="src/db.ts" />
+  </Imports>
+
+  <Hierarchy>
+    <Class name="AuthService" />
+  </Hierarchy>
+</CallGraph>

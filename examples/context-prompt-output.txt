@@ -1,16 +1,21 @@
-4 changed (4 untested) | 7 impacted | 1 files | risk MEDIUM 0.44
+1 changed (0 untested) | 5 impacted | 4 files | risk MEDIUM 0.45
 
 CHANGED:
-  authenticate(ctx: Context) -> Promise<Result> [src/auth.ts:10-14] new | 0 callers | untested
-
-  verifyToken(token: string) -> boolean [src/auth.ts:16-18] new | 0 callers | untested
-
-  hashPassword(password: string) -> string [src/auth.ts:21-23] new | 0 callers | untested
-
-  validateEmail(email: string) -> boolean [src/auth.ts:25-27] new | 0 callers | untested
+  verifyToken(token: string, opts: VerifyOpts) -> Promise<boolean> [src/auth.ts:16-18] modified | 1 callers | tested
+    ⚠ params: (token: string) → (token: string, opts: VerifyOpts)
+    ⚠ return_type: boolean → Promise<boolean>
+    ⚠ 1 callers may need param update; 1 callers may assume old return type
+    ← verifyToken returns true for non-empty [tests/auth.test.ts:10]
+    flow: TEST verifyToken returns true for non-empty → AuthService.verifyToken
 
 IMPORTS:
-  src/auth.ts → src/db.ts (NEW, ⚠ UNRESOLVED)
+  src/auth.ts → src/db.ts
 
 HIERARCHY:
   AuthService
+
+BLAST RADIUS:
+  depth 1 [contract_breaking]: verifyToken returns true for non-empty (95%, score 0.13) (1)
+    flows: TEST verifyToken returns true for non-empty
+    ⚠ callers may need update (contract changed)
+  depth 1 [behavior_affected]: AuthController.AuthController.constructor (80%, score 0.08), AccountService.AccountService.constructor (80%, score 0.08) (2)

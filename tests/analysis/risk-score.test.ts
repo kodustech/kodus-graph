@@ -123,8 +123,12 @@ describe('computeRiskScore', () => {
         const blastRadius: BlastRadiusResult = { total_functions: 1, total_files: 1, by_depth: {} };
 
         const result = computeRiskScore(graph, ['src/a.ts'], blastRadius);
-        // With default cap of 50, avg cyclomatic 20 → 20/50 = 0.4
-        expect(result.factors.complexity.value).toBe(0.4);
+        // Cyclomatic normalizes against caps.cyclomatic (10, McCabe's ceiling),
+        // not the lines-of-code cap. 20 decision points is past the ceiling, so
+        // the factor saturates. Under the old shared cap of 50 this scored
+        // 20/50 = 0.4 — a function twice as complex as McCabe's limit
+        // contributing under half of the complexity weight.
+        expect(result.factors.complexity.value).toBe(1);
         expect(result.factors.complexity.detail).toBe('avg cyclomatic 20');
     });
 
@@ -185,8 +189,45 @@ describe('computeRiskScore', () => {
         const blastRadius: BlastRadiusResult = { total_functions: 2, total_files: 1, by_depth: {} };
 
         const result = computeRiskScore(graph, ['src/a.ts'], blastRadius);
-        // Only the node with complexity is used: avg cyclomatic = 10, 10/50 = 0.2
-        expect(result.factors.complexity.value).toBe(0.2);
+        // Only the node with complexity is used: avg cyclomatic = 10, which is
+        // exactly caps.cyclomatic → 10/10 = 1. The 490-line `noCx` node does not
+        // dilute it; the LoC fallback only applies when NO node has complexity.
+        expect(result.factors.complexity.value).toBe(1);
         expect(result.factors.complexity.detail).toContain('avg cyclomatic 10');
+    });
+
+    it('normalizes cyclomatic and lines-of-code against their own caps', () => {
+        // One cap cannot serve both units. `cyclomatic` counts decision points
+        // and `lines_of_code` counts lines; they were previously normalized by a
+        // single `complexity: 50`, calibrated for lines, which left a cyclomatic
+        // of 10 scoring 0.2 and the factor all but disabled on modern graphs.
+        const node = (over: Partial<GraphData['nodes'][number]>): GraphData['nodes'][number] => ({
+            kind: 'Function',
+            name: 'foo',
+            qualified_name: 'src/a.ts::foo',
+            file_path: 'src/a.ts',
+            line_start: 1,
+            line_end: 5,
+            language: 'typescript',
+            is_test: false,
+            file_hash: 'a',
+            ...over,
+        });
+        const blastRadius: BlastRadiusResult = { total_functions: 1, total_files: 1, by_depth: {} };
+
+        // Cyclomatic 5 against a cap of 10 → 0.5. Against the old cap of 50 this
+        // would have been 0.1.
+        const cyclomatic = computeRiskScore({ nodes: [node({ complexity: 5 })], edges: [] }, ['src/a.ts'], blastRadius);
+        expect(cyclomatic.factors.complexity.value).toBe(0.5);
+
+        // Legacy graph, no complexity field: 25 lines against the LoC cap of 50
+        // → 0.5. Both units reach the same score at half their own ceiling.
+        const legacy = computeRiskScore(
+            { nodes: [node({ line_start: 1, line_end: 26 })], edges: [] },
+            ['src/a.ts'],
+            blastRadius,
+        );
+        expect(legacy.factors.complexity.value).toBe(0.5);
+        expect(legacy.factors.complexity.detail).toContain('legacy');
     });
 });

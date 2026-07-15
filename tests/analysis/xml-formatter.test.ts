@@ -196,6 +196,158 @@ describe('formatXml', () => {
         expect(xml).not.toContain('<Alternatives>');
     });
 
+    it('marks exported symbols, so an empty caller list is not read as "unused"', () => {
+        // For a private symbol the caller list is exhaustive. For an exported one
+        // it is a lower bound — package consumers and dynamic imports live
+        // outside this graph. Without the distinction, "no callers" on public API
+        // reads as "safe to delete".
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'publicApi',
+                    qualified_name: 'src/api.ts::publicApi',
+                    file_path: 'src/api.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'privateHelper',
+                    qualified_name: 'src/api.ts::privateHelper',
+                    file_path: 'src/api.ts',
+                    line_start: 7,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/api.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output);
+
+        expect(xml).toContain('name="publicApi"');
+        expect(xml).toMatch(/name="publicApi"[^>]*exported="true"/);
+        expect(xml).toMatch(/name="privateHelper"[^>]*exported="false"/);
+    });
+
+    it('states that the map is lossy, so absence is not read as proof', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'foo',
+                    qualified_name: 'src/a.ts::foo',
+                    file_path: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const xml = formatXml(
+            buildContextV2({
+                mergedGraph: graphData,
+                oldGraph: null,
+                changedFiles: ['src/a.ts'],
+                minConfidence: 0.5,
+                maxDepth: 3,
+            }),
+        );
+
+        expect(xml).toContain('Absence here is not absence in the codebase');
+    });
+
+    it('renders how each caller was resolved, so a guess cannot read as a fact', () => {
+        // The resolver grades edges across five tiers, but every <Caller> used to
+        // render byte-identically. A 0.60 unique-name guess and a 0.95
+        // receiver-typed resolution reaching the model as the same assertion is
+        // how a caller list turns into a confident wrong answer.
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'validate',
+                    qualified_name: 'src/target.ts::validate',
+                    file_path: 'src/target.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'sure',
+                    qualified_name: 'src/sure.ts::sure',
+                    file_path: 'src/sure.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'guess',
+                    qualified_name: 'src/guess.ts::guess',
+                    file_path: 'src/guess.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/sure.ts::sure',
+                    target_qualified: 'src/target.ts::validate',
+                    file_path: 'src/sure.ts',
+                    line: 3,
+                    confidence: 0.95,
+                    tier: 'receiver',
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/guess.ts::guess',
+                    target_qualified: 'src/target.ts::validate',
+                    file_path: 'src/guess.ts',
+                    line: 3,
+                    confidence: 0.6,
+                    tier: 'unique',
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/target.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output);
+
+        expect(xml).toContain('<Caller name="sure" file="src/sure.ts" line="3" confidence="0.95" tier="receiver" />');
+        expect(xml).toContain('<Caller name="guess" file="src/guess.ts" line="3" confidence="0.60" tier="unique" />');
+    });
+
     it('emits <ContractDiff field="params"> with <Added>/<Removed> for long params', () => {
         const longBefore =
             '(context: ReviewContext, config: ReviewConfig, options: { tier: string, mode: string, priority: number })';

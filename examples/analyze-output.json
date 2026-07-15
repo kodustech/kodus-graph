@@ -1,27 +1,96 @@
 {
   "blast_radius": {
-    "total_functions": 7,
-    "total_files": 1,
-    "by_depth": {}
+    "total_functions": 15,
+    "total_files": 4,
+    "by_depth": {
+      "1": [
+        {
+          "qualified_name": "src/controller.ts::AuthController.login",
+          "accumulated_confidence": 0.95,
+          "edge_kind": "CALLS",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/services.ts::AccountService.login",
+          "accumulated_confidence": 0.95,
+          "edge_kind": "CALLS",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "tests/auth.test.ts::verifyToken returns true for non-empty",
+          "accumulated_confidence": 0.95,
+          "edge_kind": "CALLS",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/services.ts::AccountService.register",
+          "accumulated_confidence": 0.9,
+          "edge_kind": "CALLS",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/services.ts::bootstrap",
+          "accumulated_confidence": 0.9,
+          "edge_kind": "CALLS",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/controller.ts::AuthController.AuthController.constructor",
+          "accumulated_confidence": 0.8,
+          "edge_kind": "USES_TYPE",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        },
+        {
+          "qualified_name": "src/services.ts::AccountService.AccountService.constructor",
+          "accumulated_confidence": 0.8,
+          "edge_kind": "USES_TYPE",
+          "impact_category": "behavior_affected",
+          "flows": [],
+          "impact_score": 0
+        }
+      ],
+      "2": [
+        {
+          "qualified_name": "src/services.ts::AccountService.refresh",
+          "accumulated_confidence": 0.855,
+          "edge_kind": "CALLS",
+          "impact_category": "transitive",
+          "flows": [],
+          "impact_score": 0
+        }
+      ]
+    }
   },
   "risk_score": {
     "level": "MEDIUM",
-    "score": 0.44,
+    "score": 0.57,
     "factors": {
       "blast_radius": {
         "weight": 0.35,
-        "value": 0.35,
-        "detail": "7 functions, 1 files"
+        "value": 0.91,
+        "detail": "15 functions, 4 files"
       },
       "test_gaps": {
         "weight": 0.3,
-        "value": 1,
-        "detail": "4/4 untested"
+        "value": 0.75,
+        "detail": "3/4 untested"
       },
       "complexity": {
         "weight": 0.2,
-        "value": 0.07,
-        "detail": "avg 4 lines"
+        "value": 0.12,
+        "detail": "avg cyclomatic 1"
       },
       "inheritance": {
         "weight": 0.15,
@@ -35,11 +104,6 @@
       "function": "src/auth.ts::AuthService.authenticate",
       "file_path": "src/auth.ts",
       "line_start": 10
-    },
-    {
-      "function": "src/auth.ts::AuthService.verifyToken",
-      "file_path": "src/auth.ts",
-      "line_start": 16
     },
     {
       "function": "src/auth.ts::hashPassword",

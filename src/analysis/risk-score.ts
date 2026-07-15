@@ -24,39 +24,58 @@ export function computeRiskScore(
         }
     }
 
-    // Factor 1: Blast radius
-    const brValue = Math.min(blastRadius.total_functions / caps.blast_functions, 1);
+    // Factor 1: Blast radius — log-scaled, because reach is not linear.
+    //
+    // The jump that matters most is 0 → 1: nothing depends on this vs something
+    // does. Under `n / 20` that jump was worth 0.05, i.e. 0.017 of an available
+    // 0.35 — the heaviest factor in the score could not tell dead code from code
+    // with a caller. (Losing every caller of a function moved its total score
+    // from 0.34 to 0.32.) Meanwhile 40 callers and 20 callers scored identically.
+    //
+    // log(1+n)/log(1+cap) keeps the ordering, front-loads the resolution where
+    // the decisions are, and still saturates at `cap` — past that, "wide" is wide
+    // and the review posture doesn't change:
+    //
+    //     n:      0     1     2     5    10    20    40
+    //     linear: 0.00  0.05  0.10  0.25  0.50  1.00  1.00
+    //     log:    0.00  0.23  0.36  0.59  0.79  1.00  1.00
+    const brValue =
+        blastRadius.total_functions <= 0
+            ? 0
+            : Math.min(Math.log1p(blastRadius.total_functions) / Math.log1p(caps.blast_functions), 1);
 
     // Factor 2: Test gaps
     let tgValue = 0;
     let untestedCount = 0;
     const changedFunctions = changedNodes.filter((n) => n.kind === 'Function' || n.kind === 'Method');
     if (!options?.skipTests) {
-        const testedFiles = idx.testedFiles;
-        untestedCount = changedFunctions.filter((n) => !testedFiles.has(n.file_path)).length;
+        untestedCount = changedFunctions.filter((n) => !idx.isTested(n.qualified_name, n.file_path)).length;
         tgValue = changedFunctions.length > 0 ? untestedCount / changedFunctions.length : 0;
     }
 
-    // Factor 3: Complexity — prefer cyclomatic when nodes have it, fall back to LoC for legacy graphs.
+    // Factor 3: Complexity — prefer cyclomatic when nodes have it, fall back to
+    // LoC for legacy graphs. The two are different units and normalize against
+    // their own caps; sharing one cap left the cyclomatic path (the default)
+    // divided by a lines-of-code figure and effectively disabled.
     const nodesWithComplexity = changedNodes.filter((n) => typeof n.complexity === 'number');
     let cxValue: number;
     let cxDetail: string;
     if (nodesWithComplexity.length > 0) {
         const avgCx = nodesWithComplexity.reduce((s, n) => s + (n.complexity ?? 0), 0) / nodesWithComplexity.length;
-        cxValue = Math.min(avgCx / caps.complexity, 1);
+        cxValue = Math.min(avgCx / caps.cyclomatic, 1);
         cxDetail = `avg cyclomatic ${Math.round(avgCx)}`;
     } else {
         const avgSize =
             changedNodes.length > 0
                 ? changedNodes.reduce((s, n) => s + (n.line_end - n.line_start), 0) / changedNodes.length
                 : 0;
-        cxValue = Math.min(avgSize / caps.complexity, 1);
+        cxValue = Math.min(avgSize / caps.lines_of_code, 1);
         cxDetail = `avg ${Math.round(avgSize)} lines (legacy)`;
     }
 
-    // Factor 4: Inheritance
-    const hasInheritance = idx.hasInheritanceInFiles(changedSet);
-    const ihValue = hasInheritance ? 1 : 0;
+    // Factor 4: Inheritance — what share of the changed symbols sits in a
+    // hierarchy, not merely whether the touched files contain one anywhere.
+    const ihValue = idx.hierarchyShare(changedNodes);
 
     const score =
         brValue * weights.blast_radius +
@@ -86,8 +105,11 @@ export function computeRiskScore(
             },
             inheritance: {
                 weight: weights.inheritance,
-                value: ihValue,
-                detail: hasInheritance ? 'has inheritance' : 'no inheritance',
+                value: Math.round(ihValue * 100) / 100,
+                detail:
+                    ihValue > 0
+                        ? `${Math.round(ihValue * changedNodes.length)}/${changedNodes.length} symbols in a hierarchy`
+                        : 'no inheritance',
             },
         },
     };

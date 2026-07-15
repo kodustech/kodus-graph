@@ -12,15 +12,21 @@
     "removed": [],
     "modified": [
       {
-        "qualified_name": "src/auth.ts::AuthService.authenticate",
+        "qualified_name": "src/auth.ts::AuthService.verifyToken",
         "changes": [
-          "is_async"
+          "params",
+          "return_type"
         ],
         "contract_diffs": [
           {
-            "field": "is_async",
-            "old_value": "false",
-            "new_value": "true"
+            "field": "params",
+            "old_value": "(token: string)",
+            "new_value": "(token: string, opts: VerifyOpts)"
+          },
+          {
+            "field": "return_type",
+            "old_value": "boolean",
+            "new_value": "Promise<boolean>"
           }
         ]
       }
@@ -38,8 +44,8 @@
   },
   "risk_by_file": {
     "src/auth.ts": {
-      "dependents": 1,
-      "risk": "LOW"
+      "dependents": 7,
+      "risk": "MEDIUM"
     }
   }
 }

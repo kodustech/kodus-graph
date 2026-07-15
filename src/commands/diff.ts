@@ -12,7 +12,7 @@ import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
 import { extractCallsFromFile, extractFromFile } from '../parser/extractor';
 import { getLanguage } from '../parser/languages';
-import { resolveAllCalls } from '../resolver/call-resolver';
+import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
@@ -202,7 +202,7 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
         }
     }
 
-    const { callEdges } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+    const { callEdges } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
 
     const fileHashes = new Map<string, string>();
     for (const f of absFiles) {

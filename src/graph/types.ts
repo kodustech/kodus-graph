@@ -1,10 +1,27 @@
 import type { ContractDiff } from '../analysis/diff';
 
 // ── Node kinds (aligned with Postgres ast_nodes.kind) ──
-export type NodeKind = 'Function' | 'Method' | 'Constructor' | 'Class' | 'Interface' | 'Enum' | 'Test';
+export const NODE_KINDS = ['Function', 'Method', 'Constructor', 'Class', 'Interface', 'Enum', 'Test'] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
 
 // ── Edge kinds (aligned with Postgres ast_edges.kind) ──
-export type EdgeKind = 'CALLS' | 'IMPORTS' | 'INHERITS' | 'IMPLEMENTS' | 'TESTED_BY' | 'CONTAINS';
+//
+// The single list. Zod schemas in `graph/loader` and `shared/schemas` derive
+// from it — they used to spell the members out again, so adding `USES_TYPE` to
+// the type left both validators rejecting graphs this very code had just
+// written, and `analyze --graph` fell back to a graph-less path rather than
+// failing on the mismatch.
+export const EDGE_KINDS = [
+    'CALLS',
+    'IMPORTS',
+    'INHERITS',
+    'IMPLEMENTS',
+    'TESTED_BY',
+    'CONTAINS',
+    /** A function's signature names a type this repo declares. See `graph/edges.ts`. */
+    'USES_TYPE',
+] as const;
+export type EdgeKind = (typeof EDGE_KINDS)[number];
 
 // ── Graph node (matches ast_nodes table) ──
 export interface GraphNode {
@@ -120,7 +137,8 @@ export type ImpactCategory = 'contract_breaking' | 'behavior_affected' | 'transi
 export interface BlastRadiusEntry {
     qualified_name: string;
     accumulated_confidence: number;
-    edge_kind: 'CALLS' | 'IMPORTS';
+    /** How the change reaches this symbol: it calls it, imports it, or names it in a signature. */
+    edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE';
     impact_category: ImpactCategory;
     flows: FlowRef[];
     impact_score: number;
@@ -192,6 +210,8 @@ export interface CallerRef {
     file_path: string;
     line: number;
     confidence: number;
+    /** How the resolver reached this edge. Mirrors GraphEdge.tier. */
+    tier?: EdgeTier;
     /** Non-picked resolver candidates — mirrors GraphEdge.alternatives for ambiguous CALLS. */
     alternatives?: string[];
 }
@@ -201,6 +221,17 @@ export interface CalleeRef {
     name: string;
     file_path: string;
     signature: string;
+    /**
+     * Resolver confidence, same scale as CallerRef.
+     *
+     * Callees previously carried no confidence at all, so a 0.60 unique-name
+     * guess and a 0.95 receiver-typed resolution reached consumers as equally
+     * asserted fact — the resolver does the work of five tiers and the callee
+     * direction threw it away.
+     */
+    confidence: number;
+    /** How the resolver reached this edge. Mirrors GraphEdge.tier. */
+    tier?: EdgeTier;
 }
 
 export interface EnrichedFunction {
@@ -221,6 +252,16 @@ export interface EnrichedFunction {
     caller_impact?: string;
     is_new: boolean;
     in_flows: string[];
+    /**
+     * Whether the symbol is part of the module's public surface.
+     *
+     * Load-bearing for reading `callers`: for a non-exported symbol the caller
+     * list is the whole story, and an empty one means nothing calls it. For an
+     * exported symbol it is a LOWER BOUND — the graph only sees this repository,
+     * and a package consumer, a dynamic import, or a downstream service is
+     * invisible to it. "No callers" means "no callers here", not "unused".
+     */
+    is_exported?: boolean;
 }
 
 export interface AffectedFlow {

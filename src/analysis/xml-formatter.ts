@@ -29,8 +29,25 @@ function escapeXml(str: string): string {
         .replace(/'/g, '&apos;');
 }
 
-function _shortName(qualifiedName: string): string {
-    return qualifiedName.split('::').pop() || qualifiedName;
+/**
+ * Render how a CALLS edge was resolved, as XML attributes.
+ *
+ * The resolver grades every edge across five tiers — `receiver` (0.95, the
+ * receiver's type is known), `di`, `same`, `import`, `unique` (0.60, nothing but
+ * the name was unique) down to `ambiguous` (0.30, one of several candidates was
+ * picked) — and this formatter used to emit them all identically:
+ *
+ *     <Caller name="login" file="src/app/login.ts" line="1" />
+ *
+ * A byte-identical rendering for a typed resolution and a name guess makes every
+ * edge read as equally-asserted fact, which is precisely how a caller list turns
+ * into a confident wrong answer. Naming the tier tells a reader *why* to trust
+ * the edge, which is more actionable than a bare float; the number is kept for
+ * anything that wants to threshold on it.
+ */
+function resolutionAttrs(ref: { confidence: number; tier?: string }): string {
+    const tier = ref.tier ? ` tier="${escapeXml(ref.tier)}"` : '';
+    return ` confidence="${ref.confidence.toFixed(2)}"${tier}`;
 }
 
 function classQualifiedName(qualifiedName: string, name: string, parentName?: string): string {
@@ -354,9 +371,17 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
 
     // Build tested-function set for precise coverage checks.
     // TESTED_BY edges: source_qualified = tested function/file, target_qualified = test.
+    // Symbol-level TESTED_BY comes from a resolved call out of a test; file-level
+    // is the coarse filename fallback for languages whose test calls don't
+    // resolve. Splitting `::` off every edge collapses the first into the second,
+    // letting one tested function vouch for its whole file.
     const testedByEdges = output.graph.edges.filter((e) => e.kind === 'TESTED_BY');
-    const testedFunctionSet = new Set(testedByEdges.map((e) => e.source_qualified));
-    const testedFileSet = new Set(testedByEdges.map((e) => e.source_qualified.split('::')[0]));
+    const testedFunctionSet = new Set(
+        testedByEdges.filter((e) => e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
+    const testedFileSet = new Set(
+        testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
 
     // Sort by risk, take top N
     const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
@@ -365,6 +390,16 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const lines: string[] = [];
 
     lines.push('<CallGraph>');
+    // State the limits up front. Everything below is static analysis of this
+    // repository at one commit: it cannot see reflection, dynamic dispatch,
+    // string-keyed lookups, DI wired at runtime, or any consumer outside this
+    // repo. Left unsaid, a ranked, confident-looking map gets read as ground
+    // truth, and "no callers" becomes "safe to change" — the single most
+    // expensive misreading available here.
+    lines.push('  <!-- Static analysis of this repo at one commit. Absence here is not absence in the codebase:');
+    lines.push('       reflection, dynamic dispatch and external consumers are invisible. Each edge carries the');
+    lines.push('       tier and confidence it was resolved with — verify low-confidence claims with the tools');
+    lines.push('       before acting on them. Reason from this map; answer from the code. -->');
     lines.push(
         `  <Summary changedFunctions="${analysis.changed_functions.length}" untestedFunctions="${changedUntested}" impactedCallers="${totalCallers}" riskLevel="${risk.level}" riskScore="${risk.score}" />`,
     );
@@ -403,10 +438,14 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
         const displayName = escapeXml(classQualifiedName(fn.qualified_name, fn.name, fn.parent_name));
         const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
         const tested = fn.has_test_coverage ? 'true' : 'false';
+        // Tells the reader how to weigh `<Callers>`: exhaustive for a private
+        // symbol, a lower bound for an exported one (package consumers, dynamic
+        // imports and downstream services are outside this graph).
+        const exported = fn.is_exported !== undefined ? ` exported="${fn.is_exported ? 'true' : 'false'}"` : '';
 
         lines.push('');
         lines.push(
-            `  <ChangedFunction name="${displayName}" file="${escapeXml(fn.file_path)}" lines="${fn.line_start}-${fn.line_end}" tested="${tested}" status="${status}">`,
+            `  <ChangedFunction name="${displayName}" file="${escapeXml(fn.file_path)}" lines="${fn.line_start}-${fn.line_end}" tested="${tested}" status="${status}"${exported}>`,
         );
 
         // WhatChanged
@@ -485,7 +524,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
                 if (isAmbiguous && c.alternatives && c.alternatives.length > 0) {
                     const alts = c.alternatives;
                     lines.push(
-                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}">`,
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}"${resolutionAttrs(c)}>`,
                     );
                     lines.push('        <Alternatives>');
                     const shownAlts = alts.slice(0, MAX_ALTERNATIVES_RENDERED);
@@ -499,7 +538,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
                     lines.push('      </Caller>');
                 } else {
                     lines.push(
-                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}" />`,
+                        `      <Caller name="${escapeXml(c.name)}" file="${escapeXml(c.file_path)}" line="${c.line}"${resolutionAttrs(c)} />`,
                     );
                 }
             }

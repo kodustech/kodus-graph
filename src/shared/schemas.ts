@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EDGE_KINDS } from '../graph/types';
 
 // ── Node schema (aligned with GraphNode in src/graph/types.ts) ──
 export const graphNodeSchema = z.object({
@@ -27,7 +28,7 @@ export const graphNodeSchema = z.object({
 
 // ── Edge schema (aligned with GraphEdge in src/graph/types.ts) ──
 export const graphEdgeSchema = z.object({
-    kind: z.enum(['CALLS', 'IMPORTS', 'INHERITS', 'IMPLEMENTS', 'TESTED_BY', 'CONTAINS']),
+    kind: z.enum(EDGE_KINDS),
     source_qualified: z.string(),
     target_qualified: z.string(),
     file_path: z.string(),
