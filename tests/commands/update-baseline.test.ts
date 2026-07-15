@@ -93,4 +93,43 @@ describe('update: symbol table is seeded from the baseline graph', () => {
         // filtered out downstream. Promoting it past the floor is the whole bug.
         expect(edge?.confidence).toBeLessThan(0.5);
     });
+
+    it('writes the same graph shape as parse, streamed', () => {
+        // `update` serialized with JSON.stringify(output, null, 2) — the whole
+        // merged graph as one pretty-printed string, which throws
+        // `Invalid string length` past ~512MB on a large monorepo. It now shares
+        // `parse`'s incremental writer; the output must stay a valid, equivalent
+        // graph document.
+        const repoDir = scratchRepo();
+        parseAll(repoDir);
+        const updated = updateAfterEditingSlice(repoDir);
+
+        expect(Array.isArray(updated.nodes)).toBe(true);
+        expect(Array.isArray(updated.edges)).toBe(true);
+        expect(updated.nodes.length).toBeGreaterThan(0);
+        for (const node of updated.nodes) {
+            expect(node).toHaveProperty('qualified_name');
+            expect(node).toHaveProperty('file_path');
+        }
+        const meta = (updated as unknown as { metadata: Record<string, unknown> }).metadata;
+        expect(meta.incremental).toBe(true);
+        expect(meta.schema_version).toBeDefined();
+    });
+
+    it('supports --out - for piping', () => {
+        const repoDir = scratchRepo();
+        parseAll(repoDir);
+        writeFileSync(
+            join(repoDir, 'src/mod1.ts'),
+            "export function handleError(e: Error): string {\n    return 'piped:' + e.message;\n}\n",
+        );
+
+        const stdout = execSync(
+            `bun run ${CLI} update --repo-dir ${repoDir} --graph ${join(repoDir, 'graph.json')} --out -`,
+            { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
+        );
+
+        const parsed = JSON.parse(stdout) as GraphData;
+        expect(parsed.nodes.length).toBeGreaterThan(0);
+    });
 });

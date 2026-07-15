@@ -16,6 +16,7 @@ import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
+import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 import { GraphInputSchema } from '../shared/schemas';
@@ -29,6 +30,8 @@ interface AnalyzeOptions {
     skipTests?: boolean;
     /** Custom risk score weights/caps. Pass a file path (CLI) or an in-memory object (library). */
     riskConfig?: RiskConfig | string;
+    /** Blast-radius BFS depth. Defaults to DEFAULT_BLAST_MAX_DEPTH, same as `context`. */
+    maxDepth?: number;
 }
 
 export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
@@ -149,9 +152,17 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     // Temporary: convert file-level to function-level until Mudança 3 provides trulyChangedQN
     const changedQN = mergedGraph.nodes.filter((n) => opts.files.includes(n.file_path)).map((n) => n.qualified_name);
     const graphIndex = new GraphIndex(mergedGraph);
-    const blastRadius = computeBlastRadius(mergedGraph, changedQN, undefined, undefined, undefined, {
-        index: graphIndex,
-    });
+    // Pass the depth explicitly. Leaving it `undefined` took `computeBlastRadius`'s
+    // signature default while `context` passed its own CLI default, so the two
+    // commands reported different blast radii for the same diff.
+    const blastRadius = computeBlastRadius(
+        mergedGraph,
+        changedQN,
+        opts.maxDepth ?? DEFAULT_BLAST_MAX_DEPTH,
+        undefined,
+        undefined,
+        { index: graphIndex },
+    );
     const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, {
         skipTests: opts.skipTests,
         riskConfig: riskConfigResolved,

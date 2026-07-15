@@ -1,4 +1,5 @@
 import type { BlastRadiusEntry, BlastRadiusResult, EdgeKind, GraphData, ImpactCategory } from '../graph/types';
+import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { GraphIndex } from './graph-index';
 
 type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS'>;
@@ -41,7 +42,7 @@ function computeCategory(
 export function computeBlastRadius(
     graph: GraphData,
     changedQualifiedNames: string[],
-    maxDepth: number = 2,
+    maxDepth: number = DEFAULT_BLAST_MAX_DEPTH,
     minConfidence?: number,
     contractBreakingSeeds?: Set<string>,
     options?: { index?: GraphIndex },

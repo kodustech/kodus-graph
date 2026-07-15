@@ -15,6 +15,7 @@ import { executeUpdate } from './commands/update';
 const program = new Command();
 
 import pkg from '../package.json';
+import { DEFAULT_BLAST_MAX_DEPTH } from './shared/constants';
 import { log } from './shared/logger';
 
 log.info(`kodus-graph v${pkg.version}`, { node: process.version, platform: process.platform });
@@ -55,6 +56,7 @@ program
     .requiredOption('--files <paths...>', 'Changed files to analyze')
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
+    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
     .option('--skip-tests', 'Skip test detection (no TESTED_BY edges or test gaps)')
     .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
     .requiredOption('--out <path>', 'Output JSON file path')
@@ -71,6 +73,7 @@ program
             out: opts.out,
             skipTests: opts.skipTests ?? false,
             riskConfig: opts.riskConfig,
+            maxDepth: Number.parseInt(opts.maxDepth, 10),
         });
     });
 
@@ -83,7 +86,7 @@ program
     .option('--diff <path>', 'Path to unified diff file (filters changed functions in fallback mode)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
-    .option('--max-depth <n>', 'Blast radius BFS depth', '3')
+    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
     .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .option('--max-functions <n>', 'Max changed functions in prompt output (default: 30)', (v) => parseInt(v, 10))
@@ -240,7 +243,7 @@ program
     .option('--exported-only', 'Only show exported symbols')
     .option('--graph <path>', 'Resolved graph JSON — enrich symbols with CALLS fan-in/fan-out')
     .option('--blast', "With --graph, also compute each symbol's blast-radius size")
-    .option('--max-depth <n>', 'Blast-radius traversal depth', '2')
+    .option('--max-depth <n>', 'Blast-radius traversal depth', String(DEFAULT_BLAST_MAX_DEPTH))
     .option('--include <patterns...>', 'Glob(s) to include')
     .option('--exclude <patterns...>', 'Glob(s) to exclude')
     .option('--out <path>', 'Output file (default: stdout)', '-')

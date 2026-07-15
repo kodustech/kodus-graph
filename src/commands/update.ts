@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { dirname, relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
+import { writeGraphJSON } from '../graph/json-writer';
 import { loadGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode, ImportEdge, ParseOutput, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
@@ -14,7 +15,6 @@ import { createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symb
 import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
-import { writeOutput } from '../shared/write-output';
 
 const DEFAULT_GRAPH_PATH = '.kodus-graph/graph.json';
 
@@ -98,7 +98,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             edges: oldGraph.edges,
         };
         ensureDir(outPath);
-        writeOutput(outPath, JSON.stringify(output, null, 2));
+        writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
         return;
     }
 
@@ -230,7 +230,13 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     };
 
     ensureDir(outPath);
-    writeOutput(outPath, JSON.stringify(output, null, 2));
+    // Stream node-by-node, as `parse` does. `JSON.stringify(output, null, 2)`
+    // built the entire merged graph as one pretty-printed string — on a large
+    // monorepo that is a multi-hundred-MB allocation, and Node/Bun throw
+    // `Invalid string length` past ~512MB. The adaptive batch sizing in
+    // parser/batch.ts carefully holds parse memory down, and this undid it at the
+    // last step. `writeGraphJSON` keeps peak memory at one serialized node.
+    writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
 }
 
 function ensureDir(filePath: string): void {
