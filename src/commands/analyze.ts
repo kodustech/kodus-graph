@@ -11,7 +11,7 @@ import { enforceSchemaVersion } from '../graph/schema-version-check';
 import type { AnalysisOutput, ImportEdge, MainGraphInput } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
-import { resolveAllCalls } from '../resolver/call-resolver';
+import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
@@ -120,7 +120,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     }
 
     // Resolve calls
-    const { callEdges } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+    const { callEdges } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
 
     // Build graph with file hashes
     const fileHashes = new Map<string, string>();

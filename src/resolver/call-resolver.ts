@@ -8,7 +8,7 @@
  * Raw call sites are provided by the batch parser.
  */
 
-import type { RawCallEdge, RawCallSite } from '../graph/types';
+import type { RawCallEdge, RawCallSite, RawGraph } from '../graph/types';
 import { getDIHeuristicsFor } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
@@ -826,4 +826,62 @@ export function resolveCall(
     }
 
     return { target: result.target, confidence: result.confidence };
+}
+
+/**
+ * Resolve every call in a `RawGraph`, deriving the receiver-tier inputs from the
+ * graph itself.
+ *
+ * Prefer this over calling {@link resolveAllCalls} directly. Its last three
+ * parameters (`returnTypes`, `classHierarchy`, `valueBindings`) are optional and
+ * default to empty maps, so omitting them does not fail — it silently disables
+ * the 0.95 receiver tier's inheritance fallback, the chained-call pass, and
+ * `@IMPORT:`/`@CALLEE:` deferred resolution, and the only trace is a tier
+ * distribution reporting `receiver: 0`. `parse` passed all seven arguments;
+ * `analyze`, `diff` and `update` passed four, so three of the four commands ran
+ * a degraded resolver against the same repo and produced different edges.
+ *
+ * Taking the whole `RawGraph` removes the footgun: there is nothing left for a
+ * caller to forget.
+ */
+export function resolveCallsForGraph(
+    rawGraph: RawGraph,
+    symbolTable: SymbolTable,
+    importMap: ImportMap,
+): ResolveAllResult {
+    // Qualified name → return type, so the chain pass can propagate
+    // `Foo.method() → ReturnType` to the outer call in `x.method().chained()`.
+    const returnTypes = new Map<string, string>();
+    for (const f of rawGraph.functions) {
+        if (f.returnType) {
+            returnTypes.set(f.qualified, f.returnType);
+        }
+    }
+
+    // Subclass → [parents], from `extends`/`implements`. The receiver tier walks
+    // this when a method isn't on the immediate type but is on an ancestor.
+    const classHierarchy = new Map<string, string[]>();
+    for (const c of rawGraph.classes) {
+        const parents: string[] = [];
+        if (c.extends) {
+            parents.push(c.extends);
+        }
+        if (c.implements?.length) {
+            parents.push(...c.implements);
+        }
+        if (parents.length > 0) {
+            const existing = classHierarchy.get(c.name);
+            classHierarchy.set(c.name, existing ? [...existing, ...parents] : parents);
+        }
+    }
+
+    return resolveAllCalls(
+        rawGraph.rawCalls,
+        rawGraph.diMaps,
+        symbolTable,
+        importMap,
+        returnTypes,
+        classHierarchy,
+        rawGraph.valueBindings,
+    );
 }

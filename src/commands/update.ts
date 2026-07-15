@@ -6,7 +6,7 @@ import { loadGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode, ImportEdge, ParseOutput, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
-import { resolveAllCalls } from '../resolver/call-resolver';
+import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { createSymbolTable } from '../resolver/symbol-table';
@@ -138,7 +138,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    const { callEdges, stats } = resolveAllCalls(rawGraph.rawCalls, rawGraph.diMaps, symbolTable, importMap);
+    const { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
 
     const fileHashes = new Map<string, string>();
     for (const f of absToReparse) {

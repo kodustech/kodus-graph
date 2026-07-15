@@ -5,7 +5,7 @@ import { writeGraphJSON } from '../graph/json-writer';
 import type { GraphNode, ImportEdge, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
 import { discoverFiles } from '../parser/discovery';
-import { resolveAllCalls } from '../resolver/call-resolver';
+import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
@@ -143,41 +143,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     );
 
     // Phase 4: Resolve calls
-    // Build a returnType map keyed by each function's qualified name so the
-    // chain receiver-type pass can propagate `Foo.method() → ReturnType` to
-    // the outer call in `x.method().chained()` patterns.
-    const returnTypes = new Map<string, string>();
-    for (const f of rawGraph.functions) {
-        if (f.returnType) {
-            returnTypes.set(f.qualified, f.returnType);
-        }
-    }
-    // Build the class hierarchy map (subclass → [parents]) from extracted
-    // classes' `extends` and `implements` fields. The receiver tier walks this
-    // when a method isn't on the immediate type but is on a parent.
-    const classHierarchy = new Map<string, string[]>();
-    for (const c of rawGraph.classes) {
-        const parents: string[] = [];
-        if (c.extends) {
-            parents.push(c.extends);
-        }
-        if (c.implements?.length) {
-            parents.push(...c.implements);
-        }
-        if (parents.length > 0) {
-            const existing = classHierarchy.get(c.name);
-            classHierarchy.set(c.name, existing ? [...existing, ...parents] : parents);
-        }
-    }
-    let { callEdges, stats } = resolveAllCalls(
-        rawGraph.rawCalls,
-        rawGraph.diMaps,
-        symbolTable,
-        importMap,
-        returnTypes,
-        classHierarchy,
-        rawGraph.valueBindings,
-    );
+    let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
     process.stderr.write(
         `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
     );
