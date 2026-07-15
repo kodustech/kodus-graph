@@ -9,7 +9,12 @@ export interface RiskWeights {
 }
 
 export interface RiskCaps {
-    /** Blast radius normalization cap (total functions). */
+    /**
+     * Affected-function count at which the blast-radius factor saturates.
+     *
+     * Normalization is logarithmic, not linear — see `risk-score.ts`. The cap is
+     * where "wide" stops getting wider, not a divisor.
+     */
     blast_functions: number;
     /**
      * Cyclomatic-complexity cap, in decision points. A function at or above this

@@ -24,8 +24,25 @@ export function computeRiskScore(
         }
     }
 
-    // Factor 1: Blast radius
-    const brValue = Math.min(blastRadius.total_functions / caps.blast_functions, 1);
+    // Factor 1: Blast radius — log-scaled, because reach is not linear.
+    //
+    // The jump that matters most is 0 → 1: nothing depends on this vs something
+    // does. Under `n / 20` that jump was worth 0.05, i.e. 0.017 of an available
+    // 0.35 — the heaviest factor in the score could not tell dead code from code
+    // with a caller. (Losing every caller of a function moved its total score
+    // from 0.34 to 0.32.) Meanwhile 40 callers and 20 callers scored identically.
+    //
+    // log(1+n)/log(1+cap) keeps the ordering, front-loads the resolution where
+    // the decisions are, and still saturates at `cap` — past that, "wide" is wide
+    // and the review posture doesn't change:
+    //
+    //     n:      0     1     2     5    10    20    40
+    //     linear: 0.00  0.05  0.10  0.25  0.50  1.00  1.00
+    //     log:    0.00  0.23  0.36  0.59  0.79  1.00  1.00
+    const brValue =
+        blastRadius.total_functions <= 0
+            ? 0
+            : Math.min(Math.log1p(blastRadius.total_functions) / Math.log1p(caps.blast_functions), 1);
 
     // Factor 2: Test gaps
     let tgValue = 0;

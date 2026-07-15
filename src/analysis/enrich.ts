@@ -238,6 +238,7 @@ export function enrichChangedFunctions(
                 caller_impact: callerImpact,
                 is_new: isNew,
                 in_flows: flowsByFunction.get(node.qualified_name) || [],
+                ...(node.is_exported !== undefined ? { is_exported: node.is_exported } : {}),
             };
         });
 }

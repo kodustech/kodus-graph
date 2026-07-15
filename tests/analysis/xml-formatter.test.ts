@@ -196,6 +196,84 @@ describe('formatXml', () => {
         expect(xml).not.toContain('<Alternatives>');
     });
 
+    it('marks exported symbols, so an empty caller list is not read as "unused"', () => {
+        // For a private symbol the caller list is exhaustive. For an exported one
+        // it is a lower bound — package consumers and dynamic imports live
+        // outside this graph. Without the distinction, "no callers" on public API
+        // reads as "safe to delete".
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'publicApi',
+                    qualified_name: 'src/api.ts::publicApi',
+                    file_path: 'src/api.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'privateHelper',
+                    qualified_name: 'src/api.ts::privateHelper',
+                    file_path: 'src/api.ts',
+                    line_start: 7,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    is_exported: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/api.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output);
+
+        expect(xml).toContain('name="publicApi"');
+        expect(xml).toMatch(/name="publicApi"[^>]*exported="true"/);
+        expect(xml).toMatch(/name="privateHelper"[^>]*exported="false"/);
+    });
+
+    it('states that the map is lossy, so absence is not read as proof', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'foo',
+                    qualified_name: 'src/a.ts::foo',
+                    file_path: 'src/a.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [],
+        };
+
+        const xml = formatXml(
+            buildContextV2({
+                mergedGraph: graphData,
+                oldGraph: null,
+                changedFiles: ['src/a.ts'],
+                minConfidence: 0.5,
+                maxDepth: 3,
+            }),
+        );
+
+        expect(xml).toContain('Absence here is not absence in the codebase');
+    });
+
     it('renders how each caller was resolved, so a guess cannot read as a fact', () => {
         // The resolver grades edges across five tiers, but every <Caller> used to
         // render byte-identically. A 0.60 unique-name guess and a 0.95

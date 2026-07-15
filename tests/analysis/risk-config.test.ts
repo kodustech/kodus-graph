@@ -51,9 +51,29 @@ describe('risk-config', () => {
         };
         const resultCap20 = computeRiskScore(emptyGraph, [], blast, { riskConfig: cfgCap20 });
         const resultCap5 = computeRiskScore(emptyGraph, [], blast, { riskConfig: cfgCap5 });
-        expect(resultCap20.factors.blast_radius.value).toBe(0.5);
+        // log1p(10)/log1p(20) ≈ 0.79 — the cap is the saturation point of a log
+        // curve, not a divisor. 10 affected functions against a cap of 5 is past
+        // saturation either way.
+        expect(resultCap20.factors.blast_radius.value).toBe(0.79);
         expect(resultCap5.factors.blast_radius.value).toBe(1);
         expect(resultCap20.factors.blast_radius.value).not.toBe(resultCap5.factors.blast_radius.value);
+    });
+
+    it('resolves the 0 → 1 caller jump, the one the score most needs to see', () => {
+        // Under the old `n / 20`, "nothing depends on this" and "something does"
+        // were 0.00 vs 0.05 — 0.017 of an available 0.35. The heaviest factor in
+        // the score could not tell dead code from code with a caller.
+        const score = (n: number) =>
+            computeRiskScore(emptyGraph, [], { total_functions: n, total_files: 1, by_depth: {} }, {}).factors
+                .blast_radius.value;
+
+        expect(score(0)).toBe(0);
+        expect(score(1)).toBeGreaterThan(0.2);
+        // Still monotonic, and still saturating at the cap.
+        expect(score(2)).toBeGreaterThan(score(1));
+        expect(score(10)).toBeGreaterThan(score(5));
+        expect(score(20)).toBe(1);
+        expect(score(100)).toBe(1);
     });
 
     describe('loadRiskConfig', () => {

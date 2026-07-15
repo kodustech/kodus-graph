@@ -375,9 +375,17 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
 
     // Build tested-function set for precise coverage checks.
     // TESTED_BY edges: source_qualified = tested function/file, target_qualified = test.
+    // Symbol-level TESTED_BY comes from a resolved call out of a test; file-level
+    // is the coarse filename fallback for languages whose test calls don't
+    // resolve. Splitting `::` off every edge collapses the first into the second,
+    // letting one tested function vouch for its whole file.
     const testedByEdges = output.graph.edges.filter((e) => e.kind === 'TESTED_BY');
-    const testedFunctionSet = new Set(testedByEdges.map((e) => e.source_qualified));
-    const testedFileSet = new Set(testedByEdges.map((e) => e.source_qualified.split('::')[0]));
+    const testedFunctionSet = new Set(
+        testedByEdges.filter((e) => e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
+    const testedFileSet = new Set(
+        testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
+    );
 
     // Sort by risk, take top N
     const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
@@ -386,6 +394,16 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const lines: string[] = [];
 
     lines.push('<CallGraph>');
+    // State the limits up front. Everything below is static analysis of this
+    // repository at one commit: it cannot see reflection, dynamic dispatch,
+    // string-keyed lookups, DI wired at runtime, or any consumer outside this
+    // repo. Left unsaid, a ranked, confident-looking map gets read as ground
+    // truth, and "no callers" becomes "safe to change" — the single most
+    // expensive misreading available here.
+    lines.push('  <!-- Static analysis of this repo at one commit. Absence here is not absence in the codebase:');
+    lines.push('       reflection, dynamic dispatch and external consumers are invisible. Each edge carries the');
+    lines.push('       tier and confidence it was resolved with — verify low-confidence claims with the tools');
+    lines.push('       before acting on them. Reason from this map; answer from the code. -->');
     lines.push(
         `  <Summary changedFunctions="${analysis.changed_functions.length}" untestedFunctions="${changedUntested}" impactedCallers="${totalCallers}" riskLevel="${risk.level}" riskScore="${risk.score}" />`,
     );
@@ -424,10 +442,14 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
         const displayName = escapeXml(classQualifiedName(fn.qualified_name, fn.name, fn.parent_name));
         const status = fn.is_new ? 'new' : fn.diff_changes.length > 0 ? 'modified' : 'unchanged';
         const tested = fn.has_test_coverage ? 'true' : 'false';
+        // Tells the reader how to weigh `<Callers>`: exhaustive for a private
+        // symbol, a lower bound for an exported one (package consumers, dynamic
+        // imports and downstream services are outside this graph).
+        const exported = fn.is_exported !== undefined ? ` exported="${fn.is_exported ? 'true' : 'false'}"` : '';
 
         lines.push('');
         lines.push(
-            `  <ChangedFunction name="${displayName}" file="${escapeXml(fn.file_path)}" lines="${fn.line_start}-${fn.line_end}" tested="${tested}" status="${status}">`,
+            `  <ChangedFunction name="${displayName}" file="${escapeXml(fn.file_path)}" lines="${fn.line_start}-${fn.line_end}" tested="${tested}" status="${status}"${exported}>`,
         );
 
         // WhatChanged

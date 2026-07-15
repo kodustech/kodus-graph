@@ -234,6 +234,16 @@ export interface EnrichedFunction {
     caller_impact?: string;
     is_new: boolean;
     in_flows: string[];
+    /**
+     * Whether the symbol is part of the module's public surface.
+     *
+     * Load-bearing for reading `callers`: for a non-exported symbol the caller
+     * list is the whole story, and an empty one means nothing calls it. For an
+     * exported symbol it is a LOWER BOUND — the graph only sees this repository,
+     * and a package consumer, a dynamic import, or a downstream service is
+     * invisible to it. "No callers" means "no callers here", not "unused".
+     */
+    is_exported?: boolean;
 }
 
 export interface AffectedFlow {
