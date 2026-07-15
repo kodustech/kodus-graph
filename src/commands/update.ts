@@ -9,7 +9,8 @@ import { discoverFiles } from '../parser/discovery';
 import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
-import { createSymbolTable } from '../resolver/symbol-table';
+import { buildReExportMap } from '../resolver/re-export-resolver';
+import { createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
 import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -122,6 +123,23 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         symbolTable.add(i.file, i.name, i.qualified);
     }
 
+    // The slice is a handful of files; the resolver's ambiguity checks are
+    // population statistics over the whole repo. Seed the rest from the previous
+    // graph — already loaded above — or every name in the slice looks unique and
+    // genuinely ambiguous calls get promoted to 0.60 and shipped.
+    const sliceFiles = new Set<string>(toReparse);
+    const seeded = seedSymbolTableFromBaseline(symbolTable, oldGraph.nodes, sliceFiles);
+    log.debug('update: seeded symbol table with baseline nodes', {
+        seeded,
+        baselineTotal: oldGraph.nodes.length,
+        sliceFiles: sliceFiles.size,
+    });
+
+    // Follow re-exports so barrel imports resolve to the defining file, matching
+    // `parse`. Without this an `update` graph and a `parse` graph of the same
+    // repo disagree on every call made through a barrel.
+    const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);
+
     for (const imp of rawGraph.imports) {
         const langKey = imp.lang;
         const resolved = resolveImport(resolve(repoDir, imp.file), imp.module, langKey, repoDir, tsconfigAliases);
@@ -134,7 +152,19 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         });
         const target = resolvedRel || imp.module;
         for (const name of imp.names) {
-            importMap.add(imp.file, name, target);
+            let finalTarget = target;
+            if (resolvedRel) {
+                const reExportedFiles = barrelMap.get(resolvedRel);
+                if (reExportedFiles) {
+                    for (const reFile of reExportedFiles) {
+                        if (symbolTable.lookupExact(reFile, name)) {
+                            finalTarget = reFile;
+                            break;
+                        }
+                    }
+                }
+            }
+            importMap.add(imp.file, name, finalTarget);
         }
     }
 
@@ -147,7 +177,20 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         } catch {}
     }
 
-    const newGraphData = buildGraphData(rawGraph, callEdges, importEdges, repoDir, fileHashes, symbolTable, importMap);
+    // Baseline files live outside the slice, so `rawGraph` holds none of their
+    // symbols and the builder's external-target guard would drop every CALLS
+    // edge the baseline seeding just made resolvable. Declare them known.
+    const baselineFiles = new Set(oldGraph.nodes.map((n) => n.file_path));
+    const newGraphData = buildGraphData(
+        rawGraph,
+        callEdges,
+        importEdges,
+        repoDir,
+        fileHashes,
+        symbolTable,
+        importMap,
+        baselineFiles,
+    );
     process.stderr.write(`[4/5] Built new graph fragment (${newGraphData.nodes.length} nodes)\n`);
 
     // Merge: keep old nodes/edges NOT in changed/deleted files, add new ones

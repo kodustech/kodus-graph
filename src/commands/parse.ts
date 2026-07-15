@@ -9,7 +9,7 @@ import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
-import { createSymbolTable } from '../resolver/symbol-table';
+import { createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
 import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -74,9 +74,8 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     // B8 fix: when invoked with a baseline graph (currently from `context`),
     // seed the symbol table with every callable symbol from baseline files
-    // OUTSIDE the slice. The slice's fresh extraction owns symbols for files
-    // it parsed; baseline fills in everything else. Without this, slice-only
-    // re-parse drops to ambiguous tier for any name defined in another file.
+    // OUTSIDE the slice. Without this, a slice-only table makes every name look
+    // unique and the resolver's ambiguity checks stop working.
     if (opts.baselineNodes && opts.baselineNodes.length > 0) {
         const sliceFiles = new Set<string>();
         for (const f of rawGraph.functions) {
@@ -88,17 +87,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         for (const i of rawGraph.interfaces) {
             sliceFiles.add(i.file);
         }
-        let seeded = 0;
-        for (const node of opts.baselineNodes) {
-            if (sliceFiles.has(node.file_path)) {
-                continue;
-            }
-            if (!SYMBOL_KINDS.has(node.kind)) {
-                continue;
-            }
-            symbolTable.add(node.file_path, node.name, node.qualified_name);
-            seeded++;
-        }
+        const seeded = seedSymbolTableFromBaseline(symbolTable, opts.baselineNodes, sliceFiles);
         log.debug('parse: seeded symbol table with baseline nodes', {
             seeded,
             baselineTotal: opts.baselineNodes.length,
