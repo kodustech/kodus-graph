@@ -4,7 +4,31 @@
 [![license](https://img.shields.io/npm/l/@kodus/kodus-graph)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-%23f9f1e1)](https://bun.sh)
 
-Code graph builder for Kodus code review. Parses source code into structural graphs with nodes, edges, and analysis — enabling blast radius detection, risk scoring, test gap analysis, and enriched review context for AI agents.
+**Give an AI code reviewer the structure a human reviewer already has.**
+
+An LLM handed a raw diff sees changed lines. It doesn't see who calls the function you touched, that the signature change breaks five callers, or that nothing tests it — so it guesses, and the guesses are the noise. kodus-graph parses your codebase into a structural graph and answers those questions first, then hands the model a context block instead.
+
+```bash
+kodus-graph parse --all --repo-dir . --out graph.json
+kodus-graph context --files src/auth.ts --graph graph.json --format prompt --out -
+```
+
+```
+=== Code Review Context ===
+
+Risk Level: MEDIUM (score: 0.45)
+Blast Radius: 12 functions across 5 files
+
+1. src/auth.ts::authenticate
+   Status: modified
+     Changes: params, return_type, is_async
+     - is_async: false -> true
+     Impact: 5 callers must add await (sync->async)
+   Callers: [login, middleware.verify, api.handleAuth, ...]
+   Test coverage: YES (auth.test.ts)
+```
+
+14 languages. Deterministic — there is no model in the parse path, so the graph is the same every run. Standalone CLI and library: it powers review at [Kodus](https://kodus.io), but nothing here is coupled to it.
 
 ## Features
 
@@ -471,7 +495,7 @@ const diff = execSync('git diff main -- src/auth.ts').toString();
 // 2. Send to Claude with structural context
 const client = new Anthropic();
 const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-8',
     max_tokens: 4096,
     system: `You are a code reviewer. Use the structural context below to understand the full impact of changes.
 
