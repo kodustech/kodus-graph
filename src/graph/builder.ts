@@ -1,4 +1,5 @@
 import { languageOfFile } from '../languages/language-of-file';
+import { log } from '../shared/logger';
 import { deriveEdges } from './edges';
 import type { GraphData, GraphEdge, GraphNode, ImportEdge, RawCallEdge, RawGraph } from './types';
 
@@ -123,6 +124,16 @@ export function buildGraphData(
     }
 
     // Build a set of all parsed file paths for validation (filter external targets)
+    //
+    // Deliberately keyed on symbol-bearing collections only. A CALLS edge whose
+    // target file declares no symbol cannot name a real node, so dropping it is
+    // correct — emitting it would put a dangling `barrel.ts::foo` in the graph.
+    //
+    // The cost of that correctness is silence: when barrel following breaks, an
+    // import stays pointed at the (symbol-less) barrel and every edge through it
+    // vanishes here with no signal. That is exactly how the TS/JS re-export key
+    // mismatch survived. `symbolLessTargets` below turns the drop into a warning
+    // so the next such regression is visible instead of silent.
     const parsedFiles = new Set<string>();
     for (const f of raw.functions) {
         parsedFiles.add(f.file);
@@ -139,6 +150,22 @@ export function buildGraphData(
     for (const t of raw.tests) {
         parsedFiles.add(t.file);
     }
+
+    // Files parsed from the repo that declare no symbol (pure barrels/re-export
+    // hubs). A CALLS edge targeting one of these is a resolution failure, not an
+    // external package — distinguish the two so the drop can be reported.
+    const symbolLessRepoFiles = new Set<string>();
+    for (const imp of raw.imports) {
+        if (!parsedFiles.has(imp.file)) {
+            symbolLessRepoFiles.add(imp.file);
+        }
+    }
+    for (const re of raw.reExports) {
+        if (!parsedFiles.has(re.file)) {
+            symbolLessRepoFiles.add(re.file);
+        }
+    }
+    const droppedToSymbolLess = new Map<string, number>();
     if (additionalKnownFiles) {
         for (const f of additionalKnownFiles) {
             parsedFiles.add(f);
@@ -169,6 +196,12 @@ export function buildGraphData(
         // Skip calls to external packages (target file not in repo)
         const targetFile = ce.target.split('::')[0];
         if (targetFile && !parsedFiles.has(targetFile)) {
+            // In-repo but symbol-less means barrel following failed upstream and
+            // the import still points at the hub. The edge is unusable either
+            // way, but unlike an external package this is a bug — count it.
+            if (symbolLessRepoFiles.has(targetFile)) {
+                droppedToSymbolLess.set(targetFile, (droppedToSymbolLess.get(targetFile) ?? 0) + 1);
+            }
             continue;
         }
 
@@ -266,6 +299,21 @@ export function buildGraphData(
             target_qualified: e.target,
             file_path: e.source,
             line: 0,
+        });
+    }
+
+    if (droppedToSymbolLess.size > 0) {
+        let total = 0;
+        for (const n of droppedToSymbolLess.values()) {
+            total += n;
+        }
+        log.warn('Dropped CALLS edges targeting in-repo files that declare no symbols', {
+            edges: total,
+            files: [...droppedToSymbolLess.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([file, count]) => `${file} (${String(count)})`),
+            hint: 'Imports still point at a barrel — re-export following did not resolve to the defining file.',
         });
     }
 

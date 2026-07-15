@@ -13,6 +13,7 @@ import { resolve as resolveDartImport } from '../languages/dart/resolver';
 import { resolve as resolveElixirImport } from '../languages/elixir/resolver';
 import { resolve as resolveGoImport } from '../languages/go/resolver';
 import { resolve as resolveJavaImport } from '../languages/java/resolver';
+import type { LanguageKey } from '../languages/language-of-file';
 import { resolve as resolvePhpImport } from '../languages/php/resolver';
 import { resolve as resolvePyImport } from '../languages/python/resolver';
 import { resolve as resolveRbImport } from '../languages/ruby/resolver';
@@ -41,8 +42,32 @@ import { cachedExists } from './fs-cache';
  * If a language key from the parser is not in this map, resolveImport()
  * will log a warning and return null. This is intentional — silent
  * failures that default to another language's resolver cause wrong results.
+ *
+ * Two key spaces reach this map and BOTH must be present:
+ *  - extractor `lang` fields (`'ts'`, `'python'`, ...), passed by `parse` for
+ *    ordinary imports;
+ *  - `LanguageKey` from `EXT_TO_LANG` (`'TypeScript'`, `'Tsx'`, `'JavaScript'`,
+ *    `'python'`, ...), passed by callers that derive the language from the file
+ *    path via `languageOfFile` — e.g. the re-export resolver.
+ *
+ * The two spaces agree for every language except TS/JS/TSX, whose `LanguageKey`
+ * values are capitalized to double as ast-grep `Lang` enum inputs. Omitting the
+ * capitalized aliases silently disabled barrel following for TS/JS/TSX: the
+ * lookup missed, `buildReExportMap` returned an empty map, imports stayed
+ * pointed at the barrel, and every CALLS edge through a barrel was then dropped
+ * by the `parsedFiles` filter in `graph/builder.ts`.
+ *
+ * The `Record<LanguageKey, ...>` half of the type makes a missing LanguageKey a
+ * compile error; the `Record<string, ...>` half keeps the extractor-space keys.
  */
-const RESOLVERS: Record<string, (from: string, mod: string, root: string) => string | null> = {
+type ImportResolverFn = (from: string, mod: string, root: string) => string | null;
+
+const RESOLVERS: Record<LanguageKey, ImportResolverFn> & Record<string, ImportResolverFn> = {
+    // LanguageKey space (from EXT_TO_LANG / languageOfFile)
+    TypeScript: resolveTsImport,
+    Tsx: resolveTsImport,
+    JavaScript: resolveTsImport,
+    // extractor `lang` space
     ts: resolveTsImport,
     javascript: resolveTsImport,
     typescript: resolveTsImport,
