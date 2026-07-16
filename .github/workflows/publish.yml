@@ -1,0 +1,65 @@
+# Publishes @kodus/kodus-graph to npm with a Sigstore provenance attestation.
+#
+# Trigger: publishing a GitHub Release (never on push), so a release is always
+# a deliberate act. Nothing here fires until you cut a release.
+#
+# Auth: OIDC "trusted publishing" — no NPM_TOKEN. GitHub mints a short-lived
+# identity token (`id-token: write`) that npm verifies against a trusted
+# publisher you register once. This is the path npm recommends as it deprecates
+# 2FA-bypass granular tokens (early Aug 2026 for account changes, ~Jan 2027 for
+# publishing). Provenance also gives the package its "verified" badge on
+# npmjs.com: cryptographic proof the tarball was built from this exact commit,
+# so a tampered fork cannot pass as official.
+#
+# ONE-TIME SETUP before the first release (npmjs.com, done by a package owner):
+#   Package settings -> Trusted Publisher -> GitHub Actions
+#     Repository:  kodustech/kodus-graph
+#     Workflow:    publish.yml
+#     Environment: (leave blank)
+# Until that is registered, the publish step fails loudly — it never publishes
+# unverified.
+#
+# Token fallback (only if you choose not to use trusted publishing): drop the
+# OIDC note, add `registry-url` to setup-node, and set
+#   env: { NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} }
+# on the publish step. `--provenance` still works with a token.
+
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # required for provenance + OIDC trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Same gate the maintainer runs locally — never publish a red tree.
+      - name: Verify (typecheck + lint + test)
+        run: bun run check
+
+      # npm (not bun) publishes: it is what emits the provenance attestation.
+      # Node 22 ships an npm that predates OIDC trusted publishing, so upgrade.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Upgrade npm for trusted publishing support
+        run: npm install -g npm@latest
+
+      # `npm publish` runs prepublishOnly (build:dist) for us.
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
