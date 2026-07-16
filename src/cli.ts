@@ -174,13 +174,20 @@ program
     .requiredOption('--graph <path>', 'Path to graph JSON')
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-size <n>', 'Minimum nodes per community', '2')
-    .option('--depth <n>', 'Directory grouping depth', '2')
+    .option('--depth <n>', 'Directory grouping depth (directory mode)', '2')
+    .option(
+        '--topological',
+        'Cluster by call-graph topology (Louvain modularity) with hubs + bridges, instead of directory',
+    )
+    .option('--top <n>', 'Hubs/bridges to report in topological mode', '10')
     .action((opts) => {
         executeCommunities({
             graph: opts.graph,
             out: opts.out,
             minSize: parseInt(opts.minSize, 10),
             depth: parseInt(opts.depth, 10),
+            topological: Boolean(opts.topological),
+            topN: parseInt(opts.top, 10),
         });
     });
 
