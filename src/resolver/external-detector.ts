@@ -6,6 +6,7 @@
  * the right language module and re-exports the shared cache-clear helper.
  */
 
+import { detect as detectBash } from '../languages/bash/external';
 import { detect as detectC } from '../languages/c/external';
 import { detect as detectCsharp } from '../languages/csharp/external';
 import { detect as detectDart } from '../languages/dart/external';
@@ -44,6 +45,7 @@ const DETECTORS: Record<string, Detector> = {
     elixir: detectElixir,
     c: detectC,
     cpp: detectC,
+    bash: detectBash,
 };
 
 /**

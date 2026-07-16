@@ -7,6 +7,7 @@
 
 import { readdirSync, readFileSync } from 'fs';
 import { join, resolve as resolvePath } from 'path';
+import { resolve as resolveBashImport } from '../languages/bash/resolver';
 import { resolve as resolveCImport } from '../languages/c/resolver';
 import { resolve as resolveCsImport } from '../languages/csharp/resolver';
 import { resolve as resolveDartImport } from '../languages/dart/resolver';
@@ -85,6 +86,7 @@ const RESOLVERS: Record<LanguageKey, ImportResolverFn> & Record<string, ImportRe
     c: resolveCImport,
     cpp: resolveCImport,
     elixir: resolveElixirImport,
+    bash: resolveBashImport,
 };
 
 /**

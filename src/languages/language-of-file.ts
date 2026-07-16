@@ -44,6 +44,8 @@ export const EXT_TO_LANG = {
     hh: 'cpp',
     ex: 'elixir',
     exs: 'elixir',
+    sh: 'bash',
+    bash: 'bash',
 } as const;
 
 export type LanguageKey = (typeof EXT_TO_LANG)[keyof typeof EXT_TO_LANG];

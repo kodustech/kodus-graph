@@ -35,7 +35,7 @@ Real output, reproducible with [`scripts/generate-examples.sh`](scripts/generate
 
 ## Features
 
-- **Multi-language support.** 14 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
+- **Multi-language support.** 15 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C, Bash. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
 - **Structural graph** — Functions, methods, constructors, classes, interfaces, enums, tests as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS, USES_TYPE as edges. Each node carries `is_exported`, `is_async`, `decorators`, `throws`, `complexity`.
 - **5-tier call resolver** — `receiver` (0.95/0.90) → `noise` filter → `di` (0.90/0.95) → `class` (0.85/0.90) → `cascade` (same/import/unique/ambiguous, 0.85→0.30). Each CALLS edge records its tier and confidence.
 - **Receiver-type inference** — From `new Foo()`, typed parameters, type cast `as Foo`, factory deferred (`const x = factory()` resolved cross-file via the `@CALLEE:` mechanism), method-chain return type, and singleton patterns (`Foo.getInstance()`).

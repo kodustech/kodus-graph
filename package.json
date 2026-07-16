@@ -61,6 +61,7 @@
     "bun": ">=1.3.0"
   },
   "dependencies": {
+    "@ast-grep/lang-bash": "^0.0.8",
     "@ast-grep/lang-c": "^0.0.6",
     "@ast-grep/lang-cpp": "^0.0.6",
     "@ast-grep/lang-csharp": "^0.0.6",
@@ -84,5 +85,8 @@
     "@types/bun": "^1.3.14",
     "fast-check": "^4.9.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "trustedDependencies": [
+    "@ast-grep/lang-bash"
+  ]
 }

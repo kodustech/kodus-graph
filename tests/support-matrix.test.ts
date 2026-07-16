@@ -3,6 +3,7 @@ import { listRegisteredLanguages } from '../src/languages/engine';
 import { LANGUAGE_SUPPORT } from '../src/languages/support-matrix';
 import { type LanguageSupportRecord, supportMatrixSchema } from '../src/languages/support-matrix-schema';
 // Side-effect imports: make sure every language registers itself.
+import '../src/languages/bash';
 import '../src/languages/c';
 import '../src/languages/csharp';
 import '../src/languages/dart';

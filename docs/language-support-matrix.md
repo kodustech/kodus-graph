@@ -30,6 +30,7 @@
  | PHP | 🟡 basic | 🚶 moderate | ✓ | ✓ | ✓ | scope-local | ✓ | ✓ | `tests/fixtures/php` | 
  | C | 🟡 basic | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/c` | 
  | C++ | 🟢 full | 🚶 moderate | ✓ | ✓ | — | scope-local | ✓ | ✓ | `tests/fixtures/cpp` | 
+ | Bash | 🟡 basic | ⚡ fast | ✓ | ✓ | — | — | ✓ | ✓ | `tests/fixtures/bash` | 
 
 ## Per-language notes
 
@@ -141,6 +142,12 @@
 - Real-repo PASS on flatbuffers (1322 files, 88.6% resolved) — Fase D 2026-04-20
 - Promoted to full 2026-04-27 after fix(cpp): out-of-class method definitions (`Foo::bar() {...}`) now register className via qualified_identifier. Fixture (UserService/UserRepository/main): receiver=7, 100% resolved, highConf=7
 - Shares C extractor; capabilities.hasExceptions=true
+
+### Bash (`bash`)
+
+- Added 2026-07-16. Functions (both `f() {}` and `function f {}`), calls (bare `command` nodes; no-paren so the shared `$CALLEE($$$ARGS)` pattern matches nothing — custom walker), and `source`/`.` sourcing as IMPORTS resolved relative to the file then repo root.
+- No classes/interfaces/types/DI — shell has none; receiver_type=none, capabilities.hasExceptions=false.
+- Noise covers builtins + common coreutils so only in-repo function calls survive as CALLS edges.
 
 ## Baselines
 

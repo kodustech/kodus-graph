@@ -446,4 +446,25 @@ export const LANGUAGE_SUPPORT: readonly LanguageSupportRecord[] = [
             'Shares C extractor; capabilities.hasExceptions=true',
         ],
     },
+    {
+        key: 'bash',
+        display_name: 'Bash',
+        tier: 'basic',
+        parse_speed: 'fast',
+        features: {
+            noise: true,
+            capabilities: true,
+            di_heuristic: false,
+            receiver_type: 'none',
+            complexity_kinds: true,
+            imports: true,
+        },
+        canonical_fixture: 'tests/fixtures/bash',
+        baseline_tier_ratios: null,
+        notes: [
+            'Added 2026-07-16. Functions (both `f() {}` and `function f {}`), calls (bare `command` nodes; no-paren so the shared `$CALLEE($$$ARGS)` pattern matches nothing — custom walker), and `source`/`.` sourcing as IMPORTS resolved relative to the file then repo root.',
+            'No classes/interfaces/types/DI — shell has none; receiver_type=none, capabilities.hasExceptions=false.',
+            'Noise covers builtins + common coreutils so only in-repo function calls survive as CALLS edges.',
+        ],
+    },
 ];

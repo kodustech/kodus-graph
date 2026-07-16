@@ -17,6 +17,7 @@ import '../languages/dart';
 import '../languages/scala';
 import '../languages/elixir';
 import '../languages/c';
+import '../languages/bash';
 
 // `Lang` from ast-grep is a string enum (`Lang.TypeScript === 'TypeScript'`),
 // so any `Lang | string` value is already a string at runtime — registry keys

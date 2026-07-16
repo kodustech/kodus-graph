@@ -1,3 +1,4 @@
+import bash from '@ast-grep/lang-bash';
 import c from '@ast-grep/lang-c';
 import cpp from '@ast-grep/lang-cpp';
 import csharp from '@ast-grep/lang-csharp';
@@ -17,7 +18,23 @@ import { languageOfExt, supportedExtensions } from '../languages/language-of-fil
 
 // Register dynamic languages at import time (side effect).
 // This must happen before parseAsync can parse these languages.
-registerDynamicLanguage({ python, ruby, go, java, rust, php, csharp, kotlin, swift, dart, scala, c, cpp, elixir });
+registerDynamicLanguage({
+    python,
+    ruby,
+    go,
+    java,
+    rust,
+    php,
+    csharp,
+    kotlin,
+    swift,
+    dart,
+    scala,
+    c,
+    cpp,
+    elixir,
+    bash,
+});
 
 // Extension -> language. Delegates to the canonical map in
 // `src/languages/language-of-file.ts` so this module and the resolver agree
