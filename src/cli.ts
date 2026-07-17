@@ -5,10 +5,12 @@ import { resolve } from 'path';
 import { executeAnalyze } from './commands/analyze';
 import { executeCommunities } from './commands/communities';
 import { executeContext } from './commands/context';
+import { executeContextOf } from './commands/context-of';
 import { executeDiff } from './commands/diff';
 import { executeFlows } from './commands/flows';
 import { executeOutline } from './commands/outline';
 import { executeParse } from './commands/parse';
+import { executePath } from './commands/path';
 import { executePrOverlap } from './commands/pr-overlap';
 import { executeSearch } from './commands/search';
 import { executeSubsystemContext } from './commands/subsystem-context';
@@ -246,6 +248,42 @@ program
             files: opts.files,
             topN: parseInt(opts.top, 10),
             minSize: parseInt(opts.minSize, 10),
+        });
+    });
+
+program
+    .command('context-of')
+    .description("A symbol's context pack: callers, callees, types, and tests, ranked, in one query")
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .requiredOption('--symbol <qualified>', 'Qualified name of the symbol')
+    .option('--limit <n>', 'Max neighbours per list, most-connected first', '15')
+    .action((opts) => {
+        executeContextOf({
+            graph: opts.graph,
+            out: opts.out,
+            symbol: opts.symbol,
+            limit: parseInt(opts.limit, 10),
+        });
+    });
+
+program
+    .command('path')
+    .description('Shortest call path between two symbols ("how does A reach B?")')
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .requiredOption('--from <qualified>', 'Origin symbol (qualified name)')
+    .requiredOption('--to <qualified>', 'Destination symbol (qualified name)')
+    .option('--kinds <kind...>', 'Edge kinds that count as a hop (default: CALLS)')
+    .option('--max-depth <n>', 'Give up after this many hops', '10')
+    .action((opts) => {
+        executePath({
+            graph: opts.graph,
+            out: opts.out,
+            from: opts.from,
+            to: opts.to,
+            kinds: opts.kinds,
+            maxDepth: Number.parseInt(opts.maxDepth, 10),
         });
     });
 
