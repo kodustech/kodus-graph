@@ -9,6 +9,7 @@ import { executeDiff } from './commands/diff';
 import { executeFlows } from './commands/flows';
 import { executeOutline } from './commands/outline';
 import { executeParse } from './commands/parse';
+import { executePrOverlap } from './commands/pr-overlap';
 import { executeSearch } from './commands/search';
 import { executeUpdate } from './commands/update';
 
@@ -188,6 +189,38 @@ program
             depth: parseInt(opts.depth, 10),
             topological: Boolean(opts.topological),
             topN: parseInt(opts.top, 10),
+        });
+    });
+
+program
+    .command('pr-overlap')
+    .description('Compare two changesets (PRs) for merge risk and cross-impact')
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .option('--a <qualified...>', "PR A's changed symbols (qualified names)")
+    .option('--b <qualified...>', "PR B's changed symbols (qualified names)")
+    .option('--a-files <paths...>', "PR A's changed files (expanded to their symbols if --a is omitted)")
+    .option('--b-files <paths...>', "PR B's changed files (expanded to their symbols if --b is omitted)")
+    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
+    .action((opts) => {
+        if (!opts.a && !opts.aFiles) {
+            log.error('one of --a or --a-files is required');
+            process.exit(1);
+        }
+        if (!opts.b && !opts.bFiles) {
+            log.error('one of --b or --b-files is required');
+            process.exit(1);
+        }
+        executePrOverlap({
+            graph: opts.graph,
+            out: opts.out,
+            a: opts.a,
+            b: opts.b,
+            aFiles: opts.aFiles,
+            bFiles: opts.bFiles,
+            maxDepth: Number.parseInt(opts.maxDepth, 10),
+            minConfidence: Number.parseFloat(opts.minConfidence),
         });
     });
 
