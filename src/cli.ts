@@ -11,6 +11,7 @@ import { executeOutline } from './commands/outline';
 import { executeParse } from './commands/parse';
 import { executePrOverlap } from './commands/pr-overlap';
 import { executeSearch } from './commands/search';
+import { executeSubsystemContext } from './commands/subsystem-context';
 import { executeUpdate } from './commands/update';
 
 const program = new Command();
@@ -221,6 +222,30 @@ program
             bFiles: opts.bFiles,
             maxDepth: Number.parseInt(opts.maxDepth, 10),
             minConfidence: Number.parseFloat(opts.minConfidence),
+        });
+    });
+
+program
+    .command('subsystem-context')
+    .description('Orient a changeset: its module(s), hub/bridge role, and immediate callers/callees')
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .option('--changed <qualified...>', 'Changed symbols (qualified names)')
+    .option('--files <paths...>', 'Changed files (expanded to their symbols if --changed is omitted)')
+    .option('--top <n>', 'Hub/bridge pool size considered notable', '20')
+    .option('--min-size <n>', 'Minimum community size to report as a subsystem', '2')
+    .action((opts) => {
+        if (!opts.changed && !opts.files) {
+            log.error('one of --changed or --files is required');
+            process.exit(1);
+        }
+        executeSubsystemContext({
+            graph: opts.graph,
+            out: opts.out,
+            changed: opts.changed,
+            files: opts.files,
+            topN: parseInt(opts.top, 10),
+            minSize: parseInt(opts.minSize, 10),
         });
     });
 
