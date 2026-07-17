@@ -1047,4 +1047,53 @@ describe('computeBlastRadius', () => {
         expect(consumerEntry!.accumulated_confidence).toBe(1.0);
         expect(consumerEntry!.edge_kind).toBe('IMPORTS');
     });
+
+    it('reaches subclasses through INHERITS — a base-class change is not under-counted', () => {
+        // Sub extends Base, SubSub extends Sub. No CALLS/super anywhere: the only
+        // path from Base to its descendants is the inheritance edge. Before
+        // INHERITS was traversed, changing Base reached nothing but itself.
+        const cls = (name: string, file: string): GraphData['nodes'][number] => ({
+            kind: 'Class',
+            name,
+            qualified_name: `${file}::${name}`,
+            file_path: file,
+            line_start: 1,
+            line_end: 5,
+            language: 'typescript',
+            is_test: false,
+        });
+        const graph: GraphData = {
+            nodes: [cls('Base', 'base.ts'), cls('Sub', 'sub.ts'), cls('SubSub', 'subsub.ts')],
+            edges: [
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'sub.ts::Sub',
+                    target_qualified: 'base.ts::Base',
+                    file_path: 'sub.ts',
+                    line: 1,
+                },
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'subsub.ts::SubSub',
+                    target_qualified: 'sub.ts::Sub',
+                    file_path: 'subsub.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const result = computeBlastRadius(graph, ['base.ts::Base'], 3, 0.5);
+
+        const direct = result.by_depth['1']?.find((e) => e.qualified_name === 'sub.ts::Sub');
+        expect(direct).toBeDefined();
+        expect(direct!.edge_kind).toBe('INHERITS');
+        expect(direct!.accumulated_confidence).toBe(0.9);
+        expect(direct!.impact_category).toBe('behavior_affected');
+
+        // The grandchild is reached transitively, confidence decayed once (0.9^2).
+        const transitive = result.by_depth['2']?.find((e) => e.qualified_name === 'subsub.ts::SubSub');
+        expect(transitive).toBeDefined();
+        expect(transitive!.accumulated_confidence).toBeCloseTo(0.81, 5);
+        expect(result.total_functions).toBe(3);
+    });
 });

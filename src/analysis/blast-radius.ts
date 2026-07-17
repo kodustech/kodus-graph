@@ -2,7 +2,7 @@ import type { BlastRadiusEntry, BlastRadiusResult, EdgeKind, GraphData, ImpactCa
 import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { GraphIndex } from './graph-index';
 
-type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS' | 'USES_TYPE'>;
+type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS'>;
 
 /**
  * Confidence carried by a USES_TYPE edge.
@@ -15,6 +15,19 @@ type BlastRadiusEdgeKind = Extract<EdgeKind, 'CALLS' | 'IMPORTS' | 'USES_TYPE'>;
  * doesn't. Decays across depth like CALLS.
  */
 const USES_TYPE_CONFIDENCE = 0.8;
+
+/**
+ * Confidence carried by an INHERITS edge.
+ *
+ * A change to a base class reaches every subclass that extends it: the subclass
+ * *is* the base plus its own additions, so behavior, fields, and contract flow
+ * down. This is one of the strongest structural couplings — higher than a
+ * signature merely naming a type (USES_TYPE) — so it sits just under a direct
+ * receiver-resolved call. Traversed reversed, like CALLS: the changed base is
+ * the target of the edge, the affected subclass is the source. Decays across
+ * depth so a change three levels up a hierarchy still counts, but less.
+ */
+const INHERITS_CONFIDENCE = 0.9;
 
 interface AdjEntry {
     neighbor: string;
@@ -113,6 +126,16 @@ export function computeBlastRadius(
         // names it. Unlike IMPORTS these are symbol-to-symbol, so they meet the
         // symbol seeds the traversal actually starts from.
         addEdge(edge.target_qualified, edge.source_qualified, USES_TYPE_CONFIDENCE, 'USES_TYPE');
+    }
+    for (const edge of idx.edgesByKind('INHERITS')) {
+        if (INHERITS_CONFIDENCE < minConf) {
+            continue;
+        }
+        // Reverse, like CALLS: a change to the base (edge target) reaches every
+        // subclass that extends it (edge source). Without this, changing a base
+        // class left its subclasses out of the blast radius unless they happened
+        // to call `super` — a real under-count of a high-impact change.
+        addEdge(edge.target_qualified, edge.source_qualified, INHERITS_CONFIDENCE, 'INHERITS');
     }
 
     // Consolidated state per node

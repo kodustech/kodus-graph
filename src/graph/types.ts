@@ -137,8 +137,8 @@ export type ImpactCategory = 'contract_breaking' | 'behavior_affected' | 'transi
 export interface BlastRadiusEntry {
     qualified_name: string;
     accumulated_confidence: number;
-    /** How the change reaches this symbol: it calls it, imports it, or names it in a signature. */
-    edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE';
+    /** How the change reaches this symbol: it calls it, imports it, names it in a signature, or inherits from it. */
+    edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS';
     impact_category: ImpactCategory;
     flows: FlowRef[];
     impact_score: number;
