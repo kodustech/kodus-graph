@@ -204,6 +204,60 @@ function louvainLocalMoving(adj: Map<number, number>[], k: number[], m: number):
     return comm;
 }
 
+/**
+ * Split any internally-disconnected community into its connected components.
+ *
+ * This is the guarantee Leiden adds over Louvain: Louvain's aggregation can
+ * strand a community that is not internally connected (Traag et al. 2019 measure
+ * up to 25% badly connected, 16% outright disconnected), which for a code graph
+ * would report "one module" that is really two unrelated pieces. We enforce the
+ * property directly: within each community, walk the induced subgraph and give
+ * every connected component its own id.
+ *
+ * Modularity is unchanged by this — components that split share no edge, so no
+ * intra-community edge is lost. It is a pure correctness gain, not a trade. This
+ * is not full Leiden (no CPM refinement pass), but it delivers Leiden's headline
+ * connectivity guarantee in ~a screenful, no dependency.
+ */
+export function enforceConnectivity(adj: Map<number, number>[], comm: number[]): number[] {
+    const n = comm.length;
+    const byComm = new Map<number, number[]>();
+    for (let i = 0; i < n; i++) {
+        const list = byComm.get(comm[i]);
+        if (list) {
+            list.push(i);
+        } else {
+            byComm.set(comm[i], [i]);
+        }
+    }
+
+    const result = new Array<number>(n).fill(-1);
+    const seen = new Set<number>();
+    let nextId = 0;
+    for (const nodes of byComm.values()) {
+        const inComm = new Set(nodes);
+        for (const start of nodes) {
+            if (seen.has(start)) {
+                continue;
+            }
+            const compId = nextId++;
+            const stack = [start];
+            seen.add(start);
+            while (stack.length > 0) {
+                const cur = stack.pop()!;
+                result[cur] = compId;
+                for (const nb of adj[cur].keys()) {
+                    if (inComm.has(nb) && !seen.has(nb)) {
+                        seen.add(nb);
+                        stack.push(nb);
+                    }
+                }
+            }
+        }
+    }
+    return result;
+}
+
 /** Modularity Q of a partition, for reporting the clustering quality. */
 function modularity(adj: Map<number, number>[], k: number[], m: number, comm: number[]): number {
     if (m === 0) {
@@ -225,7 +279,9 @@ export function detectTopologicalCommunities(graph: IndexedGraph, opts: Topologi
     const { minSize, topN } = opts;
     const wg = buildWeightedGraph(graph);
 
-    const comm = louvainLocalMoving(wg.adj, wg.k, wg.m);
+    // Louvain local moving, then Leiden's connectivity guarantee: split any
+    // community that came out internally disconnected.
+    const comm = enforceConnectivity(wg.adj, louvainLocalMoving(wg.adj, wg.k, wg.m));
     const q = modularity(wg.adj, wg.k, wg.m, comm);
 
     // Renumber communities to dense ids and gather membership.

@@ -1,7 +1,34 @@
 import { describe, expect, it } from 'bun:test';
-import { detectTopologicalCommunities } from '../../src/analysis/topological-communities';
+import { detectTopologicalCommunities, enforceConnectivity } from '../../src/analysis/topological-communities';
 import { indexGraph } from '../../src/graph/loader';
 import type { GraphData } from '../../src/graph/types';
+
+describe('enforceConnectivity (Leiden connectivity guarantee)', () => {
+    it('splits an internally-disconnected community into its connected components', () => {
+        // 0-1 connected, 2-3 connected, but no edge bridges the two pairs — yet
+        // all four are assigned to community 0 (the case Louvain can produce).
+        const adj: Map<number, number>[] = [new Map([[1, 1]]), new Map([[0, 1]]), new Map([[3, 1]]), new Map([[2, 1]])];
+        const refined = enforceConnectivity(adj, [0, 0, 0, 0]);
+
+        // The two pairs must end up in different communities...
+        expect(refined[0]).toBe(refined[1]);
+        expect(refined[2]).toBe(refined[3]);
+        expect(refined[0]).not.toBe(refined[2]);
+    });
+
+    it('leaves an already-connected community untouched (one component)', () => {
+        const adj: Map<number, number>[] = [
+            new Map([[1, 1]]),
+            new Map([
+                [0, 1],
+                [2, 1],
+            ]),
+            new Map([[1, 1]]),
+        ];
+        const refined = enforceConnectivity(adj, [0, 0, 0]);
+        expect(new Set(refined).size).toBe(1);
+    });
+});
 
 /**
  * Two dense triangles (a1/a2/a3 and b1/b2/b3), joined only through `glue`, which
