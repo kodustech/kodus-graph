@@ -110,3 +110,38 @@ describe('discoverFiles with include/exclude', () => {
         rmSync(TMP, { recursive: true, force: true });
     });
 });
+
+describe('discoverFiles --max-files guard', () => {
+    it('throws when the walk exceeds maxFiles and allowPartial is off', () => {
+        setupFixture();
+        // The fixture walk finds 4 files; cap at 2 with no escape hatch.
+        expect(() => discoverFiles(TMP, undefined, undefined, undefined, { maxFiles: 2 })).toThrow(
+            /over the --max-files cap/,
+        );
+        rmSync(TMP, { recursive: true, force: true });
+    });
+
+    it('truncates to maxFiles when allowPartial is on', () => {
+        setupFixture();
+        const files = discoverFiles(TMP, undefined, undefined, undefined, { maxFiles: 2, allowPartial: true });
+        expect(files.length).toBe(2);
+        rmSync(TMP, { recursive: true, force: true });
+    });
+
+    it('does not cap when maxFiles is unset', () => {
+        setupFixture();
+        const files = discoverFiles(TMP, undefined, undefined, undefined, {});
+        expect(files.length).toBe(4);
+        rmSync(TMP, { recursive: true, force: true });
+    });
+
+    it('never caps an explicit filterFiles list', () => {
+        setupFixture();
+        // Two files named explicitly, cap of 1 — the list is honored in full.
+        const files = discoverFiles(TMP, ['src/core/auth.ts', 'src/utils/helpers.ts'], undefined, undefined, {
+            maxFiles: 1,
+        });
+        expect(files.length).toBe(2);
+        rmSync(TMP, { recursive: true, force: true });
+    });
+});

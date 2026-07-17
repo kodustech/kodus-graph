@@ -28,6 +28,10 @@ export interface ParseOptions {
     exclude?: string[];
     skipTests?: boolean;
     maxMemoryMB?: number;
+    /** Refuse to walk more than this many files (full-tree scan only). */
+    maxFiles?: number;
+    /** Truncate to maxFiles and warn instead of throwing when the cap is hit. */
+    allowPartial?: boolean;
     /**
      * Baseline graph nodes to seed the symbol table with. Used by the
      * `context` command so a slice re-parse resolves call sites against the
@@ -47,7 +51,10 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     const repoDir = resolve(opts.repoDir);
 
     // Phase 1: Discover files
-    const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude);
+    const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude, {
+        maxFiles: opts.maxFiles,
+        allowPartial: opts.allowPartial,
+    });
     process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
     // Phase 2: Parse + extract

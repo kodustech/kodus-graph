@@ -5,17 +5,36 @@ import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
 import { getLanguage } from './languages';
 
+export interface DiscoverOptions {
+    /**
+     * Refuse to discover more than this many files. Guards against a runaway
+     * walk on a giant monorepo. Applies only to the full-tree walk, never to an
+     * explicit `filterFiles` list (the caller asked for those by name).
+     */
+    maxFiles?: number;
+    /**
+     * When the cap is exceeded, truncate to `maxFiles` and warn instead of
+     * throwing. Off by default: a silently partial graph gives a review or
+     * impact query a confidently wrong answer, so the cap fails loud unless the
+     * caller explicitly opts into a partial build.
+     */
+    allowPartial?: boolean;
+}
+
 /**
  * Walk the filesystem and find all supported source files.
  * If `filterFiles` is provided, only return those specific files (resolved to absolute paths).
  * If `include` patterns are provided, keep only files matching at least one pattern.
  * If `exclude` patterns are provided, remove files matching any pattern.
+ * If `opts.maxFiles` is set, a walk that discovers more than that throws unless
+ * `opts.allowPartial` is set (then it truncates and warns).
  */
 export function discoverFiles(
     repoDir: string,
     filterFiles?: string[],
     include?: string[],
     exclude?: string[],
+    opts?: DiscoverOptions,
 ): string[] {
     const absRepoDir = resolve(repoDir);
 
@@ -59,6 +78,23 @@ export function discoverFiles(
 
             return true;
         });
+    }
+
+    if (opts?.maxFiles !== undefined && files.length > opts.maxFiles) {
+        if (opts.allowPartial) {
+            log.warn('Discovered files exceed --max-files; building a PARTIAL graph', {
+                discovered: files.length,
+                cap: opts.maxFiles,
+                dropped: files.length - opts.maxFiles,
+            });
+            files = files.slice(0, opts.maxFiles);
+        } else {
+            throw new Error(
+                `Discovered ${files.length} files, over the --max-files cap of ${opts.maxFiles}. ` +
+                    'Raise --max-files, narrow the scan with --include/--exclude, or pass --allow-partial ' +
+                    'to build a deliberately truncated graph. Refusing to silently drop files.',
+            );
+        }
     }
 
     return files;
