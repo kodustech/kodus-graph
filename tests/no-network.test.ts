@@ -39,7 +39,7 @@ function installNetworkTraps(record: (call: string) => void): Trap {
     globalThis.fetch = ((input: unknown) => {
         record(`fetch ${String(input)}`);
         throw new Error('network blocked in no-network test');
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     net.Socket.prototype.connect = function (this: net.Socket, ...args: unknown[]): net.Socket {
         record(`net.connect ${JSON.stringify(args[0])}`);
