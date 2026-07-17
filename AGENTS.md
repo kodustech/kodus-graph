@@ -4,9 +4,48 @@ Guidelines for AI agents and contributors working on this codebase.
 
 ## Project Overview
 
-`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports **14 languages** via ast-grep and produces JSON output consumed by Kodus AI review agents.
+`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports **15 languages** via ast-grep and produces JSON output consumed by Kodus AI review agents.
 
-**Supported languages:** TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir.
+**Supported languages:** TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir, Bash.
+
+## Using kodus-graph as a tool (for AI coding assistants)
+
+If you are an assistant (Cursor, Claude Code, …) working in a user's repo,
+kodus-graph answers structural questions in one deterministic query that would
+otherwise cost many greps and file reads. **Build the graph once, then query it;
+every answer cites `file::symbol` and CALLS edges carry a 0–1 confidence.**
+
+All commands take `--graph <path>` and `--out -` (write JSON to stdout). Qualified
+names are `file_path::Symbol` or `file_path::Class.method`.
+
+```bash
+# 1. Build the graph once (deterministic, on-device, no network)
+kodus-graph parse --repo-dir . --out .kodus-graph/graph.json
+# refresh incrementally after edits; check freshness before trusting it
+kodus-graph update --repo-dir . --graph .kodus-graph/graph.json
+kodus-graph status --graph .kodus-graph/graph.json --out - --repo-dir .
+```
+
+**Pick the command by what you're trying to do:**
+
+| You want to… | Run | Instead of |
+|---|---|---|
+| Understand a symbol before editing it (its callers, callees, types, tests) | `context-of --symbol 'f.ts::foo'` | grepping the name across the repo |
+| Know how one thing reaches another | `path --from 'a.ts::A' --to 'b.ts::B'` | chaining 3–4 greps and guessing links |
+| See what a change breaks (impact + risk + test gaps) | `analyze --files <changed>` | reading every caller by hand |
+| Get full review context for a diff (LLM-ready) | `context --files <changed> --format prompt` | pasting whole files into context |
+| Check if two PRs collide / merge-risk | `pr-overlap --a-files <A> --b-files <B>` | reviewing each PR blind to the other |
+| Learn where a change lives (module, hub/bridge, neighbours) | `subsystem-context --files <changed>` | reconstructing the architecture manually |
+| Find the load-bearing symbols (to read first) | `rank --top 20 [--file <f>]` | reading files in arbitrary order |
+| Find callers/callees or search by name/kind | `search --callers-of / --callees-of / --query` | `grep` with false positives |
+| See the module map (topology, not directories) | `communities --topological` | guessing modules from folders |
+| Get a compact structural outline of files | `outline --files <f>` | reading full source for shape |
+| Trace entry points → execution paths | `flows` | manual call-tree tracing |
+
+**Trust rules for consumers:** run `status` first — a stale graph answers
+confidently and wrongly. Prefer edges with `confidence >= 0.5`. `via inherits` /
+`via calls` on blast-radius entries tells you *how* impact propagates, so you can
+judge the link rather than trust a bare number.
 
 ## Tech Stack
 
@@ -34,14 +73,14 @@ bun run build        # Compile standalone binary
 
 ```
 src/
-├── cli.ts              # CLI entry point (Commander.js) — 8 commands
-├── commands/           # Command handlers (parse, analyze, context, diff, update, communities, flows, search)
+├── cli.ts              # CLI entry point (Commander.js) — 15 commands
+├── commands/           # Command handlers (parse, analyze, context, diff, update, communities, flows, search, outline, pr-overlap, subsystem-context, context-of, path, rank, status)
 ├── parser/             # AST extraction coordination
 │   ├── batch.ts        # Async batch processing with dynamic memory monitoring
 │   ├── extractor.ts    # Dispatch coordinator → languages/engine.ts
 │   ├── discovery.ts    # File discovery with glob filtering
 │   └── languages.ts    # Language registration and extension mapping
-├── languages/          # Co-located per-language modules (14 languages)
+├── languages/          # Co-located per-language modules (15 languages)
 │   ├── spec.ts         # LanguageExtractors interface (contract)
 │   ├── engine.ts       # Dispatch + Extracted* → Raw* conversion
 │   ├── shared.ts       # Reusable helpers (isExported, isAsync, extractDecorators, etc.)
@@ -108,7 +147,7 @@ tests/fixtures/         # Sample files per language (follow language naming conv
 
 | Field | Type | Description |
 |---|---|---|
-| `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS |
+| `kind` | `EdgeKind` | CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS, USES_TYPE |
 | `source_qualified` | `string` | Caller/parent node |
 | `target_qualified` | `string` | Callee/child node |
 | `confidence` | `number?` | 0.0–1.0 (for CALLS edges only) |
