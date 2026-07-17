@@ -12,7 +12,9 @@ import { executeOutline } from './commands/outline';
 import { executeParse } from './commands/parse';
 import { executePath } from './commands/path';
 import { executePrOverlap } from './commands/pr-overlap';
+import { executeRank } from './commands/rank';
 import { executeSearch } from './commands/search';
+import { executeStatus } from './commands/status';
 import { executeSubsystemContext } from './commands/subsystem-context';
 import { executeUpdate } from './commands/update';
 
@@ -284,6 +286,38 @@ program
             to: opts.to,
             kinds: opts.kinds,
             maxDepth: Number.parseInt(opts.maxDepth, 10),
+        });
+    });
+
+program
+    .command('rank')
+    .description('Rank symbols by structural importance (degree) for relevance-ordered retrieval')
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .option('--top <n>', 'How many symbols to return', '20')
+    .option('--file <path>', 'Restrict to symbols declared in this file')
+    .option('--kind <type>', 'Restrict to a node kind (Function, Class, Interface, ...)')
+    .action((opts) => {
+        executeRank({
+            graph: opts.graph,
+            out: opts.out,
+            top: parseInt(opts.top, 10),
+            file: opts.file,
+            kind: opts.kind,
+        });
+    });
+
+program
+    .command('status')
+    .description("Check whether the graph is still fresh against the repo's files on disk")
+    .requiredOption('--graph <path>', 'Path to graph JSON')
+    .requiredOption('--out <path>', 'Output JSON file path')
+    .option('--repo-dir <path>', 'Repository root the graph paths resolve against', '.')
+    .action((opts) => {
+        executeStatus({
+            graph: opts.graph,
+            out: opts.out,
+            repoDir: opts.repoDir,
         });
     });
 
