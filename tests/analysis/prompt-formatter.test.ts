@@ -1580,4 +1580,84 @@ describe('formatPrompt — long contract diff rendering', () => {
         const matches = text.match(/src\/debug\.py → src\/assemble\.py/g) || [];
         expect(matches.length).toBe(1);
     });
+
+    it('labels each blast-radius symbol with how the change reaches it (via calls / via inherits)', () => {
+        const cls = (name: string, file: string): GraphData['nodes'][number] => ({
+            kind: 'Class',
+            name,
+            qualified_name: `${file}::${name}`,
+            file_path: file,
+            line_start: 1,
+            line_end: 10,
+            language: 'typescript',
+            is_test: false,
+            file_hash: file,
+        });
+        const graph: GraphData = {
+            nodes: [
+                cls('Base', 'src/base.ts'),
+                {
+                    kind: 'Method',
+                    name: 'run',
+                    qualified_name: 'src/base.ts::Base.run',
+                    file_path: 'src/base.ts',
+                    line_start: 2,
+                    line_end: 4,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'src/base.ts',
+                },
+                cls('Sub', 'src/sub.ts'),
+                {
+                    kind: 'Function',
+                    name: 'invoke',
+                    qualified_name: 'src/caller.ts::invoke',
+                    file_path: 'src/caller.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'src/caller.ts',
+                },
+            ],
+            edges: [
+                // A caller reaches Base.run through a call...
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/caller.ts::invoke',
+                    target_qualified: 'src/base.ts::Base.run',
+                    file_path: 'src/caller.ts',
+                    line: 2,
+                    confidence: 0.9,
+                },
+                // ...and Sub reaches Base only by inheriting it (no super call).
+                {
+                    kind: 'INHERITS',
+                    source_qualified: 'src/sub.ts::Sub',
+                    target_qualified: 'src/base.ts::Base',
+                    file_path: 'src/sub.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graph,
+            oldGraph: null,
+            changedFiles: ['src/base.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const text = formatPrompt(output);
+
+        expect(text).toContain('BLAST RADIUS:');
+        // The caller is reached via a call; the subclass via inheritance. Both
+        // reasons must be visible so a reviewer can judge the link.
+        expect(text).toMatch(/invoke \([^)]*via calls\)/);
+        expect(text).toMatch(/Sub \([^)]*via inherits\)/);
+    });
 });

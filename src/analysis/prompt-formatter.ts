@@ -17,6 +17,18 @@ const DEFAULT_MAX_FUNCTIONS = 30;
 const DEFAULT_MAX_PROMPT_CHARS = 20_000;
 
 /**
+ * Short, human-facing label for how a blast-radius edge reaches a symbol.
+ * Keyed by `BlastRadiusEntry.edge_kind`; kept terse because it renders inline
+ * next to every impacted symbol in the prompt.
+ */
+const BLAST_EDGE_LABEL: Record<'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS', string> = {
+    CALLS: 'calls',
+    IMPORTS: 'import',
+    USES_TYPE: 'type',
+    INHERITS: 'inherits',
+};
+
+/**
  * Return the subset of contract diffs that are semantically meaningful for the
  * function's language. Fields like `is_async` on Go, `throws` on Rust, or
  * `decorators` on C are filtered out because those languages have no such
@@ -300,7 +312,11 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                     const name = shortName(e.qualified_name);
                     const conf = `${Math.round(e.accumulated_confidence * 100)}%`;
                     const score = e.impact_score > 0 ? `, score ${e.impact_score.toFixed(2)}` : '';
-                    return `${name} (${conf}${score})`;
+                    // Surface *how* the change reaches this symbol, so the reviewer
+                    // can judge the link rather than trust a bare percentage: a
+                    // subclass reached `via inherits` is a different risk than a
+                    // `via calls` caller or a signature that merely names the type.
+                    return `${name} (${conf}${score}, via ${BLAST_EDGE_LABEL[e.edge_kind]})`;
                 });
 
                 let line = `  depth ${depth} [${category}]: ${names.join(', ')}`;
