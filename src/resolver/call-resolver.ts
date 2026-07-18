@@ -300,7 +300,15 @@ const diTier: Tier = (call, ctx) => {
     if (!call.diField) {
         return null;
     }
-    const resolved = resolveDICall(call.diField, call.callName, ctx.fp, ctx.diMap, ctx.symbolTable, call.diClass);
+    const resolved = resolveDICall(
+        call.diField,
+        call.callName,
+        ctx.fp,
+        ctx.diMap,
+        ctx.symbolTable,
+        ctx.classHierarchy,
+        call.diClass,
+    );
     if (!resolved) {
         return null;
     }
@@ -594,6 +602,7 @@ function resolveDICall(
     currentFile: string,
     diMap: Map<string, string> | undefined,
     symbolTable: SymbolTable,
+    classHierarchy: Map<string, string[]>,
     diClass?: string,
 ): ResolveResult | null {
     if (!diMap) {
@@ -613,11 +622,24 @@ function resolveDICall(
     if (direct.length >= 1) {
         const best = pickClosestCandidate(direct, currentFile);
         const typeFile = best.includes('::') ? best.split('::')[0] : best;
-        return {
-            target: `${typeFile}::${typeName}.${methodName}`,
-            confidence: 0.95,
-            strategy: 'di',
-        };
+        const own = `${typeFile}::${typeName}.${methodName}`;
+        // Only claim `Type.method` if that method is actually declared on the
+        // type. For an inherited method (Type extends Base, Base defines it) walk
+        // up the hierarchy to the base that owns it — mirroring the receiver
+        // tier. Otherwise we emit a phantom `Subclass.method` node, which breaks
+        // the blast radius INTO the real base method (a change to Base.method
+        // fails to reach this DI call site).
+        const methodCandidates = symbolTable.lookupGlobal(methodName);
+        if (methodCandidates.includes(own)) {
+            return { target: own, confidence: 0.95, strategy: 'di' };
+        }
+        const inherited = lookupViaInheritance(typeName, methodName, methodCandidates, classHierarchy);
+        if (inherited) {
+            return { target: inherited, confidence: 0.9, strategy: 'di' };
+        }
+        // Method isn't in the symbol table at all (e.g. declared in an unparsed
+        // dependency) — keep the direct guess rather than dropping the edge.
+        return { target: own, confidence: 0.95, strategy: 'di' };
     }
 
     // 2) Language-specific implementation heuristics (e.g. C#/TS `IFoo → Foo`,
@@ -662,13 +684,13 @@ function resolveByName(
     importMap: ImportMap,
     totalIndexedFiles: number,
 ): ResolveByNameResult {
-    // Strategy 1: Same file (0.85)
-    const sameFile = symbolTable.lookupExact(currentFile, callName);
-    if (sameFile) {
-        return { target: sameFile, confidence: 0.85, strategy: 'same' };
-    }
-
-    // Strategy 2: Import-resolved (0.70-0.90)
+    // Strategy 1: Import-resolved (0.70-0.90).
+    // Checked before same-file: an imported name is the lexical binding, so a
+    // same-file symbol of the same spelling can only be a method (e.g. an
+    // object-literal shorthand method) that an unqualified `name()` never
+    // targets. In languages where an unqualified call CAN bind a same-class
+    // method (C#, C++, Ruby, Elixir — implicit `this`/self) there is no
+    // competing import, so same-file still wins in Strategy 2 below.
     const importedFrom = importMap.lookup(currentFile, callName);
     if (importedFrom) {
         const targetSym = symbolTable.lookupExact(importedFrom, callName);
@@ -676,6 +698,12 @@ function resolveByName(
             return { target: targetSym, confidence: 0.9, strategy: 'import' };
         }
         return { target: `${importedFrom}::${callName}`, confidence: 0.7, strategy: 'import' };
+    }
+
+    // Strategy 2: Same file (0.85)
+    const sameFile = symbolTable.lookupExact(currentFile, callName);
+    if (sameFile) {
+        return { target: sameFile, confidence: 0.85, strategy: 'same' };
     }
 
     // Strategy 3: Unique global name (0.50, bumped to 0.60 if same package/dir)

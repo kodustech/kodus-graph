@@ -77,11 +77,15 @@ describe('resolveCall', () => {
         const im = createImportMap();
         im.add('src/auth.ts', 'findUser', 'src/db.ts');
 
-        // Same-file is checked first (0.85), so same-file wins
+        // An imported name is the lexical binding, so a same-file symbol of the
+        // same spelling can only be a method (e.g. an object-literal shorthand)
+        // that an unqualified `findUser()` never targets — the import wins.
+        // (In C#/C++/Ruby/Elixir an unqualified same-class method call is legal,
+        // but there is no competing import there, so same-file still wins.)
         const result = resolveCall('findUser', 'src/auth.ts', st, im);
         expect(result).not.toBeNull();
-        expect(result!.confidence).toBe(0.85);
-        expect(result!.target).toBe('src/auth.ts::findUser');
+        expect(result!.confidence).toBe(0.9);
+        expect(result!.target).toBe('src/db.ts::findUser');
     });
 
     it('should return file-level import with 0.70 when symbol not in target file symbol table', () => {
