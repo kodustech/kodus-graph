@@ -320,7 +320,7 @@ const classTier: Tier = (call, ctx) => {
     if (!call.resolveInClass) {
         return null;
     }
-    const resolved = resolveInClass(call.callName, ctx.fp, call.resolveInClass, ctx.symbolTable);
+    const resolved = resolveInClass(call.callName, ctx.fp, call.resolveInClass, ctx.symbolTable, ctx.classHierarchy);
     if (!resolved) {
         return null;
     }
@@ -356,8 +356,13 @@ const cascadeTier: Tier = (call, ctx) => {
  */
 const TIERS: ReadonlyArray<{ name: string; tier: Tier }> = [
     { name: 'receiver', tier: receiverTier },
-    { name: 'noise', tier: noiseTier },
+    // DI runs BEFORE the noise filter, like the receiver tier: a `this.field.method()`
+    // call whose field has a known injected type resolves to `Type.method` even when
+    // `method` is a generic name in the noise list (`get`/`set`/`has`/…). Otherwise
+    // noise would drop a structurally-resolvable DI call. A DI call whose field type
+    // is unknown falls through to `noise` below and is still dropped.
     { name: 'di', tier: diTier },
+    { name: 'noise', tier: noiseTier },
     { name: 'class', tier: classTier },
     { name: 'cascade', tier: cascadeTier },
 ];
@@ -577,6 +582,7 @@ function resolveInClass(
     currentFile: string,
     className: string,
     symbolTable: SymbolTable,
+    classHierarchy: Map<string, string[]>,
 ): ResolveResult | null {
     // Try same-file class method first (self.method() or super().method())
     const inFile = symbolTable.lookupInFile(currentFile, callName, className);
@@ -589,6 +595,15 @@ function resolveInClass(
     const match = candidates.find((q) => q.includes(`::${className}.${callName}`));
     if (match) {
         return { target: match, confidence: 0.85, strategy: 'import' };
+    }
+
+    // Inherited method: `this.method()` where `method` is declared on a base
+    // class, not the enclosing subclass. Walk the hierarchy like the receiver
+    // and DI tiers — otherwise a subclass calling an inherited method loses the
+    // edge, and the base method's blast radius never reaches this call site.
+    const inherited = lookupViaInheritance(className, callName, candidates, classHierarchy);
+    if (inherited) {
+        return { target: inherited, confidence: 0.85, strategy: 'same' };
     }
 
     return null;
