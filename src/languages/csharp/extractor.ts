@@ -120,16 +120,6 @@ const ANNOTATION_NAMES = ['TestMethod', 'Fact', 'Test', 'Theory'];
 // DI extraction helpers
 // ---------------------------------------------------------------------------
 
-// Class declaration kinds where a primary constructor may live (C# 12+ for
-// classes; records since C# 9). The resolver treats every class member with a
-// matching field/property name as a DI binding so `this.Repo.FindAll()`
-// resolves through the DI tier.
-const CSHARP_CLASS_DECL_KINDS = new Set([
-    CSHARP_KINDS.classDeclaration,
-    CSHARP_KINDS.recordDeclaration,
-    CSHARP_KINDS.structDeclaration,
-]);
-
 // Primitive C# types we deliberately exclude from DI bindings — they are not
 // services and would only add noise to the diMap.
 const CSHARP_PRIMITIVE_KINDS = new Set<string>([CSHARP_KINDS.predefinedType]);

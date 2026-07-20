@@ -14,11 +14,6 @@ import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 
-// Symbol-bearing node kinds — what we feed into the symbol table when a
-// caller (currently `context`) passes a baseline graph to widen resolution.
-// `Test` is excluded since tests aren't callable targets.
-const SYMBOL_KINDS = new Set(['Function', 'Method', 'Constructor', 'Class', 'Interface', 'Enum']);
-
 export interface ParseOptions {
     repoDir: string;
     files?: string[];

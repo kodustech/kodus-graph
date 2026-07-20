@@ -510,7 +510,7 @@ export function resolveAllCalls(
                 continue;
             }
             const innerOutcome = outcomes[innerIdx];
-            if (!innerOutcome || innerOutcome.kind !== 'edge') {
+            if (innerOutcome?.kind !== 'edge') {
                 continue;
             }
             let stripped: string | undefined;

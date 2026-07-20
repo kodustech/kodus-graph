@@ -161,7 +161,7 @@ function resolveTypeName(
 
 export function deriveEdges(
     graph: RawGraph,
-    importEdges: ImportEdge[],
+    _importEdges: ImportEdge[],
     symbolTable?: { lookupGlobal(name: string): string[] },
     importMap?: { lookup(file: string, name: string): string | null },
     /**
