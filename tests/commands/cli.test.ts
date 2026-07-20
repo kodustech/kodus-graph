@@ -2,8 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'bun';
 import { writeFileSync } from 'fs';
 
-const CLI = ['bun', 'src/cli.ts'];
-const CWD = '/Users/wellingtonsantana/Documents/kodus-git/kodus-graph';
+// process.execPath is the bun binary running the tests — always resolvable,
+// unlike a bare 'bun' which isn't on PATH for spawned children in CI. CWD is the
+// repo root (`bun test` runs from there), not a hardcoded local path.
+const CLI = [process.execPath, 'src/cli.ts'];
+const CWD = process.cwd();
 
 function runCLI(args: string[]): { code: number; stdout: string; stderr: string } {
     const result = spawnSync({

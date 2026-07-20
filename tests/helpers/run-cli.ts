@@ -22,7 +22,7 @@ export interface RunCliOptions {
 }
 
 export function runCli(args: string[], opts: RunCliOptions = {}): string {
-    return execFileSync('bun', ['run', CLI, ...args], {
+    return execFileSync(process.execPath, ['run', CLI, ...args], {
         encoding: 'utf-8',
         // Discard the CLI's stderr progress output; surface it only on failure,
         // which execFileSync attaches to the thrown error.
