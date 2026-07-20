@@ -180,7 +180,7 @@ interface BlastRadiusResult {
 interface BlastRadiusEntry {
   qualified_name: string;
   accumulated_confidence: number;             // multiplied across the path
-  edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE';
+  edge_kind: 'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS';
   impact_category: ImpactCategory;
   flows: FlowRef[];                           // entry points reaching this fn
   impact_score: number;
@@ -230,10 +230,10 @@ interface RiskCaps {
 | `complexity` | Cyclomatic against `caps.cyclomatic` when nodes carry `complexity`; lines-of-code against `caps.lines_of_code` otherwise. |
 | `inheritance` | Share of changed symbols sitting in a class hierarchy, counting a method through its owning class. |
 
-> **Changed in 0.6.0.** `caps.complexity` is gone, split into `caps.cyclomatic`
+> **Changed in 0.3.0.** `caps.complexity` is gone, split into `caps.cyclomatic`
 > and `caps.lines_of_code`. The Zod schema is `.strict()`, so a config carrying
 > the old key errors instead of normalizing cyclomatic complexity against a
-> lines-of-code figure. Scores from before 0.6.0 are not comparable — three of
+> lines-of-code figure. Scores from before 0.3.0 are not comparable — three of
 > the four factors changed scale.
 
 Weights override via `--risk-config <path>` (a JSON object). The shape is validated with Zod; unknown keys cause an error. Weights must sum to 1.0.
@@ -257,7 +257,7 @@ tested function vouch for every function beside it. Use
 `GraphIndex.isTested(qualifiedName, filePath)`, which asks symbol evidence first
 and falls back to the file-level signal.
 
-> **Changed in 0.6.0.** `TESTED_BY` previously came from *imports* — any resolved
+> **Changed in 0.3.0.** `TESTED_BY` previously came from *imports* — any resolved
 > import out of a test file marked the imported file, and every function in it,
 > as tested. A test importing a single constant reported "0/3 untested" across
 > three untested functions.
@@ -364,7 +364,7 @@ reached by guessing that a name happened to be unique. Consumers that present
 edges to a model should carry the tier through, or a guess and a typed resolution
 arrive as the same assertion.
 
-> **Changed in 0.6.0.** `CallerRef.tier`, `CalleeRef.confidence` / `tier` and
+> **Changed in 0.3.0.** `CallerRef.tier`, `CalleeRef.confidence` / `tier` and
 > `EnrichedFunction.is_exported` are new. `CalleeRef` previously carried no
 > confidence at all, so a 0.30 callee reached consumers as flat fact.
 
@@ -384,7 +384,7 @@ arrive as the same assertion.
 
 These are exported for library consumers but should be treated as **unstable**. They mirror the parser's intermediate representation before edge construction.
 
-`RawFunction`, `RawClass`, `RawInterface`, `RawEnum`, `RawTest`, `RawImport`, `RawReExport`, `RawCallSite`, `RawCallEdge`, `ImportEdge`, `RawGraph`, `ParseBatchResult` — see `src/graph/types.ts:253–397`.
+`RawFunction`, `RawClass`, `RawInterface`, `RawEnum`, `RawTest`, `RawImport`, `RawReExport`, `RawCallSite`, `RawCallEdge`, `ImportEdge`, `RawGraph`, `ParseBatchResult` — see `src/graph/types.ts:294–447`.
 
 `RawCallSite` carries resolver hints set by per-language extractors:
 
@@ -452,7 +452,7 @@ The schema version follows semver-style for **graph compatibility** (not the npm
 - **Minor bump (2.0 → 2.1)**: New optional fields. Consumers reading older graphs see `undefined`; consumers reading newer graphs ignore unknown fields.
 - **Patch**: No schema-level change; bug fixes in defaults or extraction.
 
-Current: **2.0**. The `tier` field on `GraphEdge` was added in 2.0 as an optional field; pre-2.0 graphs simply lack it.
+Current: **2.1**. 2.1 added the `USES_TYPE` edge kind — a function's signature naming a type this repo declares — so type-only dependencies show up in a blast radius; graphs parsed before 2.1 simply lack those edges. The `tier` field on `GraphEdge` was the 2.0 addition (an optional field; pre-2.0 graphs simply lack it).
 
 The version is set in `src/shared/constants.ts:SCHEMA_VERSION` and stamped onto every `parse` / `update` output via `metadata.schema_version`. Loaders (`loadGraph`) call `enforceSchemaVersion` which:
 

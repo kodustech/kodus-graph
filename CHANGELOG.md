@@ -5,6 +5,49 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-07-20
+
+First public release since `0.2.19`. It consolidates all work done between
+`0.2.19` and today — the `0.6.0` → `0.3.0` sections further down were internal
+development milestones that were never published to npm, and are folded into
+this release.
+
+### Added
+
+- Six graph-query / context commands: `context-of` (a symbol's callers, callees,
+  used types, and tests in one query), `path` (shortest call path A→B), `rank`
+  (symbols by structural importance), `status` (graph freshness vs. disk),
+  `pr-overlap` (merge risk and cross-impact between two changesets), and
+  `subsystem-context` (a PR's module + hub/bridge role + caller/callee neighbourhood).
+- Bash language support — now **16 languages** (including C and C++).
+- `communities --topological`: Louvain community detection with hub/bridge roles
+  and an in-house Leiden connectivity guarantee.
+- Blast radius now propagates `INHERITS` (base-class changes reach subclasses)
+  and `USES_TYPE` (type-only dependencies); each impacted symbol reports how it
+  is reached (`via calls / import / type / inherits`).
+- `parse --max-files` / `--allow-partial` guardrails — fail loud over a file cap
+  unless a partial graph is explicitly requested.
+
+### Fixed — call resolution (validated against the TypeScript compiler as ground truth)
+
+- Same-file/import shadowing: an imported name is no longer stolen by a same-file
+  object-literal method of the same spelling (same-tier precision 98.2% → 100%).
+- DI and `this.`/`super.` calls to **inherited** methods now resolve to the base
+  class that declares them instead of a phantom subclass node — restoring the
+  blast radius into base methods (measured recall 89.4% → 94.1% on a NestJS corpus).
+- DI calls to generic-named methods (`get`/`set`/`has`) are no longer dropped by
+  the noise filter when the injected field type is known.
+- Risk score: the four factors now measure what they claim.
+
+### Guarantees
+
+- A no-network test proves the parse path makes zero network calls — an auditable
+  on-device claim.
+
+> The version headers below (`0.6.0` → `0.3.0`, Apr–Jul 2026) are pre-publication
+> development history, never released to npm, and are consolidated into the
+> `0.3.0` release above.
+
 ## [0.6.0] — 2026-07-15
 
 The "say what you actually know" release. Barrel imports silently erased the call

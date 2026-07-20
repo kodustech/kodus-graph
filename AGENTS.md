@@ -4,7 +4,7 @@ Guidelines for AI agents and contributors working on this codebase.
 
 ## Project Overview
 
-`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports **15 languages** via ast-grep and produces JSON output consumed by Kodus AI review agents.
+`@kodus/kodus-graph` is a CLI tool that parses source code into structural graphs for code review. It supports **16 languages** via ast-grep and produces JSON output consumed by Kodus AI review agents.
 
 **Supported languages:** TypeScript, JavaScript, Python, Ruby, Go, Java, Kotlin, Rust, C#, PHP, Swift, Dart, Scala, C/C++, Elixir, Bash.
 
@@ -80,7 +80,7 @@ src/
 │   ├── extractor.ts    # Dispatch coordinator → languages/engine.ts
 │   ├── discovery.ts    # File discovery with glob filtering
 │   └── languages.ts    # Language registration and extension mapping
-├── languages/          # Co-located per-language modules (15 languages)
+├── languages/          # Co-located per-language modules (16 languages)
 │   ├── spec.ts         # LanguageExtractors interface (contract)
 │   ├── engine.ts       # Dispatch + Extracted* → Raw* conversion
 │   ├── shared.ts       # Reusable helpers (isExported, isAsync, extractDecorators, etc.)
@@ -157,7 +157,7 @@ tests/fixtures/         # Sample files per language (follow language naming conv
 - **IMPORTS**: Only emitted for resolved imports (external packages are filtered out)
 - **CALLS**: Only emitted when target file exists in repo (no phantom edges)
 - **INHERITS/IMPLEMENTS**: Only emitted when target is a local node (external classes skipped)
-- **TESTED_BY**: File-to-file relationship (source file → test file)
+- **TESTED_BY**: Symbol-level — when a test **calls** a symbol, `source_qualified` is that symbol (e.g. `src/a.ts::foo`), with a file-level match (`src/a.ts`) as the fallback only for languages whose test calls don't resolve. `target_qualified` is the test file. See [`docs/SCHEMA.md`](docs/SCHEMA.md) for the two evidence classes.
 
 ## Coding Standards
 

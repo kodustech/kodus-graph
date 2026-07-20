@@ -31,11 +31,11 @@ BLAST RADIUS:
 
 Real output, reproducible with [`scripts/generate-examples.sh`](scripts/generate-examples.sh) — see [`examples/`](#examples) for every command's.
 
-14 languages. Deterministic — there is no model in the parse path, so the graph is the same every run. Standalone CLI and library: it powers review at [Kodus](https://kodus.io), but nothing here is coupled to it.
+16 languages. Deterministic — there is no model in the parse path, so the graph is the same every run. Standalone CLI and library: it powers review at [Kodus](https://kodus.io), but nothing here is coupled to it.
 
 ## Features
 
-- **Multi-language support.** 15 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C, Bash. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
+- **Multi-language support.** 16 languages with consistent core extraction (TypeScript/Tsx/JavaScript share an extractor): TypeScript, Python, Go, Java, Kotlin, Rust, C++, Scala, C#, Swift, Dart, Elixir, Ruby, PHP, C, Bash. Each has a declared support tier (🟢 full / 🟡 basic / 🔴 experimental) with per-language baselines enforced in CI. See the [language support matrix](docs/language-support-matrix.md) for capability depth and validation status.
 - **Structural graph** — Functions, methods, constructors, classes, interfaces, enums, tests as nodes; CALLS, IMPORTS, INHERITS, IMPLEMENTS, TESTED_BY, CONTAINS, USES_TYPE as edges. Each node carries `is_exported`, `is_async`, `decorators`, `throws`, `complexity`.
 - **5-tier call resolver** — `receiver` (0.95/0.90) → `noise` filter → `di` (0.90/0.95) → `class` (0.85/0.90) → `cascade` (same/import/unique/ambiguous, 0.85→0.30). Each CALLS edge records its tier and confidence.
 - **Receiver-type inference** — From `new Foo()`, typed parameters, type cast `as Foo`, factory deferred (`const x = factory()` resolved cross-file via the `@CALLEE:` mechanism), method-chain return type, and singleton patterns (`Foo.getInstance()`).
@@ -244,6 +244,101 @@ Groups code into module clusters based on directory structure and detects coupli
 
 ```bash
 kodus-graph communities --graph graph.json --out communities.json --min-size 2 --depth 2
+```
+
+### `pr-overlap`
+
+Compares two changesets (PRs) for merge risk — which symbols they both touch and where each PR's blast radius lands in the other's.
+
+**When to use:** Before merging concurrent PRs, to catch collisions that neither review would see reviewing its PR in isolation.
+
+```bash
+# Compare two PRs by their changed files (symbols expanded automatically)
+kodus-graph pr-overlap \
+  --graph graph.json \
+  --a-files src/auth.ts \
+  --b-files src/user.service.ts \
+  --out overlap.json
+
+# Or pass qualified symbols directly
+kodus-graph pr-overlap --graph graph.json \
+  --a "src/auth.ts::verifyToken" \
+  --b "src/db.ts::query" \
+  --out overlap.json
+```
+
+One of `--a` / `--a-files` and one of `--b` / `--b-files` is required. Optional: `--max-depth`, `--min-confidence`.
+
+### `subsystem-context`
+
+Orients a changeset — which module(s) it belongs to, its hub/bridge role in the call graph, and its immediate callers and callees.
+
+**When to use:** To learn where a change lives architecturally before reviewing it, instead of reconstructing the structure by hand.
+
+```bash
+kodus-graph subsystem-context \
+  --graph graph.json \
+  --files src/auth.ts \
+  --out subsystem.json
+```
+
+One of `--changed` (qualified symbols) or `--files` is required. Optional: `--top`, `--min-size`.
+
+### `context-of`
+
+Builds a single symbol's context pack — its callers, callees, types it uses, and tests — ranked by connectivity, in one query.
+
+**When to use:** To understand a symbol before editing it, instead of grepping its name across the repo.
+
+```bash
+kodus-graph context-of \
+  --graph graph.json \
+  --symbol "src/auth.ts::verifyToken" \
+  --out context-of.json \
+  --limit 15
+```
+
+### `path`
+
+Finds the shortest call path between two symbols — "how does A reach B?".
+
+**When to use:** To see how one symbol reaches another, instead of chaining greps and guessing the links.
+
+```bash
+kodus-graph path \
+  --graph graph.json \
+  --from "src/api.ts::handleLogin" \
+  --to "src/db.ts::query" \
+  --out path.json
+
+# Count other edge kinds as hops (default: CALLS)
+kodus-graph path --graph graph.json \
+  --from "src/api.ts::handleLogin" --to "src/db.ts::query" \
+  --kinds CALLS IMPORTS --max-depth 10 --out path.json
+```
+
+### `rank`
+
+Ranks symbols by structural importance (degree) for relevance-ordered retrieval.
+
+**When to use:** To find the load-bearing symbols to read first, instead of opening files in arbitrary order.
+
+```bash
+# Top 20 most-connected symbols in the graph
+kodus-graph rank --graph graph.json --out rank.json --top 20
+
+# Restrict to a file or a node kind
+kodus-graph rank --graph graph.json --out rank.json --file src/auth.ts --kind Function
+```
+
+### `status`
+
+Checks whether the graph is still fresh against the repo's files on disk.
+
+**When to use:** Before trusting any query — a stale graph answers confidently and wrongly.
+
+```bash
+kodus-graph status --graph graph.json --out - --repo-dir .
 ```
 
 ### `flows`
