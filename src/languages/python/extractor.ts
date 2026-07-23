@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, extractCalls, extractEventSites } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerExtractor, registerReceiverTypes } from '../engine';
@@ -221,7 +221,44 @@ const PYTHON_CALL_CONFIG: CallExtractionConfig = {
     },
 };
 
+/**
+ * Python pub/sub method names (pyee / generic emitters). `send`/`connect`
+ * (blinker) are omitted: those pass a signal object/sender, not a string
+ * channel, so they'd never match `stringValue` anyway — kept out for clarity.
+ */
+const PY_EMIT_METHODS: ReadonlySet<string> = new Set(['emit', 'emit_async', 'publish', 'dispatch']);
+const PY_LISTEN_METHODS: ReadonlySet<string> = new Set(['on', 'once', 'subscribe', 'add_listener']);
+
+/**
+ * Value of a Python string literal, or undefined when it isn't a plain constant.
+ * Rejects f-strings (interpolation) and any literal containing `{` (an f-field).
+ * Handles r/b/u prefixes, which stay constant.
+ */
+function pyStringValue(node: SgNode): string | undefined {
+    if (String(node.kind()) !== 'string') {
+        return undefined;
+    }
+    const text = node.text();
+    const m = text.match(/^([A-Za-z]*)(['"])([\s\S]*)\2$/);
+    if (!m) {
+        return undefined;
+    }
+    if (/[fF]/.test(m[1])) {
+        return undefined; // f-string
+    }
+    if (m[3].includes('{')) {
+        return undefined; // interpolation field
+    }
+    return m[3];
+}
+
 function extractCallsPython(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
+    extractEventSites(
+        rootNode,
+        fp,
+        { emitMethods: PY_EMIT_METHODS, listenMethods: PY_LISTEN_METHODS, stringValue: pyStringValue },
+        calls,
+    );
     extractCalls(rootNode, fp, PYTHON_CALL_CONFIG, calls);
 }
 

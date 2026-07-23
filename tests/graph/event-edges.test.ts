@@ -122,4 +122,77 @@ class L { @OnEvent('user.created') h() {} }
         );
         expect(heuristicEdges(edges)).toHaveLength(0);
     });
+
+    it('couples emit() to on() in Python (pyee-style)', async () => {
+        const edges = await edgesFor(
+            'app.py',
+            `
+class Emitter:
+    def __init__(self, ee):
+        self.ee = ee
+    def do_thing(self):
+        self.ee.emit('user.created', {'id': 1})
+
+def register(ee):
+    ee.on('user.created', lambda p: p['id'])
+`,
+        );
+        const evt = heuristicEdges(edges);
+        expect(evt).toHaveLength(1);
+        expect(evt[0].source_qualified).toContain('do_thing');
+        expect(evt[0].target_qualified).toContain('register');
+    });
+
+    it('ignores a Python f-string (interpolated) channel', async () => {
+        const edges = await edgesFor(
+            'f.py',
+            `
+def fire(ee, uid):
+    ee.emit(f'user.{uid}', 1)
+
+def register(ee):
+    ee.on('user.created', lambda p: p)
+`,
+        );
+        expect(heuristicEdges(edges)).toHaveLength(0);
+    });
+
+    it('couples instrument() to subscribe() in Ruby (ActiveSupport::Notifications)', async () => {
+        const edges = await edgesFor(
+            'app.rb',
+            `
+class Emitter
+  def do_thing
+    ActiveSupport::Notifications.instrument('user.created', id: 1)
+  end
+end
+
+def register
+  ActiveSupport::Notifications.subscribe('user.created') do |name|
+    name
+  end
+end
+`,
+        );
+        const evt = heuristicEdges(edges);
+        expect(evt).toHaveLength(1);
+        expect(evt[0].source_qualified).toContain('do_thing');
+        expect(evt[0].target_qualified).toContain('register');
+    });
+
+    it('ignores a Ruby interpolated channel', async () => {
+        const edges = await edgesFor(
+            'g.rb',
+            `
+def fire(uid)
+  ActiveSupport::Notifications.instrument("user.#{uid}", {})
+end
+
+def register
+  ActiveSupport::Notifications.subscribe('user.created') { |n| n }
+end
+`,
+        );
+        expect(heuristicEdges(edges)).toHaveLength(0);
+    });
 });

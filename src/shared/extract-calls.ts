@@ -190,3 +190,64 @@ export function extractCalls(rootNode: SgNode, fp: string, config: CallExtractio
         });
     }
 }
+
+/**
+ * Per-language configuration for {@link extractEventSites}. `emitMethods` and
+ * `listenMethods` are the pub/sub method names whose first argument is a literal
+ * event channel; `stringValue` returns that literal's constant value (or
+ * undefined for non-constant args — interpolations, identifiers, symbols).
+ */
+export interface EventExtractionConfig {
+    emitMethods: ReadonlySet<string>;
+    listenMethods: ReadonlySet<string>;
+    stringValue: (node: SgNode) => string | undefined;
+}
+
+/**
+ * Extract pub/sub event sites — `bus.emit('user.created', …)` /
+ * `bus.on('user.created', …)` — recording each with its literal channel and
+ * role so the builder can synthesize a heuristic emitter→listener edge. The
+ * callee here is a generic method the static resolver drops as noise, and the
+ * only coupling signal is the literal channel string, which no name-based tier
+ * can see. Language-agnostic on the `$OBJ.$METHOD($$$ARGS)` shape; each language
+ * supplies its own method sets and string-literal reader.
+ *
+ * Sites are ALSO picked up by the normal call pass and resolve to null (no
+ * symbol named `emit`), so they never produce a spurious static edge.
+ */
+export function extractEventSites(
+    rootNode: SgNode,
+    fp: string,
+    config: EventExtractionConfig,
+    calls: RawCallSite[],
+): void {
+    for (const m of rootNode.findAll('$OBJ.$METHOD($$$ARGS)')) {
+        const methodNode = m.getMatch('METHOD');
+        const method = methodNode?.text();
+        if (!method) {
+            continue;
+        }
+        const role: 'emit' | 'listen' | undefined = config.emitMethods.has(method)
+            ? 'emit'
+            : config.listenMethods.has(method)
+              ? 'listen'
+              : undefined;
+        if (!role) {
+            continue;
+        }
+        const firstArg = m.getMultipleMatches('ARGS').find((a) => a.kind() !== ',');
+        const channel = firstArg ? config.stringValue(firstArg) : undefined;
+        if (!channel) {
+            continue;
+        }
+        const r = (methodNode ?? m).range().end;
+        calls.push({
+            source: fp,
+            callName: method,
+            line: r.line,
+            column: r.column,
+            channel,
+            eventRole: role,
+        });
+    }
+}

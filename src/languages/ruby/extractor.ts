@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, extractCalls, extractEventSites } from '../../shared/extract-calls';
 import { log } from '../../shared/logger';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
@@ -229,10 +229,46 @@ function createRubyCallConfig(): CallExtractionConfig {
     };
 }
 
+/**
+ * Ruby pub/sub method names. `instrument`/`subscribe` cover
+ * ActiveSupport::Notifications (string-named events); the rest cover generic
+ * emitter gems. Symbol-based buses (Wisper `broadcast(:evt)`) don't match — the
+ * arg is a symbol, not a string literal — and are intentionally out of scope.
+ */
+const RB_EMIT_METHODS: ReadonlySet<string> = new Set([
+    'emit',
+    'publish',
+    'dispatch',
+    'broadcast',
+    'instrument',
+    'trigger',
+]);
+const RB_LISTEN_METHODS: ReadonlySet<string> = new Set(['on', 'once', 'subscribe']);
+
+/** Value of a Ruby string literal, or undefined when interpolated (`#{…}`) or not a string. */
+function rbStringValue(node: SgNode): string | undefined {
+    if (String(node.kind()) !== 'string') {
+        return undefined;
+    }
+    const text = node.text();
+    if (text.includes('#{')) {
+        return undefined; // interpolation
+    }
+    const m = text.match(/^(['"])([\s\S]*)\1$/);
+    return m ? m[2] : undefined;
+}
+
 function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
     // Noise is NOT filtered at extraction. The resolver applies it after the
     // receiver-type tier so user-domain calls survive (see call-resolver.ts).
     const config = createRubyCallConfig();
+
+    extractEventSites(
+        rootNode,
+        fp,
+        { emitMethods: RB_EMIT_METHODS, listenMethods: RB_LISTEN_METHODS, stringValue: rbStringValue },
+        calls,
+    );
 
     // Track lines already captured by the pattern-based extraction to avoid duplicates
     const seenLines = new Set<string>();

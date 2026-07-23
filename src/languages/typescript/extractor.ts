@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, extractCalls, extractEventSites } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
@@ -565,41 +565,14 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
     }
 
     // Event pub/sub sites — `bus.emit('user.created', …)` / `bus.on('user.created', …)`.
-    // The callee here is a generic method name (`emit`/`on`) the static resolver
-    // drops as noise, and the real coupling signal is the LITERAL channel string,
-    // which no name-based tier can see. We record the channel + role so the
-    // builder can synthesize a heuristic emitter→listener edge. These sites are
-    // ALSO picked up by the generic call pass below and resolve to null (no
-    // symbol named `emit`), so they never produce a spurious static edge.
-    for (const m of rootNode.findAll('$OBJ.$METHOD($$$ARGS)')) {
-        const methodNode = m.getMatch('METHOD');
-        const method = methodNode?.text();
-        if (!method) {
-            continue;
-        }
-        const role: 'emit' | 'listen' | undefined = EVENT_EMIT_METHODS.has(method)
-            ? 'emit'
-            : EVENT_LISTEN_METHODS.has(method)
-              ? 'listen'
-              : undefined;
-        if (!role) {
-            continue;
-        }
-        const firstArg = m.getMultipleMatches('ARGS').find((a) => a.kind() !== ',');
-        const channel = firstArg ? stringLiteralValue(firstArg) : undefined;
-        if (!channel) {
-            continue;
-        }
-        const r = (methodNode ?? m).range().end;
-        calls.push({
-            source: fp,
-            callName: method,
-            line: r.line,
-            column: r.column,
-            channel,
-            eventRole: role,
-        });
-    }
+    // Shared cross-language pass; TS supplies its method sets and a reader that
+    // also unwraps single-quote/backtick template literals (rejecting `${…}`).
+    extractEventSites(
+        rootNode,
+        fp,
+        { emitMethods: EVENT_EMIT_METHODS, listenMethods: EVENT_LISTEN_METHODS, stringValue: stringLiteralValue },
+        calls,
+    );
 
     // Direct calls + self/super detection via shared function
     extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);
