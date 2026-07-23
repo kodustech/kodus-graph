@@ -86,6 +86,72 @@ describe('formatPrompt', () => {
         expect(text).toContain('AuthService extends BaseService');
     });
 
+    it('should collapse interchangeable sibling impls in REVIEW TOGETHER', () => {
+        // Polymorphic dispatch: `dispatch` calls run() on three subclasses of a
+        // shared base. In the coupling neighbourhood those three surface as
+        // sibling methods and must collapse to a single "run ×3 (...)" entry.
+        const poly: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'dispatch',
+                    qualified_name: 'src/dispatch.ts::dispatch',
+                    file_path: 'src/dispatch.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'd',
+                },
+                ...['A', 'B', 'C'].map((c) => ({
+                    kind: 'Method' as const,
+                    name: `${c}.run`,
+                    qualified_name: `src/${c}.ts::${c}::run`,
+                    file_path: `src/${c}.ts`,
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    parent_name: c,
+                    is_test: false,
+                    file_hash: c,
+                })),
+            ],
+            edges: [
+                ...['A', 'B', 'C'].map((c) => ({
+                    kind: 'CALLS' as const,
+                    source_qualified: 'src/dispatch.ts::dispatch',
+                    target_qualified: `src/${c}.ts::${c}::run`,
+                    file_path: 'src/dispatch.ts',
+                    line: 3,
+                    confidence: 0.9,
+                })),
+                ...['A', 'B', 'C'].map((c) => ({
+                    kind: 'INHERITS' as const,
+                    source_qualified: `src/${c}.ts::${c}`,
+                    target_qualified: 'src/base.ts::Base',
+                    file_path: `src/${c}.ts`,
+                    line: 1,
+                })),
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: poly,
+            oldGraph: null,
+            changedFiles: ['src/dispatch.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            couplingDirection: 'bidirectional',
+        });
+
+        const text = formatPrompt(output);
+        expect(text).toContain('REVIEW TOGETHER');
+        // Collapsed: one entry for the three interchangeable run() impls.
+        expect(text).toMatch(/run ×3 \([^)]*A[^)]*B[^)]*C[^)]*\)/);
+        // The individual sibling QNs must NOT each appear as their own entry.
+        expect(text).not.toMatch(/\brun \(\d+%, via/);
+    });
+
     it('should format contract diffs and caller impact inline', () => {
         const graphWithContract: GraphData = {
             nodes: [

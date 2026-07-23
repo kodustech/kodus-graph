@@ -172,6 +172,209 @@ describe('buildContextV2', () => {
         expect(result.analysis.structural_diff.nodes.modified).toHaveLength(0);
     });
 
+    it('should not compute coupling_neighbourhood by default (reverse only)', () => {
+        const result = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        expect(result.analysis.coupling_neighbourhood).toBeUndefined();
+    });
+
+    it('should compute a bidirectional coupling_neighbourhood when requested, without changing risk', () => {
+        // authenticate is changed; login (caller) is reverse-reachable; a callee
+        // reached only in the FORWARD direction should appear in coupling but NOT
+        // in the reverse blast radius. Risk must be identical either way (risk
+        // always uses the reverse blast radius).
+        const g: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'authenticate',
+                    qualified_name: 'src/auth.ts::authenticate',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 25,
+                    language: 'typescript',
+                    params: '(ctx: Context)',
+                    return_type: 'Result',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Function',
+                    name: 'login',
+                    qualified_name: 'src/ctrl.ts::login',
+                    file_path: 'src/ctrl.ts',
+                    line_start: 5,
+                    line_end: 15,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'b',
+                },
+                {
+                    kind: 'Function',
+                    name: 'hashToken',
+                    qualified_name: 'src/crypto.ts::hashToken',
+                    file_path: 'src/crypto.ts',
+                    line_start: 1,
+                    line_end: 8,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'c',
+                },
+            ],
+            edges: [
+                // login -> authenticate (reverse-reachable caller)
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/ctrl.ts::login',
+                    target_qualified: 'src/auth.ts::authenticate',
+                    file_path: 'src/ctrl.ts',
+                    line: 8,
+                    confidence: 0.9,
+                },
+                // authenticate -> hashToken (only reachable walking FORWARD)
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/auth.ts::authenticate',
+                    target_qualified: 'src/crypto.ts::hashToken',
+                    file_path: 'src/auth.ts',
+                    line: 12,
+                    confidence: 0.9,
+                },
+            ],
+        };
+
+        const reverseOnly = buildContextV2({
+            mergedGraph: g,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+        const withCoupling = buildContextV2({
+            mergedGraph: g,
+            oldGraph: null,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            couplingDirection: 'bidirectional',
+        });
+
+        // Reverse blast radius reaches the caller, not the callee.
+        const reverseQNs = new Set(
+            Object.values(reverseOnly.analysis.blast_radius.by_depth)
+                .flat()
+                .map((e) => e.qualified_name),
+        );
+        expect(reverseQNs.has('src/ctrl.ts::login')).toBe(true);
+        expect(reverseQNs.has('src/crypto.ts::hashToken')).toBe(false);
+
+        // Coupling neighbourhood also reaches the forward callee.
+        expect(withCoupling.analysis.coupling_neighbourhood).toBeDefined();
+        const couplingQNs = new Set(
+            Object.values(withCoupling.analysis.coupling_neighbourhood!.by_depth)
+                .flat()
+                .map((e) => e.qualified_name),
+        );
+        expect(couplingQNs.has('src/crypto.ts::hashToken')).toBe(true);
+        expect(withCoupling.analysis.coupling_neighbourhood!.total_functions).toBeGreaterThan(
+            reverseOnly.analysis.blast_radius.total_functions,
+        );
+
+        // Risk is untouched by the coupling computation.
+        expect(withCoupling.analysis.risk.score).toBe(reverseOnly.analysis.risk.score);
+        expect(withCoupling.analysis.blast_radius.total_functions).toBe(
+            reverseOnly.analysis.blast_radius.total_functions,
+        );
+    });
+
+    it('should recover changed functions from diff hunks when baseline == HEAD (the "0 changed" bug)', () => {
+        // Regression for the `--graph` + `--diff` bug: kodus-ai passes the FULL
+        // repo graph (built from HEAD, for accurate cross-file edges). The
+        // old-vs-new structural diff then sees the changed file at identical
+        // content on both sides → added/modified come back empty → changed set
+        // collapses to zero, even though the diff clearly touched a function.
+        // The diff hunks must SEED the changed set (not just filter it), so the
+        // function is recovered WITH its cross-file callers.
+        const diffHunks = new Map([
+            ['src/auth.ts', [{ newStart: 12, newCount: 4 }]], // overlaps authenticate (10-25)
+        ]);
+
+        const result = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: graphData, // baseline identical to HEAD → no structural delta
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        // Without the seed step this would be 0. Now authenticate is recovered.
+        expect(result.analysis.changed_functions).toHaveLength(1);
+        expect(result.analysis.changed_functions[0].qualified_name).toBe('src/auth.ts::authenticate');
+        // The whole point of passing --graph: cross-file callers are present.
+        expect(result.analysis.changed_functions[0].callers).toHaveLength(1);
+        expect(result.analysis.changed_functions[0].callers[0].qualified_name).toBe('src/ctrl.ts::login');
+        // Seeded entry is surfaced as modified (body), no fabricated contract diff.
+        expect(result.analysis.changed_functions[0].contract_diffs).toHaveLength(0);
+        expect(result.analysis.blast_radius.total_functions).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should not seed a class/interface node from a diff hunk (functions/methods only)', () => {
+        // A hunk touching one method also overlaps the enclosing Class node's
+        // wide line range. Seeding the class would over-seed the blast radius.
+        // Only Function/Method nodes are eligible.
+        const withClass: GraphData = {
+            nodes: [
+                {
+                    kind: 'Class',
+                    name: 'AuthService',
+                    qualified_name: 'src/auth.ts::AuthService',
+                    file_path: 'src/auth.ts',
+                    line_start: 1,
+                    line_end: 50,
+                    language: 'typescript',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+                {
+                    kind: 'Method',
+                    name: 'AuthService.check',
+                    qualified_name: 'src/auth.ts::AuthService::check',
+                    file_path: 'src/auth.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'boolean',
+                    parent_name: 'AuthService',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+
+        const diffHunks = new Map([['src/auth.ts', [{ newStart: 12, newCount: 2 }]]]);
+
+        const result = buildContextV2({
+            mergedGraph: withClass,
+            oldGraph: withClass,
+            changedFiles: ['src/auth.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+            diffHunks,
+        });
+
+        const changedQNs = result.analysis.structural_diff.nodes.modified.map((m) => m.qualified_name);
+        expect(changedQNs).toContain('src/auth.ts::AuthService::check');
+        expect(changedQNs).not.toContain('src/auth.ts::AuthService');
+    });
+
     it('should seed blast radius from trulyChangedQN (not file-level)', () => {
         // Graph with 2 functions in the same changed file, but only one is modified
         const oldGraph: GraphData = {

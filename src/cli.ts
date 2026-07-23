@@ -112,6 +112,17 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
     .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option(
+        '--coupling-direction <mode>',
+        "'bidirectional' (default) adds a REVIEW-TOGETHER neighbourhood (siblings + " +
+            "dependencies); 'reverse' omits it. The risk-scoring blast radius is always reverse.",
+        'bidirectional',
+    )
+    .option(
+        '--hub-threshold <n>',
+        'Hub damping for the coupling neighbourhood: nodes with fan-out above this are reached but not expanded (0 = off)',
+        '15',
+    )
     .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .option('--max-functions <n>', 'Max changed functions in prompt output (default: 30)', (v) => parseInt(v, 10))
@@ -131,6 +142,10 @@ program
             log.error('--format must be "json", "prompt", or "xml"', { got: opts.format });
             process.exit(1);
         }
+        if (opts.couplingDirection !== 'reverse' && opts.couplingDirection !== 'bidirectional') {
+            log.error('--coupling-direction must be "reverse" or "bidirectional"', { got: opts.couplingDirection });
+            process.exit(1);
+        }
         await executeContext({
             repoDir: opts.repoDir,
             files: opts.files,
@@ -139,6 +154,8 @@ program
             out: opts.out,
             minConfidence: Number.parseFloat(opts.minConfidence),
             maxDepth: Number.parseInt(opts.maxDepth, 10),
+            couplingDirection: opts.couplingDirection,
+            hubThreshold: Number.parseInt(opts.hubThreshold, 10),
             format: opts.format,
             skipTests: opts.skipTests ?? false,
             maxFunctions: opts.maxFunctions,

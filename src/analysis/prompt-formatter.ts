@@ -5,6 +5,7 @@ import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
+import { groupInterchangeableImpls, renderImplClasses } from './signature-collapse';
 
 export interface PromptFormatterOptions {
     /** Max functions to include in CHANGED section (default: 30). */
@@ -354,11 +355,98 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
         lines.push('');
     }
 
-    // ── Char-level truncation: drop sections from bottom (BLAST RADIUS → IMPORTS) if over limit ──
+    // ── Review-together (coupling neighbourhood) — bidirectional+hub. Only the
+    // symbols NOT already surfaced as changed or in the reverse blast radius, so
+    // this section adds the sibling/dependency cluster rather than repeating
+    // "what breaks". Answers "what else should I open alongside this change". ──
+    if (analysis.coupling_neighbourhood) {
+        const alreadyShown = new Set<string>(analysis.changed_functions.map((f) => f.qualified_name));
+        for (const entries of Object.values(analysis.blast_radius.by_depth)) {
+            for (const e of entries) {
+                alreadyShown.add(e.qualified_name);
+            }
+        }
+
+        // Dedup coupling entries by symbol, keeping the highest-confidence hit.
+        const novel = new Map<string, { conf: number; edge: 'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS' }>();
+        for (const entries of Object.values(analysis.coupling_neighbourhood.by_depth)) {
+            for (const e of entries) {
+                if (alreadyShown.has(e.qualified_name)) {
+                    continue;
+                }
+                const prev = novel.get(e.qualified_name);
+                if (!prev || e.accumulated_confidence > prev.conf) {
+                    novel.set(e.qualified_name, { conf: e.accumulated_confidence, edge: e.edge_kind });
+                }
+            }
+        }
+
+        if (novel.size > 0) {
+            const MAX_COUPLED = 12;
+            const ranked = [...novel.entries()].sort((a, b) => b[1].conf - a[1].conf);
+
+            // Signature-collapse: fold interchangeable sibling-method impls into a
+            // single "method ×N (ClassA, ClassB, …)" entry so a polymorphic change
+            // doesn't repeat one line per subclass. Grouping is by shared base
+            // class (INHERITS), never by name alone — unrelated same-name symbols
+            // stay separate.
+            const { groups, grouped } = groupInterchangeableImpls(
+                ranked.map(([qn]) => qn),
+                output.graph.edges,
+            );
+            const groupByKey = new Map(groups.map((g) => [g.key, g]));
+            const memberToKey = new Map<string, string>();
+            for (const g of groups) {
+                for (const m of g.members) {
+                    memberToKey.set(m, g.key);
+                }
+            }
+
+            const rendered: string[] = [];
+            const emittedGroups = new Set<string>();
+            const consumed = new Set<string>(); // source QNs represented so far
+            for (const [qn, meta] of ranked) {
+                if (rendered.length >= MAX_COUPLED) {
+                    break;
+                }
+                const via = `via ${BLAST_EDGE_LABEL[meta.edge]}`;
+                if (grouped.has(qn)) {
+                    const key = memberToKey.get(qn)!;
+                    if (emittedGroups.has(key)) {
+                        continue; // a higher-ranked sibling already represented this group
+                    }
+                    emittedGroups.add(key);
+                    const g = groupByKey.get(key)!;
+                    for (const m of g.members) {
+                        consumed.add(m); // the whole group is now represented
+                    }
+                    rendered.push(
+                        `${g.method} ×${g.members.length} (${renderImplClasses(g)}) (${Math.round(meta.conf * 100)}%, ${via})`,
+                    );
+                } else {
+                    consumed.add(qn);
+                    rendered.push(`${shortName(qn)} (${Math.round(meta.conf * 100)}%, ${via})`);
+                }
+            }
+
+            const remaining = ranked.length - consumed.size;
+
+            lines.push('REVIEW TOGETHER (coupled, not necessarily broken):');
+            let line = `  ${rendered.join(', ')}`;
+            if (remaining > 0) {
+                line += ` ... +${remaining}`;
+            }
+            lines.push(line);
+            lines.push('');
+        }
+    }
+
+    // ── Char-level truncation: drop sections from bottom if over limit ──
+    // REVIEW TOGETHER is supplementary (coupling, not breakage) so it goes first;
+    // then BLAST RADIUS, then IMPORTS. Changed functions are never dropped here.
     let result = lines.join('\n');
     if (result.length > maxPromptChars) {
-        // Try removing BLAST RADIUS first, then IMPORTS
-        for (const section of ['BLAST RADIUS:', 'IMPORTS:']) {
+        for (const section of ['REVIEW TOGETHER (coupled, not necessarily broken):', 'BLAST RADIUS:', 'IMPORTS:']) {
             const idx = result.indexOf(`\n${section}\n`);
             if (idx !== -1) {
                 // Find the end of this section (next section start or end of string)

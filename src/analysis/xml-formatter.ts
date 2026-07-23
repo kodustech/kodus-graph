@@ -4,6 +4,7 @@ import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
 import { computeFunctionRisk } from './prompt-formatter';
+import { groupInterchangeableImpls, renderImplClasses } from './signature-collapse';
 
 /** Short name from qualified_name (`file::Class::method` → `method`). */
 function shortName(qualifiedName: string): string {
@@ -599,6 +600,85 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             }
         }
         lines.push('  </Hierarchy>');
+    }
+
+    // ── ReviewTogether (mirrors the prompt format's REVIEW TOGETHER section):
+    //    the bidirectional+hub coupling neighbourhood, minus what's already shown
+    //    as changed or in the reverse blast radius. Coupled, not necessarily
+    //    broken — "what else to open alongside this change".
+    if (analysis.coupling_neighbourhood) {
+        const alreadyShown = new Set<string>(analysis.changed_functions.map((f) => f.qualified_name));
+        for (const entries of Object.values(analysis.blast_radius.by_depth)) {
+            for (const e of entries) {
+                alreadyShown.add(e.qualified_name);
+            }
+        }
+        const novel = new Map<string, { conf: number; edge: string }>();
+        for (const entries of Object.values(analysis.coupling_neighbourhood.by_depth)) {
+            for (const e of entries) {
+                if (alreadyShown.has(e.qualified_name)) {
+                    continue;
+                }
+                const prev = novel.get(e.qualified_name);
+                if (!prev || e.accumulated_confidence > prev.conf) {
+                    novel.set(e.qualified_name, { conf: e.accumulated_confidence, edge: e.edge_kind });
+                }
+            }
+        }
+        if (novel.size > 0) {
+            const MAX_COUPLED = 12;
+            const ranked = [...novel.entries()].sort((a, b) => b[1].conf - a[1].conf);
+
+            // Signature-collapse interchangeable sibling-method impls (grouped by
+            // shared base class via INHERITS) into one <Coupled impls="…"> entry.
+            const { groups, grouped } = groupInterchangeableImpls(
+                ranked.map(([qn]) => qn),
+                output.graph.edges,
+            );
+            const groupByKey = new Map(groups.map((g) => [g.key, g]));
+            const memberToKey = new Map<string, string>();
+            for (const g of groups) {
+                for (const m of g.members) {
+                    memberToKey.set(m, g.key);
+                }
+            }
+
+            lines.push('');
+            lines.push(`  <ReviewTogether count="${novel.size}">`);
+            const emittedGroups = new Set<string>();
+            const consumed = new Set<string>();
+            let renderedCount = 0;
+            for (const [qn, meta] of ranked) {
+                if (renderedCount >= MAX_COUPLED) {
+                    break;
+                }
+                if (grouped.has(qn)) {
+                    const key = memberToKey.get(qn)!;
+                    if (emittedGroups.has(key)) {
+                        continue;
+                    }
+                    emittedGroups.add(key);
+                    const g = groupByKey.get(key)!;
+                    for (const m of g.members) {
+                        consumed.add(m);
+                    }
+                    lines.push(
+                        `    <Coupled name="${escapeXml(g.method)}" impls="${escapeXml(renderImplClasses(g))}" count="${g.members.length}" confidence="${meta.conf.toFixed(2)}" via="${meta.edge}" />`,
+                    );
+                } else {
+                    consumed.add(qn);
+                    lines.push(
+                        `    <Coupled name="${escapeXml(shortName(qn))}" confidence="${meta.conf.toFixed(2)}" via="${meta.edge}" />`,
+                    );
+                }
+                renderedCount++;
+            }
+            const remaining = ranked.length - consumed.size;
+            if (remaining > 0) {
+                lines.push(`    <!-- +${remaining} more -->`);
+            }
+            lines.push('  </ReviewTogether>');
+        }
     }
 
     lines.push('</CallGraph>');

@@ -23,6 +23,10 @@ interface ContextOptions {
     out: string;
     minConfidence: number;
     maxDepth: number;
+    /** 'bidirectional' (default) computes the coupling neighbourhood; 'reverse' skips it. */
+    couplingDirection?: 'reverse' | 'bidirectional';
+    /** Hub-damping threshold for the coupling neighbourhood (default 15). */
+    hubThreshold?: number;
     format: 'json' | 'prompt' | 'xml';
     skipTests?: boolean;
     maxFunctions?: number;
@@ -173,12 +177,15 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             skipTests: opts.skipTests,
             diffHunks,
             riskConfig: riskConfigResolved,
+            couplingDirection: opts.couplingDirection ?? 'bidirectional',
+            hubThreshold: opts.hubThreshold,
         });
 
         log.info('context: analysis done', {
             changedFunctions: output.analysis.changed_functions.length,
             diff: output.analysis.structural_diff.summary,
             blastRadius: output.analysis.blast_radius.total_functions,
+            coupling: output.analysis.coupling_neighbourhood?.total_functions ?? 0,
             risk: `${output.analysis.risk.level} (${output.analysis.risk.score})`,
             testGaps: output.analysis.test_gaps.length,
             affectedFlows: output.analysis.affected_flows.length,

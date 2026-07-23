@@ -24,6 +24,13 @@ import { findTestGaps } from './test-gaps';
 
 /** Default weight for blast radius entries not in any detected flow. */
 const FLOW_WEIGHT_BASELINE = 0.1;
+/**
+ * Hub-damping threshold used for the coupling neighbourhood. Nodes whose
+ * fan-out exceeds this are reached but not expanded, so barrel/index files
+ * don't explode the "review together" set. 15 is the value backtested on real
+ * kodus-ai co-changes (reverse 0.024 → bidirectional+hub15 ~0.70 symbol recall).
+ */
+const COUPLING_DEFAULT_HUB_THRESHOLD = 15;
 /** Multiplier for test-only flows (lower than HTTP flows since they represent test paths, not production). */
 const FLOW_WEIGHT_TEST_MULTIPLIER = 0.3;
 
@@ -37,6 +44,14 @@ export interface ContextV2Output {
         changed_functions: ReturnType<typeof enrichChangedFunctions>;
         structural_diff: DiffResult;
         blast_radius: ReturnType<typeof computeBlastRadius>;
+        /**
+         * Bidirectional + hub-damped neighbourhood of the change — "what else to
+         * review together". Present only when `couplingDirection` is
+         * 'bidirectional'. Distinct from `blast_radius` (reverse, "what breaks"):
+         * this also walks the change's dependencies and sibling cluster, which is
+         * where most real co-change lives. Never feeds the risk score.
+         */
+        coupling_neighbourhood?: ReturnType<typeof computeBlastRadius>;
         affected_flows: AffectedFlow[];
         inheritance: ReturnType<typeof extractInheritance>;
         test_gaps: ReturnType<typeof findTestGaps>;
@@ -56,6 +71,15 @@ interface BuildContextV2Options {
     diffHunks?: Map<string, DiffHunk[]>;
     /** Custom risk score weights/caps (resolved — object form only at this layer). */
     riskConfig?: RiskConfig;
+    /**
+     * When 'bidirectional', also compute `coupling_neighbourhood` (the "review
+     * together" set). Default 'reverse' computes only the classic blast radius,
+     * leaving the coupling field absent. The primary `blast_radius` (risk /
+     * breakage) is ALWAYS reverse regardless of this setting.
+     */
+    couplingDirection?: 'reverse' | 'bidirectional';
+    /** Hub-damping threshold for the coupling neighbourhood (0 = off; default 15). */
+    hubThreshold?: number;
 }
 
 export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
@@ -80,33 +104,75 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         ...structuralDiff.nodes.removed.map((n) => n.qualified_name),
     ]);
 
-    // The unified diff is ground truth for what changed. Apply hunk overlap filter
-    // unconditionally when hunks are available, regardless of baseline presence.
+    // The unified diff is ground truth for what changed. When hunks are
+    // available it does TWO jobs — subtract false positives AND add what the
+    // structural diff missed:
     //
-    // Why unconditional: the baseline graph may be stale or field-incomplete (e.g. a
-    // DB export missing `throws`/`decorators`/`content_hash`). In that case the
-    // structural diff fires on metadata divergence that doesn't reflect real code
-    // changes, producing false-positive "modified" entries for untouched functions.
-    // The hunk filter eliminates those by requiring the function to actually
-    // intersect a changed line range.
+    // (1) SUBTRACT: a stale or field-incomplete baseline (e.g. a DB export
+    //     missing `throws`/`decorators`/`content_hash`) makes the structural
+    //     diff fire on metadata divergence that isn't a real code change. Drop
+    //     any "changed" node that doesn't actually intersect a changed line.
+    //
+    // (2) ADD: when the baseline graph is built from HEAD — which is REQUIRED
+    //     for accurate cross-file edges, and is exactly what kodus-ai passes via
+    //     `--graph` — the old-vs-new structural diff sees the changed file at
+    //     its current content on BOTH sides, so added/modified come back empty
+    //     and the changed set collapses to zero. In that case the diff hunks are
+    //     the only signal the file changed at all. Seed changed functions
+    //     directly from hunk overlap so passing `--graph` never zeroes out the
+    //     changed set (the "0 changed" bug). A hunk-overlapping Function/Method
+    //     that the structural diff didn't classify gets a synthesized `modified`
+    //     entry so enrichChangedFunctions surfaces it with callers/callees.
     if (opts.diffHunks && opts.diffHunks.size > 0) {
         const before = trulyChangedQN.size;
+
+        // (1) subtract non-overlapping
         for (const qn of [...trulyChangedQN]) {
             const node = indexed.byQualified.get(qn);
             if (node && !overlapsWithDiff(node.file_path, node.line_start, node.line_end, opts.diffHunks)) {
                 trulyChangedQN.delete(qn);
             }
         }
-        // Also filter structuralDiff so enrichChangedFunctions sees the same reduced set
+
+        // (2) add hunk-overlapping functions/methods the structural diff missed
+        const modifiedQN = new Set(structuralDiff.nodes.modified.map((m) => m.qualified_name));
+        const addedQN = new Set(structuralDiff.nodes.added.map((n) => n.qualified_name));
+        for (const node of newNodesInChanged) {
+            if (node.kind !== 'Function' && node.kind !== 'Method') {
+                continue;
+            }
+            if (node.is_test || trulyChangedQN.has(node.qualified_name)) {
+                continue;
+            }
+            if (!overlapsWithDiff(node.file_path, node.line_start, node.line_end, opts.diffHunks)) {
+                continue;
+            }
+            trulyChangedQN.add(node.qualified_name);
+            if (!modifiedQN.has(node.qualified_name) && !addedQN.has(node.qualified_name)) {
+                // Synthesize a minimal modified entry — the hunk proves the body
+                // changed; we just have no structural delta to attribute it to.
+                structuralDiff.nodes.modified.push({
+                    qualified_name: node.qualified_name,
+                    changes: ['body'],
+                    contract_diffs: [],
+                });
+                modifiedQN.add(node.qualified_name);
+            }
+        }
+
+        // Keep structuralDiff added/modified consistent with the final set so
+        // enrichChangedFunctions sees exactly the same changed functions.
         structuralDiff.nodes.added = structuralDiff.nodes.added.filter((n) => trulyChangedQN.has(n.qualified_name));
         structuralDiff.nodes.modified = structuralDiff.nodes.modified.filter((n) =>
             trulyChangedQN.has(n.qualified_name),
         );
+        structuralDiff.summary.added = structuralDiff.nodes.added.length;
+        structuralDiff.summary.modified = structuralDiff.nodes.modified.length;
 
         log.info('context: diff-hunk filter applied', {
             before,
             after: trulyChangedQN.size,
-            filtered: before - trulyChangedQN.size,
+            seeded: trulyChangedQN.size - before > 0 ? trulyChangedQN.size - before : 0,
         });
     }
 
@@ -124,6 +190,27 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
     );
     const allFlows = detectFlows(indexed, { maxDepth: 10, type: 'all' });
     enrichBlastRadiusWithFlows(blastRadius, allFlows);
+
+    // Coupling neighbourhood — bidirectional + hub-damped. Answers "what else
+    // should I review with this change" (siblings + dependencies), which the
+    // reverse blast radius (callers only) misses. Opt-in and NEVER fed to the
+    // risk score, so risk stays a clean "what breaks downstream" signal.
+    let couplingNeighbourhood: BlastRadiusResult | undefined;
+    if (opts.couplingDirection === 'bidirectional' && trulyChangedQN.size > 0) {
+        couplingNeighbourhood = computeBlastRadius(
+            mergedGraph,
+            [...trulyChangedQN],
+            maxDepth,
+            minConfidence,
+            contractBreakingSeeds,
+            {
+                index: graphIndex,
+                direction: 'bidirectional',
+                hubThreshold: opts.hubThreshold ?? COUPLING_DEFAULT_HUB_THRESHOLD,
+            },
+        );
+        enrichBlastRadiusWithFlows(couplingNeighbourhood, allFlows);
+    }
     const testGaps = opts.skipTests ? [] : findTestGaps(mergedGraph, changedFiles, graphIndex);
     const risk = computeRiskScore(mergedGraph, changedFiles, blastRadius, {
         skipTests: opts.skipTests,
@@ -193,6 +280,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
             changed_functions: enriched,
             structural_diff: structuralDiff,
             blast_radius: blastRadius,
+            ...(couplingNeighbourhood ? { coupling_neighbourhood: couplingNeighbourhood } : {}),
             affected_flows: affectedFlows,
             inheritance,
             test_gaps: testGaps,
