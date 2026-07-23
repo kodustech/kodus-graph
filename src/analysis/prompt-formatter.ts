@@ -182,7 +182,8 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                 const shown = fn.callers.slice(0, MAX_CALLERS);
                 for (const c of shown) {
                     const conf = c.confidence < 0.85 ? ` ~${Math.round(c.confidence * 100)}%` : '';
-                    lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}`);
+                    const prov = c.provenance === 'heuristic' ? ' (heuristic: event)' : '';
+                    lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}${prov}`);
                     // Surface non-picked candidates so the LLM can see what the
                     // resolver passed over at the ambiguous (0.30) tier.
                     if (c.confidence <= 0.3 && c.alternatives && c.alternatives.length > 0) {
@@ -204,7 +205,9 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
             // Callees (→ compact chain)
             if (fn.callees.length > 0) {
                 const MAX_CALLEES = 8;
-                const names = fn.callees.slice(0, MAX_CALLEES).map((c) => c.name);
+                const names = fn.callees
+                    .slice(0, MAX_CALLEES)
+                    .map((c) => (c.provenance === 'heuristic' ? `${c.name} (event?)` : c.name));
                 let calleeLine = `    → ${names.join(', ')}`;
                 if (fn.callees.length > MAX_CALLEES) {
                     calleeLine += `, ... +${fn.callees.length - MAX_CALLEES}`;

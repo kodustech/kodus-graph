@@ -46,9 +46,12 @@ function escapeXml(str: string): string {
  * the edge, which is more actionable than a bare float; the number is kept for
  * anything that wants to threshold on it.
  */
-function resolutionAttrs(ref: { confidence: number; tier?: string }): string {
+function resolutionAttrs(ref: { confidence: number; tier?: string; provenance?: string }): string {
     const tier = ref.tier ? ` tier="${escapeXml(ref.tier)}"` : '';
-    return ` confidence="${ref.confidence.toFixed(2)}"${tier}`;
+    // Heuristic (event-channel) edges carry no tier; mark them so the XML
+    // consumer weighs them as a synthesized guess, not a resolved call.
+    const prov = ref.provenance === 'heuristic' ? ` provenance="heuristic"` : '';
+    return ` confidence="${ref.confidence.toFixed(2)}"${tier}${prov}`;
 }
 
 function classQualifiedName(qualifiedName: string, name: string, parentName?: string): string {

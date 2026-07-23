@@ -288,6 +288,111 @@ export function buildGraphData(
         }
     }
 
+    // Event coupling (heuristic) — pair emit sites to listeners by exact channel
+    // name. The callee (`emit`/`on`) is generic noise the static resolver drops,
+    // and the real coupling lives in the literal channel string, which no
+    // name-based tier can see. We synthesize a CALLS edge emitter→handler tagged
+    // `provenance:'heuristic'` at a low confidence and NO tier, so it enters the
+    // blast radius as a labelled guess (recall up) without ever passing for a
+    // statically-verified call (precision preserved). Two listener sources:
+    //   (a) `@OnEvent('ch')` decorators on a method → the method IS the handler;
+    //   (b) `.on('ch', …)` call sites → the enclosing function is the handler.
+    const HEURISTIC_EVENT_CONFIDENCE = 0.5;
+    const enclosingFn = (file: string, line: number): string | undefined => {
+        for (const fn of functionsByFile.get(file) ?? []) {
+            if (line >= fn.line_start && line <= fn.line_end) {
+                return fn.qualified_name;
+            }
+        }
+        return undefined;
+    };
+
+    // channel → emitter function qualified name → emit-site line (for the edge,
+    // so a reviewer clicking the caller lands on the `.emit(...)` call).
+    const emittersByChannel = new Map<string, Map<string, number>>();
+    // channel → handler qualified names
+    const handlersByChannel = new Map<string, Set<string>>();
+    const addHandler = (channel: string, qn: string) => {
+        const set = handlersByChannel.get(channel);
+        if (set) {
+            set.add(qn);
+        } else {
+            handlersByChannel.set(channel, new Set([qn]));
+        }
+    };
+
+    for (const rc of raw.rawCalls) {
+        if (!rc.channel || !rc.eventRole) {
+            continue;
+        }
+        const fn = enclosingFn(rc.source, rc.line);
+        if (!fn) {
+            continue;
+        }
+        if (rc.eventRole === 'emit') {
+            const byFn = emittersByChannel.get(rc.channel);
+            if (byFn) {
+                if (!byFn.has(fn)) {
+                    byFn.set(fn, rc.line);
+                }
+            } else {
+                emittersByChannel.set(rc.channel, new Map([[fn, rc.line]]));
+            }
+        } else {
+            addHandler(rc.channel, fn);
+        }
+    }
+
+    // Listener handlers declared via decorator: `@OnEvent('ch')` (NestJS),
+    // `@OnEvent(['a','b'])`, `@EventPattern('ch')`, `@MessagePattern('ch')`.
+    // The decorated method is the real handler — cleaner than an enclosing fn.
+    const DECORATOR_CHANNEL_RE = /@(?:OnEvent|EventPattern|MessagePattern)\(\s*(.+?)\s*\)/s;
+    const CHANNEL_LITERAL_RE = /['"`]([^'"`]+)['"`]/g;
+    for (const node of nodes) {
+        if (!node.decorators || node.decorators.length === 0) {
+            continue;
+        }
+        for (const dec of node.decorators) {
+            const m = DECORATOR_CHANNEL_RE.exec(dec);
+            if (!m) {
+                continue;
+            }
+            for (const lit of m[1].matchAll(CHANNEL_LITERAL_RE)) {
+                addHandler(lit[1], node.qualified_name);
+            }
+        }
+    }
+
+    // Synthesize emitter→handler edges for channels present on BOTH sides.
+    const seenEventEdge = new Set<string>();
+    for (const [channel, emitters] of emittersByChannel) {
+        const handlers = handlersByChannel.get(channel);
+        if (!handlers) {
+            continue;
+        }
+        for (const [src, emitLine] of emitters) {
+            for (const tgt of handlers) {
+                if (src === tgt) {
+                    continue;
+                }
+                const key = `${src} ${tgt}`;
+                if (seenEventEdge.has(key)) {
+                    continue;
+                }
+                seenEventEdge.add(key);
+                edges.push({
+                    kind: 'CALLS',
+                    source_qualified: src,
+                    target_qualified: tgt,
+                    file_path: src.split('::')[0],
+                    line: emitLine,
+                    confidence: HEURISTIC_EVENT_CONFIDENCE,
+                    provenance: 'heuristic',
+                });
+            }
+        }
+    }
+
     // IMPORTS edges — only emit resolved imports (skip external/unresolved packages)
     for (const ie of importEdges) {
         if (!ie.resolved) {

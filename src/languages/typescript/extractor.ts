@@ -34,6 +34,38 @@ const EXPORT_RULES = { exportKeywords: [TS_KINDS.exportStatement, TS_KINDS.expor
 const DECORATOR_KINDS = ['decorator'] as const;
 const THROW_KINDS = ['throw_statement'] as const;
 
+/**
+ * Pub/sub method names whose FIRST argument is a literal event channel. Emit
+ * side fires an event; listen side registers a handler. Kept deliberately tight
+ * (the well-known Node/NestJS/DOM surface) so a domain method that happens to be
+ * named `publish` with a non-string first arg is skipped — we only record a site
+ * when the first argument is actually a string literal. RxJS `subscribe` is
+ * intentionally absent: it takes an observer, not a channel name.
+ */
+const EVENT_EMIT_METHODS: ReadonlySet<string> = new Set(['emit', 'emitAsync', 'dispatch', 'publish']);
+const EVENT_LISTEN_METHODS: ReadonlySet<string> = new Set(['on', 'once', 'addEventListener']);
+
+/**
+ * Return the value of a string/template literal node, or undefined when the node
+ * isn't a plain literal (identifier, template with interpolation, etc). Strips
+ * the surrounding quotes/backticks. A template string with a substitution is
+ * rejected — we only match constant channel names.
+ */
+function stringLiteralValue(node: SgNode): string | undefined {
+    const kind = String(node.kind());
+    const text = node.text();
+    if (kind === 'string') {
+        return text.length >= 2 ? text.slice(1, -1) : undefined;
+    }
+    if (kind === 'template_string') {
+        if (text.includes('${')) {
+            return undefined; // interpolated — not a constant channel
+        }
+        return text.length >= 2 ? text.slice(1, -1) : undefined;
+    }
+    return undefined;
+}
+
 // Branch kinds for TS/JS cyclomatic complexity.
 // Notes on double-counting avoidance:
 // - `switch_case` (case-level) only; skip `switch_statement` — outer switch + per-case would N+1.
@@ -529,6 +561,43 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
             callName: name,
             line: r.line,
             column: r.column,
+        });
+    }
+
+    // Event pub/sub sites — `bus.emit('user.created', …)` / `bus.on('user.created', …)`.
+    // The callee here is a generic method name (`emit`/`on`) the static resolver
+    // drops as noise, and the real coupling signal is the LITERAL channel string,
+    // which no name-based tier can see. We record the channel + role so the
+    // builder can synthesize a heuristic emitter→listener edge. These sites are
+    // ALSO picked up by the generic call pass below and resolve to null (no
+    // symbol named `emit`), so they never produce a spurious static edge.
+    for (const m of rootNode.findAll('$OBJ.$METHOD($$$ARGS)')) {
+        const methodNode = m.getMatch('METHOD');
+        const method = methodNode?.text();
+        if (!method) {
+            continue;
+        }
+        const role: 'emit' | 'listen' | undefined = EVENT_EMIT_METHODS.has(method)
+            ? 'emit'
+            : EVENT_LISTEN_METHODS.has(method)
+              ? 'listen'
+              : undefined;
+        if (!role) {
+            continue;
+        }
+        const firstArg = m.getMultipleMatches('ARGS').find((a) => a.kind() !== ',');
+        const channel = firstArg ? stringLiteralValue(firstArg) : undefined;
+        if (!channel) {
+            continue;
+        }
+        const r = (methodNode ?? m).range().end;
+        calls.push({
+            source: fp,
+            callName: method,
+            line: r.line,
+            column: r.column,
+            channel,
+            eventRole: role,
         });
     }
 

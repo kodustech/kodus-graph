@@ -68,6 +68,15 @@ export interface GraphEdge {
     alternatives?: string[];
     /** Resolution tier — only set for CALLS edges. Optional for backward compat with pre-2026-04 graphs. */
     tier?: EdgeTier;
+    /**
+     * How this edge was derived. Absent = a static resolution (the resolver
+     * matched a real symbol). `'heuristic'` = SYNTHESIZED by a name/channel
+     * match that static resolution structurally cannot see — currently
+     * event emitter→listener pairs matched by literal channel name. Carries a
+     * low confidence and NO tier; surfaced to reviewers as a labelled guess so
+     * recall goes up without a heuristic edge ever passing for a verified call.
+     */
+    provenance?: 'heuristic';
 }
 
 // ── Full graph data ──
@@ -214,6 +223,8 @@ export interface CallerRef {
     tier?: EdgeTier;
     /** Non-picked resolver candidates — mirrors GraphEdge.alternatives for ambiguous CALLS. */
     alternatives?: string[];
+    /** `'heuristic'` when this edge was synthesized (event channel match), not statically resolved. */
+    provenance?: 'heuristic';
 }
 
 export interface CalleeRef {
@@ -232,6 +243,8 @@ export interface CalleeRef {
     confidence: number;
     /** How the resolver reached this edge. Mirrors GraphEdge.tier. */
     tier?: EdgeTier;
+    /** `'heuristic'` when this edge was synthesized (event channel match), not statically resolved. */
+    provenance?: 'heuristic';
 }
 
 export interface EnrichedFunction {
@@ -410,6 +423,16 @@ export interface RawCallSite {
      */
     chainedFromLine?: number;
     chainedFromColumn?: number;
+    /**
+     * Literal event channel name for a pub/sub call site (`emit('user.created')`
+     * / `on('user.created')`). Set together with `eventRole`. Consumed by the
+     * builder's event-coupling pass to synthesize heuristic emitter→listener
+     * edges; ignored by the normal tier resolver (these still fall through to
+     * noise/null as ordinary calls, producing no static edge).
+     */
+    channel?: string;
+    /** Pub/sub role of this call site when `channel` is set. */
+    eventRole?: 'emit' | 'listen';
 }
 
 export interface RawCallEdge {
@@ -425,6 +448,8 @@ export interface RawCallEdge {
      * Optional only to keep test fixtures simple; the resolver always sets it.
      */
     tier?: EdgeTier;
+    /** Set to `'heuristic'` for synthesized event/channel-match edges (no tier). */
+    provenance?: 'heuristic';
 }
 
 export interface ImportEdge {
