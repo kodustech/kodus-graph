@@ -70,11 +70,36 @@ export function computeBlastRadius(
     maxDepth: number = DEFAULT_BLAST_MAX_DEPTH,
     minConfidence?: number,
     contractBreakingSeeds?: Set<string>,
-    options?: { index?: GraphIndex },
+    options?: {
+        index?: GraphIndex;
+        /**
+         * 'reverse' (default) = classic blast radius: who is AFFECTED by a change
+         * (transitive callers/subclasses/type-users). 'bidirectional' also walks
+         * dependencies (callees/base types), so the result is the full impact
+         * NEIGHBOURHOOD — "what's coupled to this change". Backtested on real
+         * kodus-ai co-changes, bidirectional recovers ~2× more of the files that
+         * actually changed together (0.20 → ~0.51 at depth 2), because most
+         * co-change is between SIBLINGS that share a caller/callee rather than in
+         * a straight caller chain. Use it for "what else should I review"; keep
+         * 'reverse' for "what breaks if this changes" / risk scoring.
+         */
+        direction?: 'reverse' | 'bidirectional';
+        /**
+         * Hub damping. When > 0, a node whose fan-out degree exceeds this
+         * threshold is REACHED but not expanded — the traversal doesn't propagate
+         * THROUGH it. This stops barrel/index files (that everything imports) from
+         * exploding the radius: on kodus-ai, bidirectional+imports without damping
+         * surfaced ~125 files for the same recall a hub cap reaches in ~18-33.
+         * 0 (default) disables it, preserving classic behaviour.
+         */
+        hubThreshold?: number;
+    },
 ): BlastRadiusResult {
     const minConf = minConfidence ?? 0.5;
     const cbSeeds = contractBreakingSeeds ?? new Set<string>();
     const idx = options?.index ?? new GraphIndex(graph);
+    const bidirectional = options?.direction === 'bidirectional';
+    const hubThreshold = options?.hubThreshold ?? 0;
 
     // Build adjacency list with metadata
     const adj = new Map<string, AdjEntry[]>();
@@ -98,9 +123,14 @@ export function computeBlastRadius(
         adj.get(from)!.push({ neighbor: to, confidence, edgeKind });
     };
 
+    // In 'bidirectional' mode we ALSO add the forward edge (source→target) so the
+    // traversal reaches a change's dependencies, not just its dependents.
     for (const edge of idx.edgesByKind('IMPORTS')) {
-        // IMPORTS: unidirectional — change in imported affects importer
+        // IMPORTS: change in imported affects importer
         addEdge(edge.target_qualified, edge.source_qualified, 1.0, 'IMPORTS');
+        if (bidirectional) {
+            addEdge(edge.source_qualified, edge.target_qualified, 1.0, 'IMPORTS');
+        }
     }
     for (const edge of idx.edgesByKind('CALLS')) {
         if ((edge.confidence ?? 1.0) < minConf) {
@@ -117,6 +147,9 @@ export function computeBlastRadius(
         }
         // CALLS: only edges with sufficient confidence, reverse direction
         addEdge(edge.target_qualified, edge.source_qualified, edge.confidence ?? 1.0, 'CALLS');
+        if (bidirectional) {
+            addEdge(edge.source_qualified, edge.target_qualified, edge.confidence ?? 1.0, 'CALLS');
+        }
     }
     for (const edge of idx.edgesByKind('USES_TYPE')) {
         if (USES_TYPE_CONFIDENCE < minConf) {
@@ -126,6 +159,9 @@ export function computeBlastRadius(
         // names it. Unlike IMPORTS these are symbol-to-symbol, so they meet the
         // symbol seeds the traversal actually starts from.
         addEdge(edge.target_qualified, edge.source_qualified, USES_TYPE_CONFIDENCE, 'USES_TYPE');
+        if (bidirectional) {
+            addEdge(edge.source_qualified, edge.target_qualified, USES_TYPE_CONFIDENCE, 'USES_TYPE');
+        }
     }
     for (const edge of idx.edgesByKind('INHERITS')) {
         if (INHERITS_CONFIDENCE < minConf) {
@@ -136,7 +172,18 @@ export function computeBlastRadius(
         // class left its subclasses out of the blast radius unless they happened
         // to call `super` — a real under-count of a high-impact change.
         addEdge(edge.target_qualified, edge.source_qualified, INHERITS_CONFIDENCE, 'INHERITS');
+        if (bidirectional) {
+            addEdge(edge.source_qualified, edge.target_qualified, INHERITS_CONFIDENCE, 'INHERITS');
+        }
     }
+
+    // Hub damping: a node with a very high fan-out (barrel/index files that
+    // re-export or are imported everywhere) is REACHED but not EXPANDED, so the
+    // traversal doesn't propagate through it and explode the radius. Seeds are
+    // always expanded regardless (they're where the change actually is).
+    const hubSeeds = new Set(changedQualifiedNames);
+    const isHub = (qn: string): boolean =>
+        hubThreshold > 0 && !hubSeeds.has(qn) && (adj.get(qn)?.length ?? 0) > hubThreshold;
 
     // Consolidated state per node
     const nodeState = new Map<string, NodeState>();
@@ -210,6 +257,11 @@ export function computeBlastRadius(
         const nextBest = new Map<string, FrontierEntry>();
 
         for (const [, parentEntry] of frontierBest) {
+            // Hub damping: reached-but-not-expanded. A depth-1+ node that is a hub
+            // stays in the result but doesn't propagate the radius through it.
+            if (isHub(parentEntry.qualified)) {
+                continue;
+            }
             const neighbors = adj.get(parentEntry.qualified) || [];
             for (const adjEntry of neighbors) {
                 if (seedSet.has(adjEntry.neighbor)) {

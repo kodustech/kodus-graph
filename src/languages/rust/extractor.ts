@@ -229,8 +229,36 @@ export const rustExtractors: LanguageExtractors = {
             selfPrefixes: ['self.'],
             superPrefixes: [],
             findEnclosingClass: (node) => node.ancestors().find((a) => a.kind() === RUST_KINDS.implItem) ?? null,
+            // `Type::assoc_fn()` is handled by the scoped pass below. The shared
+            // `.`-split would emit the whole `Type::assoc_fn` as the call name
+            // (Rust paths use `::`, not `.`), which never resolves — skip it here.
+            skipCallee: (callee) => callee.includes('::'),
         };
         extractCalls(root, fp, config, calls);
+
+        // Associated-function / constructor calls: `Type::new(...)`,
+        // `Type::assoc(...)`. Rust has no dedicated constructor node — `new` is a
+        // convention method — so emit a receiver-typed call to the type; the
+        // receiver tier binds it to `Type.method` and the chain
+        // `caller -> Type::new -> …` connects (blast radius through the "ctor").
+        for (const call of root.findAll({ rule: { kind: RUST_KINDS.callExpression } })) {
+            const fn = call.field(RUST_FIELDS.function);
+            if (fn?.kind() !== RUST_KINDS.scopedIdentifier) {
+                continue;
+            }
+            const method = fn.field(RUST_FIELDS.name)?.text();
+            // The type is the segment before the final `::` — the first
+            // identifier/type_identifier child of the scoped_identifier.
+            const typeNode = fn
+                .children()
+                .find((c: SgNode) => c.kind() === RUST_KINDS.identifier || c.kind() === RUST_KINDS.typeIdentifier);
+            const typeName = typeNode?.text();
+            if (!method || !typeName || method === typeName) {
+                continue;
+            }
+            const r = fn.range().end;
+            calls.push({ source: fp, callName: method, line: r.line, column: r.column, receiverType: typeName });
+        }
     },
 };
 

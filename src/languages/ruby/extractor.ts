@@ -252,14 +252,30 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
             continue;
         }
         const line = node.range().start.line;
+        const receiver = node.field(RUBY_FIELDS.receiver);
+
+        // Construction: `Foo.new(...)` where `Foo` is a constant. Ruby's `new`
+        // is a class method that runs `initialize`; emit a construction call to
+        // the class so the constructor tier binds it and the builder threads the
+        // edge to `initialize`. Without this, `new` is dropped as noise and the
+        // instantiator never reaches the constructor body.
+        const recvText = receiver?.text();
+        if (callName === 'new' && recvText && /^[A-Z][A-Za-z0-9_]*$/.test(recvText)) {
+            if (!seenLines.has(`${recvText}:${line}`)) {
+                seenLines.add(`${recvText}:${line}`);
+                seenLines.add(`new:${line}`);
+                calls.push({ source: fp, callName: recvText, line, isConstruction: true });
+            }
+            continue;
+        }
+
         if (seenLines.has(`${callName}:${line}`)) {
             continue;
         }
         seenLines.add(`${callName}:${line}`);
 
         let resolveInClass: string | undefined;
-        const receiver = node.field(RUBY_FIELDS.receiver);
-        if (receiver?.text() === 'self') {
+        if (recvText === 'self') {
             const classNode = config.findEnclosingClass(node);
             resolveInClass = classNode?.field(RUBY_FIELDS.name)?.text();
         }

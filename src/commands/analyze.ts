@@ -32,6 +32,15 @@ interface AnalyzeOptions {
     riskConfig?: RiskConfig | string;
     /** Blast-radius BFS depth. Defaults to DEFAULT_BLAST_MAX_DEPTH, same as `context`. */
     maxDepth?: number;
+    /**
+     * Blast-radius direction. 'reverse' (default) = what is AFFECTED by the
+     * change; 'bidirectional' = the full coupling neighbourhood (also reaches
+     * dependencies). Bidirectional recovers ~29× more of the files that actually
+     * co-change in review — use it for "what else should I look at".
+     */
+    blastDirection?: 'reverse' | 'bidirectional';
+    /** Hub-damping threshold: a node with fan-out above this is reached but not expanded (0 = off). */
+    hubThreshold?: number;
 }
 
 export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
@@ -161,7 +170,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
         opts.maxDepth ?? DEFAULT_BLAST_MAX_DEPTH,
         undefined,
         undefined,
-        { index: graphIndex },
+        { index: graphIndex, direction: opts.blastDirection, hubThreshold: opts.hubThreshold },
     );
     const riskScore = computeRiskScore(mergedGraph, opts.files, blastRadius, {
         skipTests: opts.skipTests,

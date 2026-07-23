@@ -1,6 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, constructorTypeName, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -268,6 +268,42 @@ export const scalaExtractors: LanguageExtractors = {
                 is_exported: scalaIsExported(node),
                 decorators: scalaDecorators(node),
             });
+
+            // Synthesize a Constructor node for the primary constructor when the
+            // class body runs initialization calls (`val x = H.helper()`). Those
+            // run at construction time but sit outside any method, so without a
+            // constructor to own them the builder drops them (no enclosing
+            // function) and the instantiator never reaches them. Spanning the
+            // class range lets body-level calls attribute here while real
+            // methods (higher line_start) still win.
+            const templateBody = node.children().find((c) => c.kind() === SCALA_KINDS.templateBody);
+            const hasInitCalls = templateBody
+                ?.children()
+                .some(
+                    (c) =>
+                        c.kind() === SCALA_KINDS.valDefinition &&
+                        c.findAll({ rule: { kind: SCALA_KINDS.callExpression } }).length > 0,
+                );
+            if (hasInitCalls) {
+                result.functions.push({
+                    name: '<init>',
+                    line_start: range.line_start,
+                    line_end: range.line_end,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Constructor',
+                    ast_kind: String(node.kind()),
+                    className: name,
+                    modifiers: '',
+                    content_hash: computeContentHash(`${name}.<init>`),
+                    isTest: false,
+                    is_exported: scalaIsExported(node),
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
+                    complexity: 1,
+                });
+            }
         }
 
         // ── Objects (object_definition) ─────────────────────────────────
@@ -454,6 +490,30 @@ export const scalaExtractors: LanguageExtractors = {
             },
         };
         extractCalls(root, fp, config, calls);
+
+        // Constructor calls: `new Foo(...)`. The `$CALLEE($$$ARGS)` pattern
+        // doesn't reach the type inside an instance_expression, so emit a
+        // construction call to the class here; the constructor tier binds it and
+        // the builder threads the edge to the synthesized `<init>` node.
+        for (const inst of root.findAll({ rule: { kind: SCALA_KINDS.instanceExpression } })) {
+            const ti = inst
+                .children()
+                .find((c) => c.kind() === SCALA_KINDS.typeIdentifier || c.kind() === SCALA_KINDS.identifier);
+            let typeName = ti?.text();
+            if (!typeName) {
+                const innerCall = inst.children().find((c) => c.kind() === SCALA_KINDS.callExpression);
+                const fn = innerCall?.field(SCALA_FIELDS.function);
+                if (fn?.kind() === SCALA_KINDS.identifier || fn?.kind() === SCALA_KINDS.typeIdentifier) {
+                    typeName = fn.text();
+                }
+            }
+            const name = typeName ? constructorTypeName(typeName) : undefined;
+            if (!name) {
+                continue;
+            }
+            const r = (ti ?? inst).range().end;
+            calls.push({ source: fp, callName: name, line: r.line, column: r.column, isConstruction: true });
+        }
     },
 };
 

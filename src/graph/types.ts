@@ -389,6 +389,19 @@ export interface RawCallSite {
      */
     receiverType?: string;
     /**
+     * Set when this call site is a constructor invocation (`new X()` /
+     * `object_creation_expression`). Only meaningful for languages whose
+     * constructor node is named identically to the class (Java/C#/Dart), where
+     * a bare-name lookup is ambiguous between the class and its own
+     * constructor. The constructor tier uses it to resolve to the CLASS node
+     * (excluding the same-named constructor candidate) so the builder can then
+     * thread a high-confidence edge to the constructor. Languages whose
+     * constructor has a distinct name (TS `.constructor`, Python `__init__`,
+     * PHP `__construct`, Swift `init`) don't need it — a plain name call already
+     * resolves cleanly to the class.
+     */
+    isConstruction?: boolean;
+    /**
      * Location of the inner call this site is chained from, for `x.a().b()`
      * patterns. Populated by language extractors when a call's receiver is
      * itself a call expression. The resolver uses this in a second pass to

@@ -191,6 +191,30 @@ export function buildGraphData(
         list.sort((a, b) => b.line_start - a.line_start);
     }
 
+    // Class → its constructor node(s). A `new X()` call resolves to the CLASS
+    // node (`file::X`), but the constructor's *body* calls hang off a separate
+    // constructor node (`file::X.X.constructor`). Without joining them, a
+    // reverse blast-radius walk from something the constructor calls stops at
+    // the constructor and never reaches the instantiator. We add a parallel
+    // CALLS edge from the caller to the constructor so instantiators are
+    // threaded into the constructor body's impact set. The class edge is kept
+    // (it still records the instantiation/type dependency). Languages with
+    // overloaded constructors get one entry per overload — `new X(args)` can't
+    // be disambiguated to a single overload here, so we connect to all.
+    const classConstructors = new Map<string, string[]>();
+    for (const node of nodes) {
+        if (!node.parent_name || !isConstructorNode(node)) {
+            continue;
+        }
+        const classQn = `${node.file_path}::${node.parent_name}`;
+        const list = classConstructors.get(classQn);
+        if (list) {
+            list.push(node.qualified_name);
+        } else {
+            classConstructors.set(classQn, [node.qualified_name]);
+        }
+    }
+
     // CALLS edges — resolve caller function from call line number
     for (const ce of callEdges) {
         // Skip calls to external packages (target file not in repo)
@@ -238,6 +262,30 @@ export function buildGraphData(
             ...(ce.tier ? { tier: ce.tier } : {}),
             ...(ce.alternatives && ce.alternatives.length > 0 ? { alternatives: ce.alternatives } : {}),
         });
+
+        // Instantiation: the call resolved to a class node that owns a
+        // constructor. Thread the caller into the constructor body's impact
+        // set with a parallel CALLS edge (see classConstructors above).
+        const constructors = classConstructors.get(ce.target);
+        if (constructors) {
+            for (const ctorQn of constructors) {
+                if (ctorQn === sourceQualified) {
+                    continue; // a constructor instantiating its own class — skip self-edge
+                }
+                // No `tier`: this is a derived edge, not a resolver decision.
+                // tier_distribution counts only tiered CALLS edges (see
+                // mergeTierDistribution), so leaving it off keeps the parse and
+                // update tier accounting consistent.
+                edges.push({
+                    kind: 'CALLS',
+                    source_qualified: sourceQualified,
+                    target_qualified: ctorQn,
+                    file_path: sourceFile,
+                    line: ce.line,
+                    confidence: ce.confidence,
+                });
+            }
+        }
     }
 
     // IMPORTS edges — only emit resolved imports (skip external/unresolved packages)
@@ -344,4 +392,22 @@ export function buildGraphData(
  */
 function detectLang(file: string): string {
     return languageOfFile(file) ?? 'unknown';
+}
+
+/**
+ * Reserved constructor method names for languages that model the constructor
+ * as an ordinary method (kind 'Method') rather than a dedicated 'Constructor'
+ * node. All are language-reserved, so matching them can't collide with a
+ * user-defined method. Compared against the final `.`-segment of the node name
+ * so TS's `Class.constructor` also matches.
+ */
+const CONSTRUCTOR_METHOD_NAMES = new Set(['constructor', '__construct', '__init__', 'initialize']);
+
+/** True when a node represents a class constructor (any supported language). */
+function isConstructorNode(node: GraphNode): boolean {
+    if (node.kind === 'Constructor') {
+        return true;
+    }
+    const last = node.name.split('.').pop() ?? node.name;
+    return CONSTRUCTOR_METHOD_NAMES.has(last);
 }

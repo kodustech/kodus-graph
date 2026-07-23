@@ -1,6 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, constructorTypeName, extractCalls } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -488,6 +488,23 @@ export const csharpExtractors: LanguageExtractors = {
             },
         };
         extractCalls(root, fp, config, calls);
+
+        // Constructor calls: `new Foo(...)`. C#'s constructor node is named after
+        // the class, so `isConstruction` routes it through the constructor tier.
+        for (const oce of root.findAll({ rule: { kind: CSHARP_KINDS.objectCreationExpression } })) {
+            const typeText =
+                oce.field(CSHARP_FIELDS.type)?.text() ??
+                oce
+                    .children()
+                    .find((c: SgNode) => c.kind() === CSHARP_KINDS.identifier)
+                    ?.text();
+            const name = constructorTypeName(typeText);
+            if (!name) {
+                continue;
+            }
+            const r = oce.range().end;
+            calls.push({ source: fp, callName: name, line: r.line, column: r.column, isConstruction: true });
+        }
     },
 };
 

@@ -511,6 +511,27 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
         });
     }
 
+    // Constructor calls: `new Foo(...)`. The grammar wraps these in a
+    // `new_expression`, which the generic `$CALLEE($$$ARGS)` pattern below does
+    // NOT match — so without this pass an instantiation produces no CALLS edge
+    // and the instantiator never lands in the constructor body's blast radius.
+    // We emit a plain name call to the class; the resolver binds it to the
+    // class node and the builder threads a parallel edge to the constructor.
+    for (const ne of rootNode.findAll({ rule: { kind: TS_KINDS.newExpression } })) {
+        const name = typeFromNewExpression(ne);
+        if (!name) {
+            continue;
+        }
+        const cons = ne.field(TS_FIELDS.constructor);
+        const r = (cons ?? ne).range().end;
+        calls.push({
+            source: fp,
+            callName: name,
+            line: r.line,
+            column: r.column,
+        });
+    }
+
     // Direct calls + self/super detection via shared function
     extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);
 

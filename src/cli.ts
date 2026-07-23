@@ -69,6 +69,16 @@ program
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
     .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option(
+        '--blast-direction <mode>',
+        "'reverse' (what breaks / risk) or 'bidirectional' (full coupling neighbourhood — what else to review)",
+        'reverse',
+    )
+    .option(
+        '--hub-threshold <n>',
+        'Hub damping: nodes with fan-out above this are reached but not expanded (0 = off)',
+        '0',
+    )
     .option('--skip-tests', 'Skip test detection (no TESTED_BY edges or test gaps)')
     .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
     .requiredOption('--out <path>', 'Output JSON file path')
@@ -78,6 +88,7 @@ program
             log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
         }
+        const blastDirection = opts.blastDirection === 'bidirectional' ? 'bidirectional' : 'reverse';
         await executeAnalyze({
             repoDir: opts.repoDir,
             files: opts.files,
@@ -86,6 +97,8 @@ program
             skipTests: opts.skipTests ?? false,
             riskConfig: opts.riskConfig,
             maxDepth: Number.parseInt(opts.maxDepth, 10),
+            blastDirection,
+            hubThreshold: Number.parseInt(opts.hubThreshold, 10) || 0,
         });
     });
 

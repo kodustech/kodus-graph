@@ -1,5 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
+import { constructorTypeName } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -577,6 +578,18 @@ export const javaExtractors: LanguageExtractors = {
                 ...(diClass ? { diClass } : {}),
                 ...(chainedFromLine !== undefined ? { chainedFromLine, chainedFromColumn } : {}),
             });
+        }
+
+        // Constructor calls: `new Foo(...)`. Java's constructor node is named
+        // after the class, so `isConstruction` routes it through the constructor
+        // tier (resolve to the class node) instead of the ambiguous cascade.
+        for (const oce of root.findAll({ rule: { kind: JAVA_KINDS.objectCreationExpression } })) {
+            const name = constructorTypeName(oce.field(JAVA_FIELDS.type)?.text());
+            if (!name) {
+                continue;
+            }
+            const r = (oce.field(JAVA_FIELDS.type) ?? oce).range().end;
+            calls.push({ source: fp, callName: name, line: r.line, column: r.column, isConstruction: true });
         }
     },
 };

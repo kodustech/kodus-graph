@@ -21,6 +21,8 @@ export const KOTLIN_KINDS = {
     functionDeclaration: 'function_declaration',
     propertyDeclaration: 'property_declaration',
     primaryConstructor: 'primary_constructor',
+    classBody: 'class_body',
+    anonymousInitializer: 'anonymous_initializer',
     importHeader: 'import_header',
     functionBody: 'function_body',
 

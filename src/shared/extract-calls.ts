@@ -49,6 +49,27 @@ export function callColumn(call: SgNode): { line: number; column: number } {
 }
 
 /**
+ * Normalize the type text of a construction expression (`new Foo<T>()`,
+ * `new pkg.Foo()`, `new Foo[]`) into a bare class name the resolver can bind:
+ * strips generic/array suffixes and keeps the final `.`/`::`-qualified segment.
+ * Returns undefined when nothing resolvable remains (e.g. `new int[]`, arrays,
+ * or an anonymous/inferred type). Shared by the per-language `new`-expression
+ * passes so every language emits construction calls consistently.
+ */
+export function constructorTypeName(typeText: string | undefined): string | undefined {
+    if (!typeText) {
+        return undefined;
+    }
+    // Drop everything from the first generic/array/paren boundary onward.
+    let t = typeText.trim().split(/[<[({\s]/)[0];
+    // Keep the final qualified segment: `pkg.Foo` → `Foo`, `A::B::Foo` → `Foo`.
+    const seg = t.split(/::|\./).pop();
+    t = (seg ?? t).trim();
+    // Must look like a type identifier (a bare `new int` / empty stays dropped).
+    return /^[A-Za-z_$][\w$]*$/.test(t) ? t : undefined;
+}
+
+/**
  * Language-specific configuration for call extraction.
  * Each language provides its self/super patterns and how to find class context in the AST.
  *

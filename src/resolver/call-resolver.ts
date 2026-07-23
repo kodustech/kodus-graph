@@ -315,6 +315,28 @@ const diTier: Tier = (call, ctx) => {
     return { kind: 'edge', target: resolved.target, confidence: resolved.confidence, statsKey: 'di' };
 };
 
+/**
+ * Constructor tier — `new X()` where the constructor node shares the class's
+ * name (Java/C#/Dart). Resolves to the CLASS node so the builder can thread a
+ * high-confidence edge to the constructor, instead of the cascade collapsing to
+ * an ambiguous 0.30 pick. Only fires when the extractor set `isConstruction`.
+ */
+const constructorTier: Tier = (call, ctx) => {
+    if (!call.isConstruction) {
+        return null;
+    }
+    const resolved = resolveConstructionTarget(call.callName, ctx.fp, ctx.symbolTable, ctx.importMap);
+    if (!resolved) {
+        return null;
+    }
+    return {
+        kind: 'edge',
+        target: resolved.target,
+        confidence: resolved.confidence,
+        statsKey: resolved.strategy as StatsKey,
+    };
+};
+
 /** Class-aware tier — `self.X()` / `super.X()` routed against enclosing class. */
 const classTier: Tier = (call, ctx) => {
     if (!call.resolveInClass) {
@@ -362,6 +384,10 @@ const TIERS: ReadonlyArray<{ name: string; tier: Tier }> = [
     // noise would drop a structurally-resolvable DI call. A DI call whose field type
     // is unknown falls through to `noise` below and is still dropped.
     { name: 'di', tier: diTier },
+    // Construction runs before noise/cascade: a tagged `new X()` resolves to the
+    // class node (excluding the same-named constructor candidate) so it never
+    // collapses to the 0.30 ambiguous tier. Untagged calls fall straight through.
+    { name: 'construct', tier: constructorTier },
     { name: 'noise', tier: noiseTier },
     { name: 'class', tier: classTier },
     { name: 'cascade', tier: cascadeTier },
@@ -680,6 +706,50 @@ function resolveDICall(
     }
 
     return null;
+}
+
+// ── Construction resolution (new X()) ──
+
+/**
+ * Resolve a constructor invocation (`new X()`) to the CLASS node.
+ *
+ * Only used for languages whose constructor node is named identically to the
+ * class (Java/C#/Dart: `file::X.X`), where a bare `lookupGlobal('X')` returns
+ * BOTH the class and its own constructor and the cascade collapses to the 0.30
+ * ambiguous tier. Here we filter to CLASS-SHAPED candidates — a qualified name
+ * whose local part is exactly the type name, with no `.member` segment — which
+ * excludes the same-named constructor. The builder then threads the actual
+ * edge to the constructor node. Languages whose constructor has a distinct
+ * name never set `isConstruction`, so they never reach this path.
+ */
+function resolveConstructionTarget(
+    callName: string,
+    currentFile: string,
+    symbolTable: SymbolTable,
+    importMap: ImportMap,
+): ResolveResult | null {
+    const classShaped = symbolTable.lookupGlobal(callName).filter((q) => {
+        const idx = q.indexOf('::');
+        const local = idx >= 0 ? q.slice(idx + 2) : q;
+        return local === callName; // bare type node, not `X.member`
+    });
+    if (classShaped.length === 0) {
+        return null;
+    }
+    // Prefer an imported class binding, then same-file, then closest by dir.
+    const importedFrom = importMap.lookup(currentFile, callName);
+    if (importedFrom) {
+        const hit = classShaped.find((q) => q.startsWith(`${importedFrom}::`));
+        if (hit) {
+            return { target: hit, confidence: 0.9, strategy: 'import' };
+        }
+    }
+    const sameFile = classShaped.find((q) => q.startsWith(`${currentFile}::`));
+    if (sameFile) {
+        return { target: sameFile, confidence: 0.85, strategy: 'same' };
+    }
+    const best = pickClosestCandidate(classShaped, currentFile);
+    return { target: best, confidence: 0.7, strategy: 'unique' };
 }
 
 // ── Name-based resolution (4-tier cascade) ──
