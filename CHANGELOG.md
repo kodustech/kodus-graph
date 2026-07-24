@@ -5,6 +5,36 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-07-23
+
+Cross-file recall + review-context work. All additive — existing outputs and the
+tier distribution are unchanged.
+
+### Added
+
+- **Coupling neighbourhood** in `context` ("REVIEW TOGETHER") — a second,
+  bidirectional + hub-damped blast radius answering "what else to review with
+  this change" (siblings + dependencies), distinct from the reverse blast radius
+  ("what breaks"). Opt-in in the library (default reverse), default on the CLI
+  via `--coupling-direction` / `--hub-threshold`. The risk score stays reverse
+  and never consumes it.
+- **Signature-collapse** in the context output — interchangeable sibling-method
+  implementations (grouped by shared base via `INHERITS`, never by name alone)
+  render as one `method ×N (ClassA, ClassB, …)` entry.
+- **Heuristic event-coupling edges** (`provenance: 'heuristic'`) — emitter→handler
+  pairs matched by literal channel name, which static resolution structurally
+  can't see (the callee is the generic `emit`/`on`, dropped as noise). TypeScript
+  (`emit`/`@OnEvent`/`.on`), Python (pyee-style), and Ruby
+  (`ActiveSupport::Notifications`). Low confidence, no tier — enters the blast
+  radius as a labelled guess without ever passing for a verified call.
+
+### Fixed
+
+- `context` no longer reports "0 changed" when `--graph` (a baseline built from
+  HEAD, required for accurate cross-file edges) is combined with `--diff`: the
+  diff hunks now SEED changed functions instead of only filtering them, so
+  passing the full graph never zeroes out the changed set.
+
 ## [0.3.0] — 2026-07-20
 
 First public release since `0.2.19`. It consolidates all work done between
