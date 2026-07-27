@@ -600,7 +600,9 @@ describe('formatPrompt', () => {
         expect(text).toContain('NEW');
     });
 
-    it('should flag unresolved imports', () => {
+    it('should flag unresolved imports when the target file IS parsed but the symbol is missing', () => {
+        // Genuine dead/broken import: missing.ts WAS parsed (it has a node), but
+        // it declares `Other`, not `NonExistent` → the import target has no match.
         const graphWithUnresolved: GraphData = {
             nodes: [
                 {
@@ -610,6 +612,16 @@ describe('formatPrompt', () => {
                     file_path: 'src/handler.ts',
                     line_start: 1,
                     line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'Other',
+                    qualified_name: 'src/missing.ts::Other',
+                    file_path: 'src/missing.ts',
+                    line_start: 1,
+                    line_end: 5,
                     language: 'typescript',
                     is_test: false,
                 },
@@ -638,6 +650,49 @@ describe('formatPrompt', () => {
         expect(text).toContain('IMPORTS:');
         expect(text).toContain('⚠ UNRESOLVED');
         expect(text).toContain('NonExistent');
+    });
+
+    it('should NOT flag an import to a file that was not parsed (cross-slice, no baseline)', () => {
+        // handler.ts imports a real repo file that simply isn't in this slice.
+        // Under slice/no-baseline analysis we cannot see its symbols — this is a
+        // real dependency, NOT a broken import. Flagging it floods the section
+        // with false positives (the Keycloak multi-module regression).
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'handler',
+                    qualified_name: 'src/handler.ts::handler',
+                    file_path: 'src/handler.ts',
+                    line_start: 1,
+                    line_end: 10,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'IMPORTS',
+                    source_qualified: 'src/handler.ts::handler',
+                    target_qualified: 'src/unparsed.ts::RealSymbol',
+                    file_path: 'src/handler.ts',
+                    line: 1,
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graph,
+            oldGraph: null,
+            changedFiles: ['src/handler.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const text = formatPrompt(output);
+        expect(text).toContain('IMPORTS:');
+        expect(text).toContain('RealSymbol'); // still listed as a dependency
+        expect(text).not.toContain('UNRESOLVED'); // but NOT flagged
     });
 
     it('should scope untested count to changed functions only', () => {

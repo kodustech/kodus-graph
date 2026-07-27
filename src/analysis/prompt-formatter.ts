@@ -599,6 +599,12 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
 
     // Set of all node qualified names — to detect unresolved targets
     const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
+    // Files we actually parsed (≥1 node). An import target whose file wasn't
+    // parsed (cross-slice, or no baseline seeded) is a real repo dependency we
+    // just can't see the symbols of — NOT unresolved. Only flag unresolved when
+    // the target file WAS parsed yet declares no matching symbol. Without this a
+    // no-baseline slice floods the section with false "UNRESOLVED" (trust-killing).
+    const parsedFiles = new Set(output.graph.nodes.map((n) => n.file_path));
 
     // Group by source file
     const byFile = new Map<string, typeof importEdges>();
@@ -629,22 +635,26 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
                 tags.push('NEW');
             }
 
-            // Check if target exists as a node in the graph
-            // For IMPORTS, target_qualified is usually "file::Symbol".
-            // If neither the exact target nor any node starting with the target exists, it's unresolved.
-            let targetExists = allNodes.has(edge.target_qualified);
-            if (!targetExists) {
-                const prefix = `${edge.target_qualified}::`;
-                for (const qn of allNodes) {
-                    if (qn.startsWith(prefix)) {
-                        targetExists = true;
-                        break;
+            // Unresolved only when we PARSED the target file yet found no
+            // matching symbol (genuine dead/barrel import). A target file that
+            // wasn't parsed (cross-slice, no baseline) is unknown — never flag it.
+            const targetFile = edge.target_qualified.includes('::')
+                ? edge.target_qualified.split('::')[0]
+                : edge.target_qualified;
+            if (parsedFiles.has(targetFile)) {
+                let targetExists = allNodes.has(edge.target_qualified);
+                if (!targetExists) {
+                    const prefix = `${edge.target_qualified}::`;
+                    for (const qn of allNodes) {
+                        if (qn.startsWith(prefix)) {
+                            targetExists = true;
+                            break;
+                        }
                     }
                 }
-            }
-
-            if (!targetExists) {
-                tags.push('⚠ UNRESOLVED');
+                if (!targetExists) {
+                    tags.push('⚠ UNRESOLVED');
+                }
             }
 
             const tagStr = tags.length > 0 ? ` (${tags.join(', ')})` : '';
