@@ -5,6 +5,28 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-07-27
+
+Two fixes diagnosed from a real Keycloak multi-module PR review trace.
+
+### Fixed
+
+- **False "unresolved" imports.** The context formatters flagged an import
+  `unresolved` whenever its target file had no parsed nodes — which, in a
+  changed-files slice with no seeded baseline, is nearly every cross-file import
+  (21 of ~26 false positives on the observed PR). Real repo dependencies read as
+  broken imports, undermining trust in the whole map. An import is now flagged
+  `unresolved` ONLY when its target file WAS parsed yet declares no matching
+  symbol (a genuine dead/barrel import); a target file that wasn't parsed is
+  treated as unknown, not unresolved.
+- **Java unqualified inherited calls.** An idiomatic `printFeatureDisabled()`
+  call (implicit `this`, no prefix) from a subclass resolved at the weak name
+  cascade (`unique`, 0.50) instead of walking the class hierarchy to the base
+  that declares it (`same`, 0.85) — mislabelling a correct edge as low
+  confidence. Unqualified Java calls now carry their enclosing class so the class
+  tier resolves them through inheritance. Safe for statically-imported methods
+  (the class tier misses and falls through to the cascade unchanged).
+
 ## [0.3.1] — 2026-07-23
 
 Cross-file recall + review-context work. All additive — existing outputs and the
