@@ -115,6 +115,19 @@ export interface ParseMetadata {
      * See `TierDistribution`.
      */
     tier_distribution?: TierDistribution;
+    /**
+     * How `parse` chose which files to read. Persisted so `update` re-discovers
+     * the same set instead of silently widening it (e.g. re-adding files the
+     * original `--exclude` dropped). Absent on graphs written before 2.2.
+     */
+    discovery?: DiscoveryConfig;
+}
+
+export interface DiscoveryConfig {
+    include?: string[];
+    exclude?: string[];
+    /** False when `parse --no-gitignore` asked for ignored paths too. */
+    respect_gitignore: boolean;
 }
 
 export interface ParseOutput {

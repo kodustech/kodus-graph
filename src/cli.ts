@@ -41,6 +41,7 @@ program
         parseInt(v, 10),
     )
     .option('--allow-partial', 'When --max-files is exceeded, build a truncated graph and warn instead of failing')
+    .option('--no-gitignore', 'Also parse paths git ignores (by default .gitignore is honoured inside a git work tree)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -59,6 +60,7 @@ program
             maxMemoryMB: opts.maxMemory,
             maxFiles: opts.maxFiles,
             allowPartial: opts.allowPartial ?? false,
+            respectGitignore: opts.gitignore,
         });
     });
 

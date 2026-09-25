@@ -5,6 +5,36 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `parse` now honours `.gitignore`. Inside a git work tree the file list comes
+  from `git ls-files --cached --others --exclude-standard` (nested ignore files,
+  `.git/info/exclude`, `core.excludesFile`), with the built-in skip list still
+  applied on top. Ignored directories such as local worktrees or generated code
+  used to be parsed, duplicating every symbol they copied (on this repository:
+  1,120 → 368 files). Outside a work tree the filesystem walk is unchanged.
+- `update` re-discovers files with the same `--include` / `--exclude` the graph
+  was parsed with. It used to ignore them, so the first `update` re-added files
+  the original `parse --exclude` had left out.
+
+### Added
+
+- `parse --no-gitignore` to also read ignored paths.
+- `metadata.discovery` in the graph (schema **2.2**, additive) recording the
+  discovery settings `update` reuses.
+
+### Changed
+
+- The first `update` of a graph parsed before this release drops nodes from
+  git-ignored files (it now discovers files the way `parse` does). **Run a full
+  `parse` once after upgrading** rather than `update`: `update` does not
+  re-resolve edges in unchanged files, so calls that had resolved into the
+  now-dropped duplicates are not re-pointed at the real symbols (on this
+  repository: 58 edges missing and 224 stale versus a fresh `parse`). Use
+  `parse --no-gitignore` if you want ignored paths kept.
+
 ## [0.3.0] — 2026-07-20
 
 First public release since `0.2.19`. It consolidates all work done between

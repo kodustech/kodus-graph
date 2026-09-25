@@ -27,6 +27,8 @@ export interface ParseOptions {
     maxFiles?: number;
     /** Truncate to maxFiles and warn instead of throwing when the cap is hit. */
     allowPartial?: boolean;
+    /** Skip paths git ignores when inside a work tree. Default true. */
+    respectGitignore?: boolean;
     /**
      * Baseline graph nodes to seed the symbol table with. Used by the
      * `context` command so a slice re-parse resolves call sites against the
@@ -49,6 +51,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,
+        respectGitignore: opts.respectGitignore,
     });
     process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
@@ -198,6 +201,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         extract_errors: extractErrors,
         schema_version: SCHEMA_VERSION,
         tier_distribution: tierDistribution,
+        discovery: {
+            ...(opts.include?.length ? { include: opts.include } : {}),
+            ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),
+            respect_gitignore: opts.respectGitignore !== false,
+        },
     };
 
     writeGraphJSON(opts.out, metadata, graphData.nodes, graphData.edges);
