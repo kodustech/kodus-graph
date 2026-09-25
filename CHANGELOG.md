@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was parsed with. It used to ignore them, so the first `update` re-added files
   the original `parse --exclude` had left out.
 
+- `parse` silently dropped whole files on large repositories, a different set
+  on every run. The batch loop advanced by the batch size chosen *after* the
+  batch ran, so each time the memory monitor grew the batch, the files in
+  between were skipped (a shrink re-read files instead). On a 4.6k-file
+  monorepo, ~50 files per run were missing, so their symbols showed no callers
+  and no tests. The same run also varied in ~0.3% of CALLS edges: files were
+  extracted in parse-completion order, and the resolver breaks ties between
+  same-named candidates by insertion order. Extraction now follows input order,
+  and repeated parses of the same tree produce identical graphs.
+- `parse --out .kodus-graph/graph.json` (the path the docs recommend) failed
+  with `ENOENT` on a fresh checkout: the output directory was never created.
+
 ### Added
 
 - `parse --no-gitignore` to also read ignored paths.
