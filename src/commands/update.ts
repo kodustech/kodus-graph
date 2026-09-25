@@ -50,10 +50,18 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // Discover current files with the same settings the graph was parsed with,
     // so `update` never re-adds what `parse --exclude` left out (or, for a graph
     // written before discovery settings were persisted, falls back to defaults).
-    const discovery = oldGraph.metadata.discovery;
-    const allFiles = discoverFiles(repoDir, undefined, discovery?.include, discovery?.exclude, {
-        respectGitignore: discovery?.respect_gitignore,
+    const previousDiscovery = oldGraph.metadata.discovery;
+    const discoveryReport: { strategy?: 'git' | 'walk' } = {};
+    const allFiles = discoverFiles(repoDir, undefined, previousDiscovery?.include, previousDiscovery?.exclude, {
+        respectGitignore: previousDiscovery?.respect_gitignore,
+        report: discoveryReport,
     });
+    // Record what this run actually did (a git failure falls back to the walk).
+    const discovery = {
+        ...(previousDiscovery?.include ? { include: previousDiscovery.include } : {}),
+        ...(previousDiscovery?.exclude ? { exclude: previousDiscovery.exclude } : {}),
+        respect_gitignore: discoveryReport.strategy === 'git',
+    };
     const allRel = allFiles.map((f) => relative(repoDir, f));
     const currentFiles = new Set(allRel);
     const oldFiles = new Set(oldHashes.keys());
@@ -94,6 +102,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         const output: ParseOutput = {
             metadata: {
                 ...oldGraph.metadata,
+                discovery,
                 duration_ms: Math.round(performance.now() - t0),
                 files_unchanged: unchanged.length,
                 incremental: true,
@@ -228,7 +237,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             incremental: true,
             schema_version: SCHEMA_VERSION,
             tier_distribution: tierDistribution,
-            ...(discovery ? { discovery } : {}),
+            discovery,
         },
         nodes: mergedNodes,
         edges: mergedEdges,

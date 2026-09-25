@@ -62,6 +62,13 @@ export const parseMetadataSchema = z.object({
             ambiguousNoise: z.number(),
         })
         .optional(),
+    discovery: z
+        .object({
+            include: z.array(z.string()).optional(),
+            exclude: z.array(z.string()).optional(),
+            respect_gitignore: z.boolean(),
+        })
+        .optional(),
 });
 
 // ── Full parse-command output (metadata + nodes + edges) ──

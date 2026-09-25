@@ -47,6 +47,17 @@ function touchApp(dir: string): void {
 }
 
 describe('update: re-discovers with the settings parse used', () => {
+    it('records the walk (not the requested gitignore flag) when there is no git', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kodus-graph-update-discovery-nogit-'));
+        tmpDirs.push(dir);
+        mkdirSync(join(dir, 'src'), { recursive: true });
+        writeFileSync(join(dir, 'src/app.ts'), 'export function app(): number {\n    return 1;\n}\n');
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.discovery?.respect_gitignore).toBe(false);
+    });
+
     it('keeps --exclude in force across update', () => {
         const dir = gitRepo();
         const out = join(dir, 'graph.json');

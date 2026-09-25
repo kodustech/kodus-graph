@@ -382,7 +382,10 @@ program
     .command('outline')
     .description('Print a compact structural outline of files (symbols, signatures, ranges)')
     .option('--files <paths...>', 'Files to outline (relative to --repo-dir)')
-    .option('--dir <path>', 'Outline every source file under this directory')
+    .option(
+        '--dir <path>',
+        'Outline every source file under this directory (git-ignored files skipped; see --no-gitignore)',
+    )
     .option('--repo-dir <path>', 'Repository root', '.')
     .option('--format <fmt>', 'Output format: text or json', 'text')
     .option('--exported-only', 'Only show exported symbols')
@@ -391,6 +394,7 @@ program
     .option('--max-depth <n>', 'Blast-radius traversal depth', String(DEFAULT_BLAST_MAX_DEPTH))
     .option('--include <patterns...>', 'Glob(s) to include')
     .option('--exclude <patterns...>', 'Glob(s) to exclude')
+    .option('--no-gitignore', 'Also outline paths git ignores')
     .option('--out <path>', 'Output file (default: stdout)', '-')
     .action((opts) => {
         if (!opts.files && !opts.dir) {
@@ -416,6 +420,7 @@ program
             maxDepth: parseInt(opts.maxDepth, 10),
             include: opts.include,
             exclude: opts.exclude,
+            respectGitignore: opts.gitignore,
             out: opts.out,
         });
     });

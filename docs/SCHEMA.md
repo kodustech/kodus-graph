@@ -140,11 +140,11 @@ interface ParseOutput {
 interface DiscoveryConfig {
   include?: string[];
   exclude?: string[];
-  respect_gitignore: boolean; // false when parsed with --no-gitignore
+  respect_gitignore: boolean; // true only when git produced the file list; false for --no-gitignore or a walk fallback
 }
 ```
 
-Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead.
+Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened, and `parse` warns when it had to walk a git checkout (git missing or failing), since ignored paths are then included.
 
 ### `TierDistribution`
 

@@ -48,10 +48,12 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     const repoDir = resolve(opts.repoDir);
 
     // Phase 1: Discover files
+    const discoveryReport: { strategy?: 'git' | 'walk' } = {};
     const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,
         respectGitignore: opts.respectGitignore,
+        report: discoveryReport,
     });
     process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
@@ -204,7 +206,12 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         discovery: {
             ...(opts.include?.length ? { include: opts.include } : {}),
             ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),
-            respect_gitignore: opts.respectGitignore !== false,
+            // What discovery actually did, not what was asked: a walk fallback
+            // included ignored paths, and `update` must keep walking to match.
+            // An explicit --files list reports nothing; keep the request then.
+            respect_gitignore: discoveryReport.strategy
+                ? discoveryReport.strategy === 'git'
+                : opts.respectGitignore !== false,
         },
     };
 

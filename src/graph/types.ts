@@ -126,7 +126,11 @@ export interface ParseMetadata {
 export interface DiscoveryConfig {
     include?: string[];
     exclude?: string[];
-    /** False when `parse --no-gitignore` asked for ignored paths too. */
+    /**
+     * Whether the file list actually came from git (ignored paths skipped).
+     * False for `--no-gitignore` and for a filesystem-walk fallback (no work
+     * tree, or git failed), so `update` keeps walking to match.
+     */
     respect_gitignore: boolean;
 }
 

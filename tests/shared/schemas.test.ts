@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { GraphInputSchema } from '../../src/shared/schemas';
+import { GraphInputSchema, parseMetadataSchema } from '../../src/shared/schemas';
 
 describe('GraphInputSchema', () => {
     const validNode = {
@@ -69,5 +69,21 @@ describe('GraphInputSchema', () => {
         const result = GraphInputSchema.parse({ nodes: [], edges: [] });
         expect(result.nodes).toHaveLength(0);
         expect(result.edges).toHaveLength(0);
+    });
+});
+
+describe('parseMetadataSchema', () => {
+    it('keeps discovery settings through validation (update depends on them)', () => {
+        const meta = {
+            repo_dir: '/repo',
+            files_parsed: 1,
+            total_nodes: 1,
+            total_edges: 0,
+            duration_ms: 1,
+            parse_errors: 0,
+            extract_errors: 0,
+            discovery: { exclude: ['src/skip.ts'], respect_gitignore: false },
+        };
+        expect(parseMetadataSchema.parse(meta).discovery).toEqual(meta.discovery);
     });
 });

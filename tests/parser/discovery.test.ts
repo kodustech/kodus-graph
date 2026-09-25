@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -229,6 +229,38 @@ describe('discoverFiles inside a git work tree', () => {
         const files = discoverFiles(join(GIT_TMP, 'generated'));
         expect(files).toEqual([join(GIT_TMP, 'generated/api.ts')]);
         rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('reports the strategy actually used', () => {
+        setupGitRepo();
+        const viaGit: { strategy?: 'git' | 'walk' } = {};
+        discoverFiles(GIT_TMP, undefined, undefined, undefined, { report: viaGit });
+        expect(viaGit.strategy).toBe('git');
+        const optedOut: { strategy?: 'git' | 'walk' } = {};
+        discoverFiles(GIT_TMP, undefined, undefined, undefined, { respectGitignore: false, report: optedOut });
+        expect(optedOut.strategy).toBe('walk');
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('warns and reports a walk when git cannot list a checkout', () => {
+        setupGitRepo();
+        // A checkout git refuses to read (corrupt repo, "dubious ownership" on a CI mount).
+        writeFileSync(join(GIT_TMP, '.git/HEAD'), 'garbage\n');
+        const writes: string[] = [];
+        const spy = spyOn(process.stderr, 'write').mockImplementation(((chunk: string) => {
+            writes.push(String(chunk));
+            return true;
+        }) as typeof process.stderr.write);
+        try {
+            const report: { strategy?: 'git' | 'walk' } = {};
+            const files = discoverFiles(GIT_TMP, undefined, undefined, undefined, { report });
+            expect(report.strategy).toBe('walk');
+            expect(files).toContain(join(GIT_TMP, 'generated/api.ts'));
+            expect(writes.some((w) => w.includes('git could not list files'))).toBe(true);
+        } finally {
+            spy.mockRestore();
+            rmSync(GIT_TMP, { recursive: true, force: true });
+        }
     });
 
     it('applies include/exclude on top of the git listing', () => {

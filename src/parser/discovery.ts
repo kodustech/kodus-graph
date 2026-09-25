@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
-import { lstatSync, readdirSync } from 'fs';
-import { extname, join, relative, resolve } from 'path';
+import { existsSync, lstatSync, readdirSync } from 'fs';
+import { dirname, extname, join, relative, resolve } from 'path';
 import { isSkippableFile, SKIP_DIRS } from '../shared/filters';
 import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
@@ -27,6 +27,14 @@ export interface DiscoverOptions {
      * team deliberately keeps out of git but wants in the graph.
      */
     respectGitignore?: boolean;
+    /**
+     * Filled in with the strategy that actually produced the file list, which
+     * can differ from what `respectGitignore` asked for: outside a work tree, or
+     * when git fails, discovery falls back to the walk and ignored paths are
+     * included. Callers that persist discovery settings must record this, not
+     * the request. Left untouched for an explicit `filterFiles` list.
+     */
+    report?: { strategy?: 'git' | 'walk' };
 }
 
 /**
@@ -63,7 +71,8 @@ export function discoverFiles(
     }
 
     let files: string[] = [];
-    const fromGit = opts?.respectGitignore === false ? null : listGitFiles(absRepoDir);
+    const wantGit = opts?.respectGitignore !== false;
+    const fromGit = wantGit ? listGitFiles(absRepoDir) : null;
     if (fromGit) {
         files = fromGit;
         log.debug('discovered files via git ls-files', { files: files.length });
@@ -72,6 +81,19 @@ export function discoverFiles(
         // enclosing repo, or gitignore handling is off: plain walk.
         walkFiles(absRepoDir, files);
         log.debug('discovered files via filesystem walk', { files: files.length });
+        if (wantGit && insideGitCheckout(absRepoDir) && !isIgnoredDir(absRepoDir)) {
+            // A checkout git can't list (missing binary, "dubious ownership" on a
+            // CI/Docker mount, …): ignored paths are in this file set.
+            log.warn(
+                'git could not list files in this checkout; walked the filesystem, so git-ignored paths are included',
+                {
+                    repoDir: absRepoDir,
+                },
+            );
+        }
+    }
+    if (opts?.report) {
+        opts.report.strategy = fromGit ? 'git' : 'walk';
     }
 
     // Apply include/exclude filters using Bun.Glob
@@ -179,6 +201,18 @@ function listGitFiles(absRepoDir: string): string[] | null {
         }
     }
     return files;
+}
+
+/** True when `absDir` or an ancestor holds a `.git` entry (dir, or file for worktrees/submodules). */
+function insideGitCheckout(absDir: string): boolean {
+    for (let dir = absDir; ; dir = dirname(dir)) {
+        if (existsSync(join(dir, '.git'))) {
+            return true;
+        }
+        if (dirname(dir) === dir) {
+            return false;
+        }
+    }
 }
 
 function isIgnoredDir(absDir: string): boolean {

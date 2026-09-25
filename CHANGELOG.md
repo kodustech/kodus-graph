@@ -33,9 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `parse --no-gitignore` to also read ignored paths.
+- `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
+  (`outline --dir` now skips git-ignored files by default, like `parse`).
 - `metadata.discovery` in the graph (schema **2.2**, additive) recording the
-  discovery settings `update` reuses.
+  discovery settings `update` reuses. `respect_gitignore` records the strategy
+  that actually produced the file list, so a walk fallback (no work tree, or
+  git failing — e.g. "dubious ownership" on a CI mount) is kept as a walk by
+  `update` instead of silently switching to git and dropping files. A walk of a
+  git checkout now logs a warning. The public `parseMetadataSchema` validates
+  the new field instead of stripping it.
 
 ### Changed
 
