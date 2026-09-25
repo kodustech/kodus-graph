@@ -51,17 +51,28 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // so `update` never re-adds what `parse --exclude` left out (or, for a graph
     // written before discovery settings were persisted, falls back to defaults).
     const previousDiscovery = oldGraph.metadata.discovery;
+    // Replay the requested policy, not the previous outcome: a one-off git
+    // failure must not pin the graph to the walk. Graphs without discovery
+    // metadata default to honouring .gitignore, like `parse`.
+    const gitignoreRequested = previousDiscovery?.gitignore_requested ?? previousDiscovery?.respect_gitignore ?? true;
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
     const allFiles = discoverFiles(repoDir, undefined, previousDiscovery?.include, previousDiscovery?.exclude, {
-        respectGitignore: previousDiscovery?.respect_gitignore,
+        respectGitignore: gitignoreRequested,
         report: discoveryReport,
     });
-    // Record what this run actually did (a git failure falls back to the walk).
     const discovery = {
         ...(previousDiscovery?.include ? { include: previousDiscovery.include } : {}),
         ...(previousDiscovery?.exclude ? { exclude: previousDiscovery.exclude } : {}),
+        gitignore_requested: gitignoreRequested,
         respect_gitignore: discoveryReport.strategy === 'git',
     };
+    if (previousDiscovery && previousDiscovery.respect_gitignore !== discovery.respect_gitignore) {
+        // The file set can shift here (ignored paths added or dropped); say so.
+        log.warn('file discovery changed since the graph was built; git-ignored paths may have been added or dropped', {
+            before: previousDiscovery.respect_gitignore ? 'git listing' : 'filesystem walk',
+            now: discovery.respect_gitignore ? 'git listing' : 'filesystem walk',
+        });
+    }
     const allRel = allFiles.map((f) => relative(repoDir, f));
     const currentFiles = new Set(allRel);
     const oldFiles = new Set(oldHashes.keys());

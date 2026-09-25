@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 import type { ParseOutput } from '../../src/graph/types';
 import { runCli } from '../helpers/run-cli';
@@ -42,6 +42,18 @@ function files(graphPath: string): string[] {
     return [...new Set(g.nodes.map((n) => n.file_path))].sort();
 }
 
+function updateCapturingStderr(dir: string, out: string): string {
+    const r = spawnSync(
+        process.execPath,
+        ['run', resolve('src/cli.ts'), 'update', '--repo-dir', dir, '--graph', out, '--out', out],
+        {
+            encoding: 'utf-8',
+        },
+    );
+    expect(r.status).toBe(0);
+    return r.stderr;
+}
+
 function touchApp(dir: string): void {
     writeFileSync(join(dir, 'src/app.ts'), 'export function app(): number {\n    return 42;\n}\n');
 }
@@ -56,6 +68,39 @@ describe('update: re-discovers with the settings parse used', () => {
         runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
         const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
         expect(meta.discovery?.respect_gitignore).toBe(false);
+        expect(meta.discovery?.gitignore_requested).toBe(true);
+    });
+
+    it('records an explicit --files list as not produced by git', () => {
+        const dir = gitRepo();
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--files', 'src/app.ts', '--repo-dir', dir, '--out', out]);
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.discovery?.respect_gitignore).toBe(false);
+        expect(meta.discovery?.gitignore_requested).toBe(true);
+    });
+
+    it('recovers from a one-off git failure instead of pinning the graph to the walk', () => {
+        const dir = gitRepo();
+        const out = join(dir, 'graph.json');
+        const head = readFileSync(join(dir, '.git/HEAD'), 'utf-8');
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
+        expect(files(out)).toEqual(['src/app.ts', 'src/skip.ts']);
+
+        // git breaks for one run: update walks, so the ignored file comes in, and says so.
+        writeFileSync(join(dir, '.git/HEAD'), 'garbage\n');
+        touchApp(dir);
+        const broken = updateCapturingStderr(dir, out);
+        expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts', 'src/skip.ts']);
+        expect(broken).toContain('file discovery changed');
+
+        // git works again: the next update goes back to the git listing.
+        writeFileSync(join(dir, '.git/HEAD'), head);
+        const recovered = updateCapturingStderr(dir, out);
+        expect(files(out)).toEqual(['src/app.ts', 'src/skip.ts']);
+        expect(recovered).toContain('file discovery changed');
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.discovery?.respect_gitignore).toBe(true);
     });
 
     it('keeps --exclude in force across update', () => {

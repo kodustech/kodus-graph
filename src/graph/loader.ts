@@ -23,6 +23,7 @@ const ParseOutputSchema = z.object({
             .object({
                 include: z.array(z.string()).optional(),
                 exclude: z.array(z.string()).optional(),
+                gitignore_requested: z.boolean().optional(),
                 respect_gitignore: z.boolean(),
             })
             .optional(),

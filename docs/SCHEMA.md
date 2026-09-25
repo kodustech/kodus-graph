@@ -140,11 +140,12 @@ interface ParseOutput {
 interface DiscoveryConfig {
   include?: string[];
   exclude?: string[];
-  respect_gitignore: boolean; // true only when git produced the file list; false for --no-gitignore or a walk fallback
+  gitignore_requested?: boolean; // the policy: false for --no-gitignore; update replays this
+  respect_gitignore: boolean;    // the outcome: true only when git produced the file list
 }
 ```
 
-Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened, and `parse` warns when it had to walk a git checkout (git missing or failing), since ignored paths are then included.
+Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened; `gitignore_requested` records what was asked for. `update` replays the request, so a one-off git failure does not pin the graph to the walk, and it warns whenever the outcome differs from the previous run's (ignored paths added or dropped). Walking a git checkout also logs a warning, since ignored paths are then included.
 
 ### `TierDistribution`
 

@@ -206,12 +206,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         discovery: {
             ...(opts.include?.length ? { include: opts.include } : {}),
             ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),
-            // What discovery actually did, not what was asked: a walk fallback
-            // included ignored paths, and `update` must keep walking to match.
-            // An explicit --files list reports nothing; keep the request then.
-            respect_gitignore: discoveryReport.strategy
-                ? discoveryReport.strategy === 'git'
-                : opts.respectGitignore !== false,
+            // The policy (replayed by `update`) and the outcome (what produced this
+            // file list) are kept apart: a walk fallback or an explicit --files list
+            // did not come from git, but must not pin later runs to the walk.
+            gitignore_requested: opts.respectGitignore !== false,
+            respect_gitignore: discoveryReport.strategy === 'git',
         },
     };
 

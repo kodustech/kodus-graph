@@ -127,9 +127,14 @@ export interface DiscoveryConfig {
     include?: string[];
     exclude?: string[];
     /**
-     * Whether the file list actually came from git (ignored paths skipped).
-     * False for `--no-gitignore` and for a filesystem-walk fallback (no work
-     * tree, or git failed), so `update` keeps walking to match.
+     * The policy: false when `--no-gitignore` asked for ignored paths too.
+     * `update` replays this. Absent on graphs from before it was split out.
+     */
+    gitignore_requested?: boolean;
+    /**
+     * The outcome: whether git actually produced the file list. False for
+     * `--no-gitignore`, an explicit `--files` list, or a walk fallback (no work
+     * tree, or git failed). `update` warns when this changes between runs.
      */
     respect_gitignore: boolean;
 }
