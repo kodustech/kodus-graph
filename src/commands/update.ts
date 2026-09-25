@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync } from 'fs';
-import { dirname, relative, resolve } from 'path';
+import { existsSync } from 'fs';
+import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
 import { writeGraphJSON } from '../graph/json-writer';
@@ -102,7 +102,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             nodes: oldGraph.nodes,
             edges: oldGraph.edges,
         };
-        ensureDir(outPath);
         writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
         return;
     }
@@ -235,7 +234,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         edges: mergedEdges,
     };
 
-    ensureDir(outPath);
     // Stream node-by-node, as `parse` does. `JSON.stringify(output, null, 2)`
     // built the entire merged graph as one pretty-printed string — on a large
     // monorepo that is a multi-hundred-MB allocation, and Node/Bun throw
@@ -243,16 +241,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // parser/batch.ts carefully holds parse memory down, and this undid it at the
     // last step. `writeGraphJSON` keeps peak memory at one serialized node.
     writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
-}
-
-function ensureDir(filePath: string): void {
-    if (filePath === '-') {
-        return;
-    }
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-    }
 }
 
 interface SliceNoiseStats {
