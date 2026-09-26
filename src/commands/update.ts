@@ -57,9 +57,12 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const gitignoreRequested = previousDiscovery?.gitignore_requested ?? previousDiscovery?.respect_gitignore ?? true;
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
     // A graph built from an explicit `parse --files` list stays that list: the
-    // files that still exist are refreshed, the ones gone are dropped, and the
-    // rest of the repo is not pulled in.
-    const explicitFiles = previousDiscovery?.files;
+    // files that still exist are refreshed, the ones gone are dropped from the
+    // graph, and the rest of the repo is not pulled in. The list itself is kept
+    // whole — the user named those files, so one that is only missing for now
+    // (a generated file mid-rebuild) comes back on a later update instead of
+    // shrinking the graph for good. An empty list is no list.
+    const explicitFiles = previousDiscovery?.files?.length ? previousDiscovery.files : undefined;
     const allFiles = discoverFiles(repoDir, explicitFiles, previousDiscovery?.include, previousDiscovery?.exclude, {
         respectGitignore: gitignoreRequested,
         report: discoveryReport,

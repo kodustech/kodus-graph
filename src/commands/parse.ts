@@ -49,7 +49,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     // Phase 1: Discover files
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
-    const explicitFiles = opts.all ? undefined : opts.files;
+    const explicitFiles = opts.all || !opts.files?.length ? undefined : opts.files;
     const files = discoverFiles(repoDir, explicitFiles, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,

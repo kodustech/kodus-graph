@@ -90,9 +90,29 @@ describe('update: re-discovers with the settings parse used', () => {
         runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
         expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts']);
 
+        // Missing from disk: out of the graph, but still named, so it returns.
         rmSync(join(dir, 'generated/api.ts'));
         runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
         expect(files(out)).toEqual(['src/app.ts']);
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.discovery?.files).toEqual(['src/app.ts', 'generated/api.ts']);
+
+        writeFileSync(join(dir, 'generated/api.ts'), 'export function api(): number {\n    return 4;\n}\n');
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts']);
+    });
+
+    it('treats an empty explicit list as no list (re-discovers instead of wiping the graph)', () => {
+        const dir = gitRepo();
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
+        const g = JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput;
+        g.metadata.discovery = { files: [], gitignore_requested: true, respect_gitignore: true };
+        writeFileSync(out, JSON.stringify(g));
+
+        touchApp(dir);
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(files(out)).toEqual(['src/app.ts', 'src/skip.ts']);
     });
 
     it('recovers from a one-off git failure instead of pinning the graph to the walk', () => {

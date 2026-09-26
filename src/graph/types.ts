@@ -127,7 +127,9 @@ export interface DiscoveryConfig {
     /**
      * Set when the graph was built from an explicit `parse --files` list
      * (relative paths). `update` refreshes exactly these files instead of
-     * re-listing the repository.
+     * re-listing the repository. It names what the user asked for, not what
+     * the graph currently holds: a listed file missing from disk has no nodes
+     * but stays listed, so it returns once it exists again.
      */
     files?: string[];
     include?: string[];
