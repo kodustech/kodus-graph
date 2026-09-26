@@ -64,6 +64,7 @@ export const parseMetadataSchema = z.object({
         .optional(),
     discovery: z
         .object({
+            files: z.array(z.string()).optional(),
             include: z.array(z.string()).optional(),
             exclude: z.array(z.string()).optional(),
             gitignore_requested: z.boolean().optional(),

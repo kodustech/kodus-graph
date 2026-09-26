@@ -56,11 +56,16 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // metadata default to honouring .gitignore, like `parse`.
     const gitignoreRequested = previousDiscovery?.gitignore_requested ?? previousDiscovery?.respect_gitignore ?? true;
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
-    const allFiles = discoverFiles(repoDir, undefined, previousDiscovery?.include, previousDiscovery?.exclude, {
+    // A graph built from an explicit `parse --files` list stays that list: the
+    // files that still exist are refreshed, the ones gone are dropped, and the
+    // rest of the repo is not pulled in.
+    const explicitFiles = previousDiscovery?.files;
+    const allFiles = discoverFiles(repoDir, explicitFiles, previousDiscovery?.include, previousDiscovery?.exclude, {
         respectGitignore: gitignoreRequested,
         report: discoveryReport,
-    });
+    }).filter((f) => !explicitFiles || existsSync(f));
     const discovery = {
+        ...(explicitFiles ? { files: explicitFiles } : {}),
         ...(previousDiscovery?.include ? { include: previousDiscovery.include } : {}),
         ...(previousDiscovery?.exclude ? { exclude: previousDiscovery.exclude } : {}),
         gitignore_requested: gitignoreRequested,

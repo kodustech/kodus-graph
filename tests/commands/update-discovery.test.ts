@@ -80,6 +80,21 @@ describe('update: re-discovers with the settings parse used', () => {
         expect(meta.discovery?.gitignore_requested).toBe(true);
     });
 
+    it('replays an explicit --files list: keeps a named git-ignored file, pulls in nothing else', () => {
+        const dir = gitRepo();
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--files', 'src/app.ts', 'generated/api.ts', '--repo-dir', dir, '--out', out]);
+        expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts']);
+
+        touchApp(dir);
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts']);
+
+        rmSync(join(dir, 'generated/api.ts'));
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(files(out)).toEqual(['src/app.ts']);
+    });
+
     it('recovers from a one-off git failure instead of pinning the graph to the walk', () => {
         const dir = gitRepo();
         const out = join(dir, 'graph.json');

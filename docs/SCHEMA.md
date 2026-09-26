@@ -138,6 +138,7 @@ interface ParseOutput {
 
 ```ts
 interface DiscoveryConfig {
+  files?: string[];              // set for `parse --files`: update refreshes exactly these
   include?: string[];
   exclude?: string[];
   gitignore_requested?: boolean; // the policy: false for --no-gitignore; update replays this
@@ -145,7 +146,7 @@ interface DiscoveryConfig {
 }
 ```
 
-Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened; `gitignore_requested` records what was asked for. `update` replays the request, so a one-off git failure does not pin the graph to the walk, and it warns whenever the outcome differs from the previous run's (ignored paths added or dropped). Walking a git checkout also logs a warning, since ignored paths are then included.
+Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened; `gitignore_requested` records what was asked for. `update` replays the request, so a one-off git failure does not pin the graph to the walk, and it warns whenever the outcome differs from the previous run's (ignored paths added or dropped). Walking a git checkout also logs a warning, since ignored paths are then included. A graph built with `parse --files` records the list in `files`; `update` then refreshes exactly those files (dropping the ones deleted from disk) rather than re-listing the repository, so a named git-ignored file stays in and nothing else is pulled in.
 
 ### `TierDistribution`
 

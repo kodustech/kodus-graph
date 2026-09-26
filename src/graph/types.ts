@@ -124,11 +124,18 @@ export interface ParseMetadata {
 }
 
 export interface DiscoveryConfig {
+    /**
+     * Set when the graph was built from an explicit `parse --files` list
+     * (relative paths). `update` refreshes exactly these files instead of
+     * re-listing the repository.
+     */
+    files?: string[];
     include?: string[];
     exclude?: string[];
     /**
      * The policy: false when `--no-gitignore` asked for ignored paths too.
      * `update` replays this. Absent on graphs from before it was split out.
+     * Irrelevant when `files` is set: an explicit list is taken as given.
      */
     gitignore_requested?: boolean;
     /**

@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outcome changes between runs, so ignored paths are never added or dropped
   silently. Walking a git checkout also logs a warning. The public
   `parseMetadataSchema` validates the new field instead of stripping it.
+  A graph built with `parse --files` records the list, and `update` refreshes
+  exactly those files: it used to re-list the whole repository, widening the
+  graph and dropping any named file git ignores.
 
 ### Changed
 

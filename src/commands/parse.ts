@@ -49,7 +49,8 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     // Phase 1: Discover files
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
-    const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude, {
+    const explicitFiles = opts.all ? undefined : opts.files;
+    const files = discoverFiles(repoDir, explicitFiles, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,
         respectGitignore: opts.respectGitignore,
@@ -209,6 +210,10 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
             // The policy (replayed by `update`) and the outcome (what produced this
             // file list) are kept apart: a walk fallback or an explicit --files list
             // did not come from git, but must not pin later runs to the walk.
+            // An explicit list is replayed as-is by `update`: the user named these
+            // files (possibly git-ignored ones), so re-listing the repo would
+            // widen the graph and could drop them.
+            ...(explicitFiles ? { files: files.map((f) => relative(repoDir, f)) } : {}),
             gitignore_requested: opts.respectGitignore !== false,
             respect_gitignore: discoveryReport.strategy === 'git',
         },
