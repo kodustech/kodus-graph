@@ -62,6 +62,7 @@ export const parseMetadataSchema = z.object({
             ambiguousNoise: z.number(),
         })
         .optional(),
+    min_confidence: z.number().optional(),
     discovery: z
         .object({
             files: z.array(z.string()).optional(),

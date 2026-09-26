@@ -116,6 +116,11 @@ export interface ParseMetadata {
      */
     tier_distribution?: TierDistribution;
     /**
+     * Set when `parse --min-confidence` left CALLS edges below it out of the
+     * graph. `update` applies the same cut to the files it re-parses.
+     */
+    min_confidence?: number;
+    /**
      * How `parse` chose which files to read. Persisted so `update` re-discovers
      * the same set instead of silently widening it (e.g. re-adding files the
      * original `--exclude` dropped). Absent on graphs written before 2.2.

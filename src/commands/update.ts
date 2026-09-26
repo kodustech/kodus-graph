@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
+import { dropLowConfidenceCalls } from '../graph/confidence-filter';
 import { writeGraphJSON } from '../graph/json-writer';
 import { loadGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode, ImportEdge, ParseOutput, TierDistribution } from '../graph/types';
@@ -233,7 +234,10 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const mergedEdges: GraphEdge[] = oldGraph.edges.filter((e) => !changedOrDeleted.has(e.file_path));
 
     mergedNodes.push(...newGraphData.nodes);
-    mergedEdges.push(...newGraphData.edges);
+    // Same cut the graph was parsed with, or the re-parsed files would bring
+    // back the low-confidence edges `parse --min-confidence` left out.
+    const minConfidence = oldGraph.metadata.min_confidence;
+    mergedEdges.push(...dropLowConfidenceCalls(newGraphData.edges, minConfidence));
 
     process.stderr.write(`[5/5] Merged: ${mergedNodes.length} nodes, ${mergedEdges.length} edges\n`);
 
@@ -258,6 +262,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             incremental: true,
             schema_version: SCHEMA_VERSION,
             tier_distribution: tierDistribution,
+            ...(minConfidence ? { min_confidence: minConfidence } : {}),
             discovery,
         },
         nodes: mergedNodes,

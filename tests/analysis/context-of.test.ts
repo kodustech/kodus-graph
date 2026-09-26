@@ -93,3 +93,38 @@ describe('computeContextOf', () => {
         expect(ctx.truncated).toBe(true);
     });
 });
+
+describe('computeContextOf minConfidence', () => {
+    const g = indexGraph({
+        nodes: [fn('target', 't.ts'), fn('sure', 's.ts'), fn('guess', 'g.ts')],
+        edges: [
+            {
+                kind: 'CALLS',
+                source_qualified: 's.ts::sure',
+                target_qualified: 't.ts::target',
+                file_path: 's.ts',
+                line: 1,
+                confidence: 0.9,
+            },
+            {
+                kind: 'CALLS',
+                source_qualified: 'g.ts::guess',
+                target_qualified: 't.ts::target',
+                file_path: 'g.ts',
+                line: 1,
+                confidence: 0.3,
+            },
+        ],
+    });
+
+    it('keeps every caller when unset, and drops the ones below the cut when set', () => {
+        expect(
+            computeContextOf(g, { symbol: 't.ts::target' })
+                .callers.map((c) => c.qualified_name)
+                .sort(),
+        ).toEqual(['g.ts::guess', 's.ts::sure']);
+        expect(
+            computeContextOf(g, { symbol: 't.ts::target', minConfidence: 0.5 }).callers.map((c) => c.qualified_name),
+        ).toEqual(['s.ts::sure']);
+    });
+});

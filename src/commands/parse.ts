@@ -1,6 +1,7 @@
 import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
+import { dropLowConfidenceCalls } from '../graph/confidence-filter';
 import { writeGraphJSON } from '../graph/json-writer';
 import type { GraphNode, ImportEdge, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
@@ -29,6 +30,8 @@ export interface ParseOptions {
     allowPartial?: boolean;
     /** Skip paths git ignores when inside a work tree. Default true. */
     respectGitignore?: boolean;
+    /** Leave CALLS edges below this confidence out of the output (default: keep all). */
+    minConfidence?: number;
     /**
      * Baseline graph nodes to seed the symbol table with. Used by the
      * `context` command so a slice re-parse resolves call sites against the
@@ -145,7 +148,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     // Phase 4: Resolve calls
     let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
     process.stderr.write(
-        `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
+        `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise} external:${stats.externalReceiver})\n`,
     );
 
     // Snapshot resolver stats into a plain TierDistribution for the metadata.
@@ -188,6 +191,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         importMap,
         baselineFiles,
     );
+    graphData.edges = dropLowConfidenceCalls(graphData.edges, opts.minConfidence);
     process.stderr.write(`[5/5] Built graph: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges\n`);
 
     // Release intermediaries — no longer needed after buildGraphData
@@ -207,6 +211,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         extract_errors: extractErrors,
         schema_version: SCHEMA_VERSION,
         tier_distribution: tierDistribution,
+        ...(opts.minConfidence && opts.minConfidence > 0 ? { min_confidence: opts.minConfidence } : {}),
         discovery: {
             ...(opts.include?.length ? { include: opts.include } : {}),
             ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),

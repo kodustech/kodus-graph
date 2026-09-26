@@ -42,12 +42,23 @@ program
     )
     .option('--allow-partial', 'When --max-files is exceeded, build a truncated graph and warn instead of failing')
     .option('--no-gitignore', 'Also parse paths git ignores (by default .gitignore is honoured inside a git work tree)')
+    .option(
+        '--min-confidence <n>',
+        'Leave CALLS edges below this confidence out of the output (default: keep all). 0.5 matches what analyze/context use, and shrinks large Java graphs a lot',
+    )
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
         if (!existsSync(repoDir)) {
             log.error('--repo-dir does not exist', { path: repoDir });
             process.exit(1);
+        }
+        if (opts.minConfidence !== undefined) {
+            const c = Number.parseFloat(opts.minConfidence);
+            if (Number.isNaN(c) || c < 0 || c > 1) {
+                log.error('--min-confidence must be a number between 0 and 1', { value: opts.minConfidence });
+                process.exit(1);
+            }
         }
         await executeParse({
             repoDir: opts.repoDir,
@@ -61,6 +72,7 @@ program
             maxFiles: opts.maxFiles,
             allowPartial: opts.allowPartial ?? false,
             respectGitignore: opts.gitignore,
+            minConfidence: opts.minConfidence !== undefined ? Number.parseFloat(opts.minConfidence) : undefined,
         });
     });
 
@@ -268,12 +280,14 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .requiredOption('--symbol <qualified>', 'Qualified name of the symbol')
     .option('--limit <n>', 'Max neighbours per list, most-connected first', '15')
+    .option('--min-confidence <n>', 'Minimum CALLS edge confidence for callers/callees', '0.5')
     .action((opts) => {
         executeContextOf({
             graph: opts.graph,
             out: opts.out,
             symbol: opts.symbol,
             limit: parseInt(opts.limit, 10),
+            minConfidence: Number.parseFloat(opts.minConfidence),
         });
     });
 
