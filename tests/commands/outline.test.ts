@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync, rmSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { executeOutline } from '../../src/commands/outline';
 import { executeParse } from '../../src/commands/parse';
@@ -134,5 +135,33 @@ describe('executeOutline', () => {
         expect(allSymbols.every((s) => s.callers === undefined && s.callees === undefined)).toBe(true);
 
         rmSync(jsonPath, { force: true });
+    });
+});
+
+describe('executeOutline --dir and .gitignore', () => {
+    const dir = '/tmp/kodus-graph-test-outline-gitignore';
+
+    async function outlineFiles(respectGitignore?: boolean): Promise<string[]> {
+        const out = `${dir}.json`;
+        await executeOutline({ repoDir: dir, dir, format: 'json', out, respectGitignore });
+        const parsed = JSON.parse(readFileSync(out, 'utf-8')) as { file: string }[];
+        rmSync(out, { force: true });
+        return parsed.map((f) => f.file).sort();
+    }
+
+    it('skips git-ignored files by default and includes them with respectGitignore: false', async () => {
+        rmSync(dir, { recursive: true, force: true });
+        mkdirSync(`${dir}/src`, { recursive: true });
+        mkdirSync(`${dir}/generated`, { recursive: true });
+        writeFileSync(`${dir}/.gitignore`, 'generated/\n');
+        writeFileSync(`${dir}/src/app.ts`, 'export function app(): number {\n    return 1;\n}\n');
+        writeFileSync(`${dir}/generated/api.ts`, 'export function api(): number {\n    return 2;\n}\n');
+        execFileSync('git', ['init', '-q'], { cwd: dir });
+        try {
+            expect(await outlineFiles()).toEqual(['src/app.ts']);
+            expect(await outlineFiles(false)).toEqual(['generated/api.ts', 'src/app.ts']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

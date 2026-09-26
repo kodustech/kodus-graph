@@ -115,6 +115,38 @@ export interface ParseMetadata {
      * See `TierDistribution`.
      */
     tier_distribution?: TierDistribution;
+    /**
+     * How `parse` chose which files to read. Persisted so `update` re-discovers
+     * the same set instead of silently widening it (e.g. re-adding files the
+     * original `--exclude` dropped). Absent on graphs written before 2.2.
+     */
+    discovery?: DiscoveryConfig;
+}
+
+export interface DiscoveryConfig {
+    /**
+     * Set when the graph was built from an explicit `parse --files` list: the
+     * list as requested, repo-relative, even if empty or partly filtered out.
+     * `update` refreshes exactly these files instead of re-listing the
+     * repository. It names what was asked for, not what the graph holds: a
+     * listed file missing from disk has no nodes but stays listed, so it
+     * returns once it exists again.
+     */
+    files?: string[];
+    include?: string[];
+    exclude?: string[];
+    /**
+     * The policy: false when `--no-gitignore` asked for ignored paths too.
+     * `update` replays this. Absent on graphs from before it was split out.
+     * Irrelevant when `files` is set: an explicit list is taken as given.
+     */
+    gitignore_requested?: boolean;
+    /**
+     * The outcome: whether git actually produced the file list. False for
+     * `--no-gitignore`, an explicit `--files` list, or a walk fallback (no work
+     * tree, or git failed). `update` warns when this changes between runs.
+     */
+    respect_gitignore: boolean;
 }
 
 export interface ParseOutput {

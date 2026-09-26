@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync } from 'fs';
-import { dirname, relative, resolve } from 'path';
+import { existsSync } from 'fs';
+import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
 import { writeGraphJSON } from '../graph/json-writer';
@@ -47,8 +47,42 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    // Discover current files
-    const allFiles = discoverFiles(repoDir);
+    // Discover current files with the same settings the graph was parsed with,
+    // so `update` never re-adds what `parse --exclude` left out (or, for a graph
+    // written before discovery settings were persisted, falls back to defaults).
+    const previousDiscovery = oldGraph.metadata.discovery;
+    // Replay the requested policy, not the previous outcome: a one-off git
+    // failure must not pin the graph to the walk. Graphs without discovery
+    // metadata default to honouring .gitignore, like `parse`.
+    const gitignoreRequested = previousDiscovery?.gitignore_requested ?? previousDiscovery?.respect_gitignore ?? true;
+    const discoveryReport: { strategy?: 'git' | 'walk' } = {};
+    // A graph built from an explicit `parse --files` list stays that list: the
+    // files that still exist are refreshed, the ones gone are dropped from the
+    // graph, and the rest of the repo is not pulled in. The list itself is kept
+    // whole — the user named those files, so one that is only missing for now
+    // (a generated file mid-rebuild) comes back on a later update instead of
+    // shrinking the graph for good. Presence, not length, marks an explicit list:
+    // the manifest is what `parse` was asked for, so the graph's nodes are always
+    // a subset of it, and an empty list stays an (empty) explicit graph.
+    const explicitFiles = previousDiscovery?.files;
+    const allFiles = discoverFiles(repoDir, explicitFiles, previousDiscovery?.include, previousDiscovery?.exclude, {
+        respectGitignore: gitignoreRequested,
+        report: discoveryReport,
+    }).filter((f) => !explicitFiles || existsSync(f));
+    const discovery = {
+        ...(explicitFiles ? { files: explicitFiles } : {}),
+        ...(previousDiscovery?.include ? { include: previousDiscovery.include } : {}),
+        ...(previousDiscovery?.exclude ? { exclude: previousDiscovery.exclude } : {}),
+        gitignore_requested: gitignoreRequested,
+        respect_gitignore: discoveryReport.strategy === 'git',
+    };
+    if (previousDiscovery && previousDiscovery.respect_gitignore !== discovery.respect_gitignore) {
+        // The file set can shift here (ignored paths added or dropped); say so.
+        log.warn('file discovery changed since the graph was built; git-ignored paths may have been added or dropped', {
+            before: previousDiscovery.respect_gitignore ? 'git listing' : 'filesystem walk',
+            now: discovery.respect_gitignore ? 'git listing' : 'filesystem walk',
+        });
+    }
     const allRel = allFiles.map((f) => relative(repoDir, f));
     const currentFiles = new Set(allRel);
     const oldFiles = new Set(oldHashes.keys());
@@ -89,6 +123,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         const output: ParseOutput = {
             metadata: {
                 ...oldGraph.metadata,
+                discovery,
                 duration_ms: Math.round(performance.now() - t0),
                 files_unchanged: unchanged.length,
                 incremental: true,
@@ -97,7 +132,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             nodes: oldGraph.nodes,
             edges: oldGraph.edges,
         };
-        ensureDir(outPath);
         writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
         return;
     }
@@ -224,12 +258,12 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             incremental: true,
             schema_version: SCHEMA_VERSION,
             tier_distribution: tierDistribution,
+            discovery,
         },
         nodes: mergedNodes,
         edges: mergedEdges,
     };
 
-    ensureDir(outPath);
     // Stream node-by-node, as `parse` does. `JSON.stringify(output, null, 2)`
     // built the entire merged graph as one pretty-printed string — on a large
     // monorepo that is a multi-hundred-MB allocation, and Node/Bun throw
@@ -237,16 +271,6 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // parser/batch.ts carefully holds parse memory down, and this undid it at the
     // last step. `writeGraphJSON` keeps peak memory at one serialized node.
     writeGraphJSON(outPath, output.metadata, output.nodes, output.edges);
-}
-
-function ensureDir(filePath: string): void {
-    if (filePath === '-') {
-        return;
-    }
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-    }
 }
 
 interface SliceNoiseStats {

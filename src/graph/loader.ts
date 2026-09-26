@@ -19,6 +19,15 @@ const ParseOutputSchema = z.object({
         extract_errors: z.number(),
         files_unchanged: z.number().optional(),
         incremental: z.boolean().optional(),
+        discovery: z
+            .object({
+                files: z.array(z.string()).optional(),
+                include: z.array(z.string()).optional(),
+                exclude: z.array(z.string()).optional(),
+                gitignore_requested: z.boolean().optional(),
+                respect_gitignore: z.boolean(),
+            })
+            .optional(),
     }),
     nodes: z.array(
         z.object({

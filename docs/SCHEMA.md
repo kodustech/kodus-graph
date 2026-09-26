@@ -2,7 +2,7 @@
 
 Authoritative reference for every payload kodus-graph reads or writes. All shapes are defined as TypeScript interfaces in `src/graph/types.ts` and validated by Zod schemas in `src/shared/schemas.ts`.
 
-**Schema version**: `2.1` (pinned in `src/shared/constants.ts`). Loaders enforce major-version compatibility — graphs from v1.x are rejected; v2.x is accepted with warnings on minor mismatches.
+**Schema version**: `2.2` (pinned in `src/shared/constants.ts`). Loaders enforce major-version compatibility — graphs from v1.x are rejected; v2.x is accepted with warnings on minor mismatches.
 
 ## Index
 
@@ -132,6 +132,21 @@ interface ParseOutput {
 | `files_unchanged` | `number` | optional | Set by `update`; absent on full `parse` |
 | `incremental` | `boolean` | optional | True for `update` output |
 | `tier_distribution` | `TierDistribution` | optional | See below |
+| `discovery` | `DiscoveryConfig` | optional | The `include` / `exclude` globs and `respect_gitignore` flag `parse` used; `update` reuses them so it re-discovers the same file set. Added in 2.2 |
+
+### `DiscoveryConfig`
+
+```ts
+interface DiscoveryConfig {
+  files?: string[];              // `parse --files` list as requested (even empty); update refreshes exactly these
+  include?: string[];
+  exclude?: string[];
+  gitignore_requested?: boolean; // the policy: false for --no-gitignore; update replays this
+  respect_gitignore: boolean;    // the outcome: true only when git produced the file list
+}
+```
+
+Inside a git work tree, `parse` lists files through `git ls-files --cached --others --exclude-standard`, so `.gitignore` (nested files, `.git/info/exclude`, `core.excludesFile`) is honoured exactly as git does. The built-in skip list (`node_modules`, `dist`, …) still applies on top. Outside a work tree — or when `--repo-dir` is itself ignored by an enclosing repo — the filesystem is walked instead. `respect_gitignore` records which of the two actually happened; `gitignore_requested` records what was asked for. `update` replays the request, so a one-off git failure does not pin the graph to the walk, and it warns whenever the outcome differs from the previous run's (ignored paths added or dropped). Walking a git checkout also logs a warning, since ignored paths are then included. A graph built with `parse --files` records the list in `files`; `update` then refreshes exactly those files (dropping the ones deleted from disk) rather than re-listing the repository, so a named git-ignored file stays in and nothing else is pulled in. The list keeps naming a file that is missing from disk (it has no nodes meanwhile), so a generated file deleted mid-rebuild comes back on the next `update` instead of shrinking the graph for good.
 
 ### `TierDistribution`
 
@@ -452,7 +467,7 @@ The schema version follows semver-style for **graph compatibility** (not the npm
 - **Minor bump (2.0 → 2.1)**: New optional fields. Consumers reading older graphs see `undefined`; consumers reading newer graphs ignore unknown fields.
 - **Patch**: No schema-level change; bug fixes in defaults or extraction.
 
-Current: **2.1**. 2.1 added the `USES_TYPE` edge kind — a function's signature naming a type this repo declares — so type-only dependencies show up in a blast radius; graphs parsed before 2.1 simply lack those edges. The `tier` field on `GraphEdge` was the 2.0 addition (an optional field; pre-2.0 graphs simply lack it).
+Current: **2.2**. 2.2 added the optional `ParseMetadata.discovery` block so `update` re-discovers the file set `parse` used. 2.1 added the `USES_TYPE` edge kind — a function's signature naming a type this repo declares — so type-only dependencies show up in a blast radius; graphs parsed before 2.1 simply lack those edges. The `tier` field on `GraphEdge` was the 2.0 addition (an optional field; pre-2.0 graphs simply lack it).
 
 The version is set in `src/shared/constants.ts:SCHEMA_VERSION` and stamped onto every `parse` / `update` output via `metadata.schema_version`. Loaders (`loadGraph`) call `enforceSchemaVersion` which:
 

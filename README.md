@@ -163,7 +163,12 @@ kodus-graph parse --all --repo-dir . --out graph.json \
 
 # Limit memory usage (useful in CI/sandbox environments)
 kodus-graph parse --all --repo-dir . --out graph.json --max-memory 512
+
+# Also parse paths git ignores (e.g. generated code kept out of git)
+kodus-graph parse --all --repo-dir . --out graph.json --no-gitignore
 ```
+
+Inside a git work tree, files are listed through git, so anything `.gitignore` excludes (build output, local worktrees, generated code) stays out of the graph. `--include` / `--exclude` / `--no-gitignore` are recorded in the graph's metadata, and `update` reuses them.
 
 **Output:** JSON with `metadata`, `nodes`, and `edges`. See [example output](examples/parse-output.json).
 

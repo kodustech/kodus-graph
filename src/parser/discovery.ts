@@ -1,5 +1,6 @@
-import { readdirSync } from 'fs';
-import { extname, join, relative, resolve } from 'path';
+import { execFileSync } from 'child_process';
+import { existsSync, lstatSync, readdirSync } from 'fs';
+import { dirname, extname, join, relative, resolve } from 'path';
 import { isSkippableFile, SKIP_DIRS } from '../shared/filters';
 import { log } from '../shared/logger';
 import { ensureWithinRoot } from '../shared/safe-path';
@@ -19,10 +20,27 @@ export interface DiscoverOptions {
      * caller explicitly opts into a partial build.
      */
     allowPartial?: boolean;
+    /**
+     * Inside a git work tree, skip paths git ignores (`.gitignore`, nested ignore
+     * files, `.git/info/exclude`, `core.excludesFile`). Default true. Set false
+     * (`parse --no-gitignore`) to also read ignored paths, e.g. generated code a
+     * team deliberately keeps out of git but wants in the graph.
+     */
+    respectGitignore?: boolean;
+    /**
+     * Filled in with the strategy that actually produced the file list, which
+     * can differ from what `respectGitignore` asked for: outside a work tree, or
+     * when git fails, discovery falls back to the walk and ignored paths are
+     * included. Callers that persist discovery settings must record this, not
+     * the request. Left untouched for an explicit `filterFiles` list.
+     */
+    report?: { strategy?: 'git' | 'walk' };
 }
 
 /**
- * Walk the filesystem and find all supported source files.
+ * Find all supported source files. Inside a git work tree the list comes from
+ * git, so ignored paths are skipped (unless `opts.respectGitignore` is false);
+ * otherwise the filesystem is walked.
  * If `filterFiles` is provided, only return those specific files (resolved to absolute paths).
  * If `include` patterns are provided, keep only files matching at least one pattern.
  * If `exclude` patterns are provided, remove files matching any pattern.
@@ -53,7 +71,30 @@ export function discoverFiles(
     }
 
     let files: string[] = [];
-    walkFiles(absRepoDir, files);
+    const wantGit = opts?.respectGitignore !== false;
+    const fromGit = wantGit ? listGitFiles(absRepoDir) : null;
+    if (fromGit) {
+        files = fromGit;
+        log.debug('discovered files via git ls-files', { files: files.length });
+    } else {
+        // Not a git work tree, git unavailable, --repo-dir is itself ignored by an
+        // enclosing repo, or gitignore handling is off: plain walk.
+        walkFiles(absRepoDir, files);
+        log.debug('discovered files via filesystem walk', { files: files.length });
+        if (wantGit && insideGitCheckout(absRepoDir) && !isIgnoredDir(absRepoDir)) {
+            // A checkout git can't list (missing binary, "dubious ownership" on a
+            // CI/Docker mount, …): ignored paths are in this file set.
+            log.warn(
+                'git could not list files in this checkout; walked the filesystem, so git-ignored paths are included',
+                {
+                    repoDir: absRepoDir,
+                },
+            );
+        }
+    }
+    if (opts?.report) {
+        opts.report.strategy = fromGit ? 'git' : 'walk';
+    }
 
     // Apply include/exclude filters using Bun.Glob
     const hasInclude = include && include.length > 0;
@@ -98,6 +139,89 @@ export function discoverFiles(
     }
 
     return files;
+}
+
+/**
+ * List source files through git so `.gitignore` is honoured exactly as git
+ * does it (nested ignore files, `.git/info/exclude`, `core.excludesFile`):
+ * tracked files plus untracked-but-not-ignored ones. The same SKIP_DIRS and
+ * skippable-file filters as the walk still apply, so a committed `dist/` stays
+ * out. Returns null — and the caller falls back to the plain walk — when
+ * `absRepoDir` isn't inside a git work tree, git is unavailable, or `absRepoDir`
+ * itself is ignored by an enclosing repo (the caller pointed at it explicitly;
+ * honouring the parent's ignore rule would silently return nothing).
+ */
+function listGitFiles(absRepoDir: string): string[] | null {
+    let out: string;
+    try {
+        out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+            cwd: absRepoDir,
+            encoding: 'utf-8',
+            maxBuffer: 512 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+    } catch {
+        return null;
+    }
+
+    if (out === '' && isIgnoredDir(absRepoDir)) {
+        return null;
+    }
+
+    const files: string[] = [];
+    for (const rel of out.split('\0')) {
+        if (!rel) {
+            continue;
+        }
+        const segments = rel.split('/');
+        if (segments.slice(0, -1).some((s) => SKIP_DIRS.has(s))) {
+            continue;
+        }
+        const abs = join(absRepoDir, rel);
+        let stat: ReturnType<typeof lstatSync>;
+        try {
+            stat = lstatSync(abs);
+        } catch {
+            continue; // tracked in the index but deleted from the working tree
+        }
+        if (stat.isDirectory()) {
+            // A submodule shows up as a single gitlink entry. List it through its
+            // own git so its .gitignore applies too; walk it if it isn't checked out.
+            const inner = listGitFiles(abs);
+            if (inner) {
+                files.push(...inner);
+            } else {
+                walkFiles(abs, files);
+            }
+            continue;
+        }
+        const name = segments[segments.length - 1];
+        if (stat.isFile() && getLanguage(extname(name)) !== null && !isSkippableFile(name)) {
+            files.push(abs);
+        }
+    }
+    return files;
+}
+
+/** True when `absDir` or an ancestor holds a `.git` entry (dir, or file for worktrees/submodules). */
+function insideGitCheckout(absDir: string): boolean {
+    for (let dir = absDir; ; dir = dirname(dir)) {
+        if (existsSync(join(dir, '.git'))) {
+            return true;
+        }
+        if (dirname(dir) === dir) {
+            return false;
+        }
+    }
+}
+
+function isIgnoredDir(absDir: string): boolean {
+    try {
+        execFileSync('git', ['check-ignore', '-q', '.'], { cwd: absDir, stdio: 'ignore' });
+        return true; // exit 0: ignored
+    } catch {
+        return false; // exit 1: not ignored (or git error — keep git's empty answer)
+    }
 }
 
 function walkFiles(dir: string, files: string[]): void {

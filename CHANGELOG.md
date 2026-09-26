@@ -5,6 +5,59 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `parse` now honours `.gitignore`. Inside a git work tree the file list comes
+  from `git ls-files --cached --others --exclude-standard` (nested ignore files,
+  `.git/info/exclude`, `core.excludesFile`), with the built-in skip list still
+  applied on top. Ignored directories such as local worktrees or generated code
+  used to be parsed, duplicating every symbol they copied (on this repository:
+  1,120 → 368 files). Outside a work tree the filesystem walk is unchanged.
+- `update` re-discovers files with the same `--include` / `--exclude` the graph
+  was parsed with. It used to ignore them, so the first `update` re-added files
+  the original `parse --exclude` had left out.
+
+- `parse` silently dropped whole files on large repositories, a different set
+  on every run. The batch loop advanced by the batch size chosen *after* the
+  batch ran, so each time the memory monitor grew the batch, the files in
+  between were skipped (a shrink re-read files instead). On a 4.6k-file
+  monorepo, ~50 files per run were missing, so their symbols showed no callers
+  and no tests. The same run also varied in ~0.3% of CALLS edges: files were
+  extracted in parse-completion order, and the resolver breaks ties between
+  same-named candidates by insertion order. Extraction now follows input order,
+  and repeated parses of the same tree produce identical graphs.
+- `parse --out .kodus-graph/graph.json` (the path the docs recommend) failed
+  with `ENOENT` on a fresh checkout: the output directory was never created.
+
+### Added
+
+- `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
+  (`outline --dir` now skips git-ignored files by default, like `parse`).
+- `metadata.discovery` in the graph (schema **2.2**, additive) recording the
+  discovery settings `update` reuses. `gitignore_requested` is the policy
+  (`update` replays it); `respect_gitignore` is the outcome — whether git
+  actually produced the file list, false for a walk fallback (no work tree, or
+  git failing, e.g. "dubious ownership" on a CI mount). A one-off git failure
+  therefore doesn't pin the graph to the walk, and `update` warns whenever the
+  outcome changes between runs, so ignored paths are never added or dropped
+  silently. Walking a git checkout also logs a warning. The public
+  `parseMetadataSchema` validates the new field instead of stripping it.
+  A graph built with `parse --files` records the list, and `update` refreshes
+  exactly those files: it used to re-list the whole repository, widening the
+  graph and dropping any named file git ignores.
+
+### Changed
+
+- The first `update` of a graph parsed before this release drops nodes from
+  git-ignored files (it now discovers files the way `parse` does). **Run a full
+  `parse` once after upgrading** rather than `update`: `update` does not
+  re-resolve edges in unchanged files, so calls that had resolved into the
+  now-dropped duplicates are not re-pointed at the real symbols (on this
+  repository: 58 edges missing and 224 stale versus a fresh `parse`). Use
+  `parse --no-gitignore` if you want ignored paths kept.
+
 ## [0.3.0] — 2026-07-20
 
 First public release since `0.2.19`. It consolidates all work done between

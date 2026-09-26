@@ -27,6 +27,8 @@ export interface ParseOptions {
     maxFiles?: number;
     /** Truncate to maxFiles and warn instead of throwing when the cap is hit. */
     allowPartial?: boolean;
+    /** Skip paths git ignores when inside a work tree. Default true. */
+    respectGitignore?: boolean;
     /**
      * Baseline graph nodes to seed the symbol table with. Used by the
      * `context` command so a slice re-parse resolves call sites against the
@@ -46,9 +48,16 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     const repoDir = resolve(opts.repoDir);
 
     // Phase 1: Discover files
-    const files = discoverFiles(repoDir, opts.all ? undefined : opts.files, opts.include, opts.exclude, {
+    const discoveryReport: { strategy?: 'git' | 'walk' } = {};
+    // An explicit list is honoured as given, even when empty: `context` passes a
+    // diff slice that can resolve to zero files, and that must parse nothing,
+    // not the whole repository.
+    const explicitFiles = opts.all ? undefined : opts.files;
+    const files = discoverFiles(repoDir, explicitFiles, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,
+        respectGitignore: opts.respectGitignore,
+        report: discoveryReport,
     });
     process.stderr.write(`[1/5] Discovered ${files.length} files\n`);
 
@@ -198,6 +207,23 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         extract_errors: extractErrors,
         schema_version: SCHEMA_VERSION,
         tier_distribution: tierDistribution,
+        discovery: {
+            ...(opts.include?.length ? { include: opts.include } : {}),
+            ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),
+            // The policy (replayed by `update`) and the outcome (what produced this
+            // file list) are kept apart: a walk fallback or an explicit --files list
+            // did not come from git, but must not pin later runs to the walk.
+            // An explicit list is replayed as-is by `update`: the user named these
+            // files (possibly git-ignored ones), so re-listing the repo would
+            // widen the graph and could drop them.
+            // Persist the list as requested (repo-relative), not as discovered:
+            // names filtered out now (unsupported extension, missing file) stay
+            // part of the manifest, and an all-filtered or empty request is still
+            // recorded as an explicit list rather than falling back to discovery.
+            ...(explicitFiles ? { files: explicitFiles.map((f) => relative(repoDir, resolve(repoDir, f))) } : {}),
+            gitignore_requested: opts.respectGitignore !== false,
+            respect_gitignore: discoveryReport.strategy === 'git',
+        },
     };
 
     writeGraphJSON(opts.out, metadata, graphData.nodes, graphData.edges);
