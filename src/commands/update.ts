@@ -61,8 +61,10 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // graph, and the rest of the repo is not pulled in. The list itself is kept
     // whole — the user named those files, so one that is only missing for now
     // (a generated file mid-rebuild) comes back on a later update instead of
-    // shrinking the graph for good. An empty list is no list.
-    const explicitFiles = previousDiscovery?.files?.length ? previousDiscovery.files : undefined;
+    // shrinking the graph for good. Presence, not length, marks an explicit list:
+    // the manifest is what `parse` was asked for, so the graph's nodes are always
+    // a subset of it, and an empty list stays an (empty) explicit graph.
+    const explicitFiles = previousDiscovery?.files;
     const allFiles = discoverFiles(repoDir, explicitFiles, previousDiscovery?.include, previousDiscovery?.exclude, {
         respectGitignore: gitignoreRequested,
         report: discoveryReport,

@@ -125,11 +125,12 @@ export interface ParseMetadata {
 
 export interface DiscoveryConfig {
     /**
-     * Set when the graph was built from an explicit `parse --files` list
-     * (relative paths). `update` refreshes exactly these files instead of
-     * re-listing the repository. It names what the user asked for, not what
-     * the graph currently holds: a listed file missing from disk has no nodes
-     * but stays listed, so it returns once it exists again.
+     * Set when the graph was built from an explicit `parse --files` list: the
+     * list as requested, repo-relative, even if empty or partly filtered out.
+     * `update` refreshes exactly these files instead of re-listing the
+     * repository. It names what was asked for, not what the graph holds: a
+     * listed file missing from disk has no nodes but stays listed, so it
+     * returns once it exists again.
      */
     files?: string[];
     include?: string[];

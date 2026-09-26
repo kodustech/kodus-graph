@@ -49,7 +49,10 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
 
     // Phase 1: Discover files
     const discoveryReport: { strategy?: 'git' | 'walk' } = {};
-    const explicitFiles = opts.all || !opts.files?.length ? undefined : opts.files;
+    // An explicit list is honoured as given, even when empty: `context` passes a
+    // diff slice that can resolve to zero files, and that must parse nothing,
+    // not the whole repository.
+    const explicitFiles = opts.all ? undefined : opts.files;
     const files = discoverFiles(repoDir, explicitFiles, opts.include, opts.exclude, {
         maxFiles: opts.maxFiles,
         allowPartial: opts.allowPartial,
@@ -213,7 +216,11 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
             // An explicit list is replayed as-is by `update`: the user named these
             // files (possibly git-ignored ones), so re-listing the repo would
             // widen the graph and could drop them.
-            ...(explicitFiles ? { files: files.map((f) => relative(repoDir, f)) } : {}),
+            // Persist the list as requested (repo-relative), not as discovered:
+            // names filtered out now (unsupported extension, missing file) stay
+            // part of the manifest, and an all-filtered or empty request is still
+            // recorded as an explicit list rather than falling back to discovery.
+            ...(explicitFiles ? { files: explicitFiles.map((f) => relative(repoDir, resolve(repoDir, f))) } : {}),
             gitignore_requested: opts.respectGitignore !== false,
             respect_gitignore: discoveryReport.strategy === 'git',
         },

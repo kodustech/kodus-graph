@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
+import { executeParse } from '../../src/commands/parse';
 import type { ParseOutput } from '../../src/graph/types';
 import { runCli } from '../helpers/run-cli';
 
@@ -102,17 +103,30 @@ describe('update: re-discovers with the settings parse used', () => {
         expect(files(out)).toEqual(['generated/api.ts', 'src/app.ts']);
     });
 
-    it('treats an empty explicit list as no list (re-discovers instead of wiping the graph)', () => {
+    it('honours an empty explicit list: parses nothing, and update does not widen it to the repo', async () => {
         const dir = gitRepo();
         const out = join(dir, 'graph.json');
-        runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
-        const g = JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput;
-        g.metadata.discovery = { files: [], gitignore_requested: true, respect_gitignore: true };
-        writeFileSync(out, JSON.stringify(g));
+        // `context` passes a diff slice like this when no changed file is supported.
+        await executeParse({ repoDir: dir, files: [], all: false, out });
+        expect(files(out)).toEqual([]);
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.files_parsed).toBe(0);
+        expect(meta.discovery?.files).toEqual([]);
 
-        touchApp(dir);
         runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
-        expect(files(out)).toEqual(['src/app.ts', 'src/skip.ts']);
+        expect(files(out)).toEqual([]);
+    });
+
+    it('records the requested list even when every name is filtered out', () => {
+        const dir = gitRepo();
+        writeFileSync(join(dir, 'notes.txt'), 'not source\n');
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--files', 'notes.txt', '--repo-dir', dir, '--out', out]);
+        const meta = (JSON.parse(readFileSync(out, 'utf-8')) as ParseOutput).metadata;
+        expect(meta.discovery?.files).toEqual(['notes.txt']);
+
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(files(out)).toEqual([]);
     });
 
     it('recovers from a one-off git failure instead of pinning the graph to the walk', () => {

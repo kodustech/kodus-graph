@@ -138,7 +138,7 @@ interface ParseOutput {
 
 ```ts
 interface DiscoveryConfig {
-  files?: string[];              // set for `parse --files`: update refreshes exactly these
+  files?: string[];              // `parse --files` list as requested (even empty); update refreshes exactly these
   include?: string[];
   exclude?: string[];
   gitignore_requested?: boolean; // the policy: false for --no-gitignore; update replays this
