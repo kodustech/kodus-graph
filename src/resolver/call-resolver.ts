@@ -8,10 +8,12 @@
  * Raw call sites are provided by the batch parser.
  */
 
+import { extname } from 'path';
 import type { RawCallEdge, RawCallSite, RawGraph } from '../graph/types';
 import { getDIHeuristicsFor } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
+import { getLanguage } from '../parser/languages';
 import { diScopedKey } from '../shared/qualified-name';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
@@ -40,6 +42,12 @@ interface CallResolverStats {
      * symbol table has a matching `::Type.method` qualified name.
      */
     receiver: number;
+    /**
+     * Calls dropped because the receiver's type is known and is not a type this
+     * repository declares (e.g. Java `String`, `URLDecoder`): the method lives
+     * outside the repo, so any same-named repo method would be a false edge.
+     */
+    externalReceiver: number;
 }
 
 interface ResolveAllResult {
@@ -56,6 +64,13 @@ interface ResolveAllResult {
  */
 interface ResolverContext {
     fp: string;
+    /**
+     * Simple names of the classes / interfaces / enums this parse declares.
+     * When set, a receiver whose type is neither declared nor imported from a
+     * repo file is treated as external. Undefined disables that check (direct
+     * `resolveAllCalls` callers that don't pass it keep the old behaviour).
+     */
+    declaredTypes?: ReadonlySet<string>;
     diMap: Map<string, string> | undefined;
     symbolTable: SymbolTable;
     importMap: ImportMap;
@@ -126,6 +141,10 @@ const receiverTier: Tier = (call, ctx) => {
     if (!call.receiverType) {
         return null;
     }
+    // Only a type the extractor read off the code can prove a call external. A
+    // type recovered from a callee's return type went through `stripGenerics`
+    // (`LanguageRegistry<T>` → `T`), so it may name a type argument instead.
+    const typeFromSource = !call.receiverType.startsWith('@');
     // Deferred receiver type: `@CALLEE:funcName` was set when the variable
     // came from `const x = funcName()`. Resolve funcName's return type now
     // (cross-file symbol info is available at this stage) and substitute it.
@@ -173,8 +192,46 @@ const receiverTier: Tier = (call, ctx) => {
     if (inheritedTarget) {
         return { kind: 'edge', target: inheritedTarget, confidence: 0.85, statsKey: 'receiver' };
     }
+    // The receiver's type is known but this repo doesn't declare it: the method
+    // is external (JDK `String.trim`, `URLDecoder.decode`, …). Falling through
+    // would let the name cascade pin it on any same-named repo method.
+    if (typeFromSource && ctx.declaredTypes && !isRepoType(call.receiverType, ctx)) {
+        return { kind: 'drop', statsKey: 'externalReceiver' };
+    }
     return null;
 };
+
+/**
+ * Whether `typeName` is a type this repository owns: declared by a class /
+ * interface / enum here, present in the (possibly baseline-seeded) symbol
+ * table, or imported from a file of this repo (covers type aliases). Generic
+ * arguments and array brackets are ignored, and a qualified `Outer.Inner`
+ * is checked by its last segment. Computed from the parse itself — no
+ * per-language list of builtin types.
+ */
+/** Conventional type-variable names (`T`, `K`, `V`, `T1`): a single capital, optional digits. */
+const TYPE_VARIABLE = /^[A-Z]\d*$/;
+
+function isRepoType(typeName: string, ctx: ResolverContext): boolean {
+    const bare = typeName
+        .replace(/<.*$/s, '')
+        .replace(/(\[\])+$/, '')
+        .trim();
+    const simple = bare.slice(bare.lastIndexOf('.') + 1);
+    if (!simple || TYPE_VARIABLE.test(simple)) {
+        // Nothing to judge by, or a type variable (`T`, `K2`): it may be bounded
+        // by a repo type (`<T extends Repo>`), so it proves nothing — don't drop.
+        return true;
+    }
+    if (ctx.declaredTypes?.has(simple) || ctx.symbolTable.lookupGlobal(simple).length > 0) {
+        return true;
+    }
+    const importedFrom = ctx.importMap.lookup(ctx.fp, simple) ?? ctx.importMap.lookup(ctx.fp, bare);
+    // A resolved import points at a repo source file; an unresolved one keeps
+    // the module specifier (`java.net.URLDecoder`, `react`), which has no
+    // source-language extension.
+    return importedFrom !== null && getLanguage(extname(importedFrom)) !== null;
+}
 
 /**
  * Resolve a deferred `@CALLEE:funcName` receiver type to a concrete type by
@@ -447,6 +504,7 @@ export function resolveAllCalls(
     returnTypes?: Map<string, string>,
     classHierarchy?: Map<string, string[]>,
     valueBindings?: Map<string, Map<string, string>>,
+    declaredTypes?: ReadonlySet<string>,
 ): ResolveAllResult {
     const hierarchy = classHierarchy ?? new Map<string, string[]>();
     const returnTypeMap = returnTypes ?? new Map<string, string>();
@@ -460,6 +518,7 @@ export function resolveAllCalls(
         noise: 0,
         ambiguousNoise: 0,
         receiver: 0,
+        externalReceiver: 0,
     };
 
     // `totalIndexedFiles` is stable across the entire resolve batch — compute
@@ -473,6 +532,7 @@ export function resolveAllCalls(
         const call = rawCalls[i];
         const ctx: ResolverContext = {
             fp: call.source,
+            declaredTypes,
             diMap: diMaps.get(call.source),
             symbolTable,
             importMap,
@@ -531,6 +591,8 @@ export function resolveAllCalls(
             // Mutate the call to carry the inferred receiverType and re-run
             // tiers. The receiver tier matches `::Type.method` qualified names.
             call.receiverType = stripped;
+            // No `declaredTypes`: this receiverType came from a return type via
+            // `stripGenerics`, so it can't prove the call external.
             const ctx: ResolverContext = {
                 fp: call.source,
                 diMap: diMaps.get(call.source),
@@ -918,6 +980,13 @@ export function resolveCallsForGraph(
         }
     }
 
+    // Types this parse declares, for the receiver tier's external-type check.
+    // Enums aren't in the symbol table on a fresh parse, so list them here too.
+    const declaredTypes = new Set<string>();
+    for (const t of [...rawGraph.classes, ...rawGraph.interfaces, ...rawGraph.enums]) {
+        declaredTypes.add(t.name);
+    }
+
     return resolveAllCalls(
         rawGraph.rawCalls,
         rawGraph.diMaps,
@@ -926,5 +995,6 @@ export function resolveCallsForGraph(
         returnTypes,
         classHierarchy,
         rawGraph.valueBindings,
+        declaredTypes,
     );
 }
