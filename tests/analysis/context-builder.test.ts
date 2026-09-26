@@ -501,6 +501,42 @@ describe('buildContextV2', () => {
         expect(names).not.toContain('validate');
     });
 
+    it('compares 0-indexed node lines with 1-based diff hunks at the boundaries', () => {
+        // Node lines are 0-indexed (docs/SCHEMA.md): line_start 10 / line_end 20
+        // is lines 11..21 of the file, as a diff numbers them.
+        const graph: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'handler',
+                    qualified_name: 'src/h.ts::handler',
+                    file_path: 'src/h.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'void',
+                    is_test: false,
+                    file_hash: 'a',
+                },
+            ],
+            edges: [],
+        };
+        const changed = (newStart: number) =>
+            buildContextV2({
+                mergedGraph: graph,
+                oldGraph: null,
+                changedFiles: ['src/h.ts'],
+                minConfidence: 0.5,
+                maxDepth: 3,
+                diffHunks: new Map([['src/h.ts', [{ newStart, newCount: 1 }]]]),
+            }).analysis.changed_functions.map((f) => f.name);
+
+        expect(changed(21)).toEqual(['handler']); // its last line (the closing brace)
+        expect(changed(11)).toEqual(['handler']); // its first line
+        expect(changed(10)).toEqual([]); // the line above it (a comment or annotation)
+    });
+
     it('should apply diff-hunk filter even when oldGraph has real data', () => {
         // Unified diff is ground truth: if a function's lines don't overlap any
         // hunk, it did not change — regardless of what metadata comparison says.

@@ -31,8 +31,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `parse --out .kodus-graph/graph.json` (the path the docs recommend) failed
   with `ENOENT` on a fresh checkout: the output directory was never created.
 
+- Calls on a receiver whose type is known but not declared in the repo (Java
+  `String`, `URLDecoder`, `Integer`; TS `Date`, `Array`, `Math`) were pinned
+  on same-named repo methods by the name cascade (`s.trim()` → `StringUtils.trim`,
+  `Date.now()` → a test helper named `now`). They are now recognised as
+  external and produce no edge. On Apache Dubbo this removed 18,225 false CALLS
+  edges (2,343 of them at 0.5/0.6, above the default filter) and shrank the
+  graph from 195 to 152 MB; on the kodus-ai monorepo, 1,839 false edges. Known
+  limitation: a receiver built with `new <variable>()` (a class held in a
+  variable) is also treated as external.
+- Graphs over ~512 MB could not be read under Node (`Cannot create a string
+  longer than 0x1fffffe8 characters`): the writer streams, the readers did not.
+  Reading falls back to a line-by-line parse when the file doesn't fit in a
+  string; smaller files keep the fast whole-file path on Bun and Node.
+- `context` compared 0-indexed node lines with 1-based diff hunks: a change on
+  a function's last line was missed, and one on the line just above it (a
+  comment or annotation) marked the function changed.
+
 ### Added
 
+- `parse --min-confidence <n>` leaves CALLS edges below `n` out of the graph
+  (default: keep all). `0.5` matches what `analyze` / `context` use; on Apache
+  Dubbo it takes the graph from 152 to 80 MB. Recorded as
+  `metadata.min_confidence` and applied again by `update`. TESTED_BY is derived
+  before the cut, so test coverage is unchanged.
 - `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
   (`outline --dir` now skips git-ignored files by default, like `parse`).
 - `metadata.discovery` in the graph (schema **2.2**, additive) recording the
@@ -49,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph and dropping any named file git ignores.
 
 ### Changed
+
+- `context-of` now ignores CALLS edges below 0.5 for callers/callees, like
+  `analyze` and `context`; pass `--min-confidence 0` to see every edge.
 
 - The first `update` of a graph parsed before this release drops nodes from
   git-ignored files (it now discovers files the way `parse` does). **Run a full

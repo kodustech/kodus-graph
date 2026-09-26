@@ -62,6 +62,9 @@ export function parseDiffHunks(diffContent: string): Map<string, DiffHunk[]> {
 /**
  * Check if a node's line range overlaps with any diff hunk in the same file.
  *
+ * Lines are 1-based, like the hunks. Graph nodes are 0-indexed
+ * (`line_start` in docs/SCHEMA.md), so callers pass `line_start + 1`.
+ *
  * A node [lineStart, lineEnd] overlaps with a hunk [hunkStart, hunkEnd] when:
  *   lineStart <= hunkEnd AND lineEnd >= hunkStart
  */
