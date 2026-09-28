@@ -110,6 +110,12 @@ export interface ExtractionResult {
      * variable declarations (TS today; Python/Kotlin pending).
      */
     valueBindings?: ExtractedValueBinding[];
+    /**
+     * Type-like names declared in the file that aren't classes, interfaces or
+     * enums (TS type aliases and namespaces). Optional — extractors that don't
+     * report them leave such receivers to the import check.
+     */
+    typeNames?: string[];
 }
 
 export interface LanguageExtractors {

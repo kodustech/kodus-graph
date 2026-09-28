@@ -160,3 +160,27 @@ export function seedSymbolTableFromBaseline(
     }
     return seeded;
 }
+
+/**
+ * Add every symbol a parse declares — functions, classes, interfaces and enums.
+ *
+ * Shared by `parse`, `update`, `analyze` and `diff` so they fill the table the
+ * same way. Enums used to be left out on a fresh parse (only the baseline seed
+ * in `update` included them), so `parse` never emitted USES_TYPE edges to an
+ * enum declared in another file while `update` did.
+ */
+export function addRawSymbols(
+    symbolTable: SymbolTable,
+    raw: {
+        functions: readonly { file: string; name: string; qualified: string }[];
+        classes: readonly { file: string; name: string; qualified: string }[];
+        interfaces: readonly { file: string; name: string; qualified: string }[];
+        enums: readonly { file: string; name: string; qualified: string }[];
+    },
+): void {
+    for (const group of [raw.functions, raw.classes, raw.interfaces, raw.enums]) {
+        for (const s of group) {
+            symbolTable.add(s.file, s.name, s.qualified);
+        }
+    }
+}

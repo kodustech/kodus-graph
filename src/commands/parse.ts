@@ -1,6 +1,7 @@
 import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
+import { dropLowConfidenceCalls } from '../graph/confidence-filter';
 import { writeGraphJSON } from '../graph/json-writer';
 import type { GraphNode, ImportEdge, TierDistribution } from '../graph/types';
 import { parseBatch } from '../parser/batch';
@@ -9,7 +10,7 @@ import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
-import { createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
+import { addRawSymbols, createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
 import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -29,6 +30,8 @@ export interface ParseOptions {
     allowPartial?: boolean;
     /** Skip paths git ignores when inside a work tree. Default true. */
     respectGitignore?: boolean;
+    /** Leave CALLS edges below this confidence out of the output (default: keep all). */
+    minConfidence?: number;
     /**
      * Baseline graph nodes to seed the symbol table with. Used by the
      * `context` command so a slice re-parse resolves call sites against the
@@ -73,15 +76,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     let importMap = createImportMap();
     let importEdges: ImportEdge[] = [];
 
-    for (const f of rawGraph.functions) {
-        symbolTable.add(f.file, f.name, f.qualified);
-    }
-    for (const c of rawGraph.classes) {
-        symbolTable.add(c.file, c.name, c.qualified);
-    }
-    for (const i of rawGraph.interfaces) {
-        symbolTable.add(i.file, i.name, i.qualified);
-    }
+    addRawSymbols(symbolTable, rawGraph);
 
     // B8 fix: when invoked with a baseline graph (currently from `context`),
     // seed the symbol table with every callable symbol from baseline files
@@ -143,9 +138,9 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     );
 
     // Phase 4: Resolve calls
-    let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
+    let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap, { repoComplete: true });
     process.stderr.write(
-        `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise})\n`,
+        `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise} external:${stats.externalReceiver})\n`,
     );
 
     // Snapshot resolver stats into a plain TierDistribution for the metadata.
@@ -178,6 +173,14 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     // CALLS edges that target outside-slice symbols aren't filtered out
     // (the builder's external-target guard otherwise drops them).
     const baselineFiles = opts.baselineNodes ? new Set(opts.baselineNodes.map((n) => n.file_path)) : undefined;
+    // Same for USES_TYPE: types declared in baseline files outside the slice.
+    const baselineTypes = opts.baselineNodes
+        ? new Set(
+              opts.baselineNodes
+                  .filter((n) => ['Class', 'Interface', 'Enum'].includes(n.kind) && !fileHashes.has(n.file_path))
+                  .map((n) => n.qualified_name),
+          )
+        : undefined;
     const graphData = buildGraphData(
         rawGraph,
         callEdges,
@@ -187,10 +190,13 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         symbolTable,
         importMap,
         baselineFiles,
+        baselineTypes,
     );
+    graphData.edges = dropLowConfidenceCalls(graphData.edges, opts.minConfidence);
     process.stderr.write(`[5/5] Built graph: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges\n`);
 
     // Release intermediaries — no longer needed after buildGraphData
+    const reExports = rawGraph.reExports.map((r) => ({ module: r.module, file: r.file, line: r.line }));
     rawGraph = null as any;
     symbolTable = null as any;
     importMap = null as any;
@@ -207,6 +213,9 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
         extract_errors: extractErrors,
         schema_version: SCHEMA_VERSION,
         tier_distribution: tierDistribution,
+        ...(opts.minConfidence && opts.minConfidence > 0 ? { min_confidence: opts.minConfidence } : {}),
+        file_hashes: Object.fromEntries(fileHashes),
+        re_exports: reExports,
         discovery: {
             ...(opts.include?.length ? { include: opts.include } : {}),
             ...(opts.exclude?.length ? { exclude: opts.exclude } : {}),

@@ -16,6 +16,7 @@ import { TS_FIELDS, TS_KINDS } from '../../src/languages/typescript/kinds';
 import '../../src/parser/languages';
 
 // TS fixture: imports (default/named/namespace), re-exports, interface + enum,
+// type alias + namespace + module,
 // abstract + concrete classes with heritage, constructor DI params
 // (accessibility modifiers + generic types), arrow + function expressions,
 // new/as expressions, member-expression receivers, optional params, and every
@@ -34,6 +35,16 @@ interface Repo {
 enum Color {
     Red,
     Green,
+}
+
+type Alias = Repo;
+
+namespace Space {
+    export const x = 1;
+}
+
+module Legacy {
+    export const y = 1;
 }
 
 abstract class Base {

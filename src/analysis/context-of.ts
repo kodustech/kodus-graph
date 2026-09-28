@@ -20,6 +20,11 @@ export interface ContextOfInput {
     symbol: string;
     /** Max neighbours per list (callers, callees, …), most-connected first. */
     limit?: number;
+    /**
+     * Ignore CALLS edges below this confidence (the CLI defaults to 0.5, like
+     * `analyze` / `context`). Undefined keeps every edge.
+     */
+    minConfidence?: number;
 }
 
 export interface NeighbourRef {
@@ -85,8 +90,10 @@ export function computeContextOf(graph: IndexedGraph, input: ContextOfInput): Co
     const outgoing = graph.adjacency.get(input.symbol) ?? [];
     const incoming = graph.reverseAdjacency.get(input.symbol) ?? [];
 
-    const callersAll = incoming.filter((e) => e.kind === 'CALLS');
-    const calleesAll = outgoing.filter((e) => e.kind === 'CALLS');
+    const minConfidence = input.minConfidence ?? 0;
+    const confident = (e: GraphEdge) => e.kind === 'CALLS' && (e.confidence ?? 1) >= minConfidence;
+    const callersAll = incoming.filter(confident);
+    const calleesAll = outgoing.filter(confident);
     const usesTypes = [
         ...new Set(outgoing.filter((e) => e.kind === 'USES_TYPE').map((e) => e.target_qualified)),
     ].sort();

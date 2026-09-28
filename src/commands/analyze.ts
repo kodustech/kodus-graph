@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs';
 import { relative, resolve } from 'path';
 import { computeBlastRadius } from '../analysis/blast-radius';
 import { GraphIndex } from '../analysis/graph-index';
@@ -6,6 +5,7 @@ import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { computeRiskScore } from '../analysis/risk-score';
 import { findTestGaps } from '../analysis/test-gaps';
 import { buildGraphData } from '../graph/builder';
+import { readGraphFile } from '../graph/graph-file';
 import { mergeGraphs } from '../graph/merger';
 import { enforceSchemaVersion } from '../graph/schema-version-check';
 import type { AnalysisOutput, ImportEdge, MainGraphInput } from '../graph/types';
@@ -15,7 +15,7 @@ import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
-import { createSymbolTable } from '../resolver/symbol-table';
+import { addRawSymbols, createSymbolTable } from '../resolver/symbol-table';
 import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -44,7 +44,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     if (opts.graph) {
         let raw: unknown;
         try {
-            raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+            raw = readGraphFile(opts.graph);
         } catch (_err) {
             log.error('failed to read --graph file', { path: opts.graph });
             process.exit(1);
@@ -81,15 +81,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     const importMap = createImportMap();
     const importEdges: ImportEdge[] = [];
 
-    for (const f of rawGraph.functions) {
-        symbolTable.add(f.file, f.name, f.qualified);
-    }
-    for (const c of rawGraph.classes) {
-        symbolTable.add(c.file, c.name, c.qualified);
-    }
-    for (const i of rawGraph.interfaces) {
-        symbolTable.add(i.file, i.name, i.qualified);
-    }
+    addRawSymbols(symbolTable, rawGraph);
 
     // Pre-resolve re-exports so barrel imports follow through to actual definitions
     const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);

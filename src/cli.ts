@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { executeAnalyze } from './commands/analyze';
@@ -19,6 +19,15 @@ import { executeSubsystemContext } from './commands/subsystem-context';
 import { executeUpdate } from './commands/update';
 
 const program = new Command();
+
+/** `--min-confidence` parser: a number in [0, 1], or the command stops before running. */
+function parseConfidence(value: string): number {
+    const n = Number(value);
+    if (value.trim() === '' || !Number.isFinite(n) || n < 0 || n > 1) {
+        throw new InvalidArgumentError('--min-confidence must be a number between 0 and 1.');
+    }
+    return n;
+}
 
 import pkg from '../package.json';
 import { DEFAULT_BLAST_MAX_DEPTH } from './shared/constants';
@@ -42,6 +51,11 @@ program
     )
     .option('--allow-partial', 'When --max-files is exceeded, build a truncated graph and warn instead of failing')
     .option('--no-gitignore', 'Also parse paths git ignores (by default .gitignore is honoured inside a git work tree)')
+    .option(
+        '--min-confidence <n>',
+        'Leave CALLS edges below this confidence out of the output (default: keep all). 0.5 matches what analyze/context use, and shrinks large Java graphs a lot',
+        parseConfidence,
+    )
     .requiredOption('--out <path>', 'Output JSON file path')
     .action(async (opts) => {
         const repoDir = resolve(opts.repoDir);
@@ -61,6 +75,7 @@ program
             maxFiles: opts.maxFiles,
             allowPartial: opts.allowPartial ?? false,
             respectGitignore: opts.gitignore,
+            minConfidence: opts.minConfidence,
         });
     });
 
@@ -99,7 +114,7 @@ program
     .option('--graph <path>', 'Path to main graph JSON')
     .option('--diff <path>', 'Path to unified diff file (filters changed functions in fallback mode)')
     .requiredOption('--out <path>', 'Output JSON file path')
-    .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
+    .option('--min-confidence <n>', 'Minimum CALLS edge confidence', parseConfidence, 0.5)
     .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
     .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
@@ -126,7 +141,7 @@ program
             graph: opts.graph,
             diff: opts.diff,
             out: opts.out,
-            minConfidence: Number.parseFloat(opts.minConfidence),
+            minConfidence: opts.minConfidence,
             maxDepth: Number.parseInt(opts.maxDepth, 10),
             format: opts.format,
             skipTests: opts.skipTests ?? false,
@@ -215,7 +230,7 @@ program
     .option('--a-files <paths...>', "PR A's changed files (expanded to their symbols if --a is omitted)")
     .option('--b-files <paths...>', "PR B's changed files (expanded to their symbols if --b is omitted)")
     .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
-    .option('--min-confidence <n>', 'Minimum CALLS edge confidence', '0.5')
+    .option('--min-confidence <n>', 'Minimum CALLS edge confidence', parseConfidence, 0.5)
     .action((opts) => {
         if (!opts.a && !opts.aFiles) {
             log.error('one of --a or --a-files is required');
@@ -233,7 +248,7 @@ program
             aFiles: opts.aFiles,
             bFiles: opts.bFiles,
             maxDepth: Number.parseInt(opts.maxDepth, 10),
-            minConfidence: Number.parseFloat(opts.minConfidence),
+            minConfidence: opts.minConfidence,
         });
     });
 
@@ -268,12 +283,14 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .requiredOption('--symbol <qualified>', 'Qualified name of the symbol')
     .option('--limit <n>', 'Max neighbours per list, most-connected first', '15')
+    .option('--min-confidence <n>', 'Minimum CALLS edge confidence for callers/callees', parseConfidence, 0.5)
     .action((opts) => {
         executeContextOf({
             graph: opts.graph,
             out: opts.out,
             symbol: opts.symbol,
             limit: parseInt(opts.limit, 10),
+            minConfidence: opts.minConfidence,
         });
     });
 

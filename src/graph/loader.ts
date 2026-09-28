@@ -1,8 +1,8 @@
 // src/graph/loader.ts
-import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { SCHEMA_VERSION } from '../shared/constants';
 import { log } from '../shared/logger';
+import { readGraphFile } from './graph-file';
 import { compareSchemaVersions } from './schema-version-check';
 import type { GraphData, GraphEdge, GraphNode, ParseMetadata } from './types';
 import { EDGE_KINDS } from './types';
@@ -19,6 +19,9 @@ const ParseOutputSchema = z.object({
         extract_errors: z.number(),
         files_unchanged: z.number().optional(),
         incremental: z.boolean().optional(),
+        min_confidence: z.number().optional(),
+        file_hashes: z.record(z.string(), z.string()).optional(),
+        re_exports: z.array(z.object({ module: z.string(), file: z.string(), line: z.number() })).optional(),
         discovery: z
             .object({
                 files: z.array(z.string()).optional(),
@@ -128,7 +131,7 @@ export function indexGraph(data: GraphData, metadata?: ParseMetadata): IndexedGr
 export function loadGraph(path: string): IndexedGraph {
     let raw: unknown;
     try {
-        raw = JSON.parse(readFileSync(path, 'utf-8'));
+        raw = readGraphFile(path);
     } catch (err) {
         throw new Error(`Failed to read graph file: ${path} — ${String(err)}`);
     }

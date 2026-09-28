@@ -116,6 +116,23 @@ export interface ParseMetadata {
      */
     tier_distribution?: TierDistribution;
     /**
+     * Set when `parse --min-confidence` left CALLS edges below it out of the
+     * graph. `update` applies the same cut to the files it re-parses.
+     */
+    min_confidence?: number;
+    /**
+     * Content hash of every parsed file, including ones that yield no node
+     * (constants, configs, barrels). `update` diffs against this; deriving it
+     * from nodes made every symbol-less file look new on every run.
+     */
+    file_hashes?: Record<string, string>;
+    /**
+     * Every re-export statement (`export { x } from './y'`) in the graph, so
+     * `update` follows barrels outside the files it re-parses the way `parse`
+     * does, instead of stopping at the barrel.
+     */
+    re_exports?: RawReExport[];
+    /**
      * How `parse` chose which files to read. Persisted so `update` re-discovers
      * the same set instead of silently widening it (e.g. re-adding files the
      * original `--exclude` dropped). Absent on graphs written before 2.2.
@@ -471,6 +488,12 @@ export interface RawGraph {
      * marker (`@CALLEE:foo`).
      */
     valueBindings: Map<string, Map<string, string>>;
+    /**
+     * Per-file type-like names that don't become nodes: type aliases and
+     * namespaces (`file -> names`). The resolver uses them so a receiver typed
+     * with a same-file alias isn't read as an external type.
+     */
+    localTypes?: Map<string, Set<string>>;
 }
 
 export interface ParseBatchResult extends RawGraph {

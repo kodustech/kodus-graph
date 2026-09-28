@@ -93,7 +93,8 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         const before = trulyChangedQN.size;
         for (const qn of [...trulyChangedQN]) {
             const node = indexed.byQualified.get(qn);
-            if (node && !overlapsWithDiff(node.file_path, node.line_start, node.line_end, opts.diffHunks)) {
+            // Graph lines are 0-indexed (docs/SCHEMA.md); diff hunks are 1-based.
+            if (node && !overlapsWithDiff(node.file_path, node.line_start + 1, node.line_end + 1, opts.diffHunks)) {
                 trulyChangedQN.delete(qn);
             }
         }

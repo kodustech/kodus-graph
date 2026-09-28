@@ -8,10 +8,12 @@
  * Raw call sites are provided by the batch parser.
  */
 
+import { extname } from 'path';
 import type { RawCallEdge, RawCallSite, RawGraph } from '../graph/types';
 import { getDIHeuristicsFor } from '../languages/engine';
 import { languageOfFile } from '../languages/language-of-file';
 import { getNoiseFor } from '../languages/noise-registry';
+import { getLanguage } from '../parser/languages';
 import { diScopedKey } from '../shared/qualified-name';
 import type { ImportMap } from './import-map';
 import type { SymbolTable } from './symbol-table';
@@ -40,6 +42,12 @@ interface CallResolverStats {
      * symbol table has a matching `::Type.method` qualified name.
      */
     receiver: number;
+    /**
+     * Calls dropped because the receiver's type is known and is not a type this
+     * repository declares (e.g. Java `String`, `URLDecoder`): the method lives
+     * outside the repo, so any same-named repo method would be a false edge.
+     */
+    externalReceiver: number;
 }
 
 interface ResolveAllResult {
@@ -56,6 +64,19 @@ interface ResolveAllResult {
  */
 interface ResolverContext {
     fp: string;
+    /**
+     * Simple names of the classes / interfaces / enums this parse declares.
+     * When set, a receiver whose type is neither declared nor imported from a
+     * repo file is treated as external. Undefined disables that check (direct
+     * `resolveAllCalls` callers that don't pass it keep the old behaviour).
+     */
+    declaredTypes?: ReadonlySet<string>;
+    /**
+     * Per-file type-like names that aren't nodes (type aliases, namespaces).
+     * Only the caller's own file matters: a type from another file reaches the
+     * caller through an import, which {@link isRepoType} already checks.
+     */
+    localTypes?: ReadonlyMap<string, ReadonlySet<string>>;
     diMap: Map<string, string> | undefined;
     symbolTable: SymbolTable;
     importMap: ImportMap;
@@ -126,6 +147,10 @@ const receiverTier: Tier = (call, ctx) => {
     if (!call.receiverType) {
         return null;
     }
+    // Only a type the extractor read off the code can prove a call external. A
+    // type recovered from a callee's return type went through `stripGenerics`
+    // (`LanguageRegistry<T>` → `T`), so it may name a type argument instead.
+    const typeFromSource = !call.receiverType.startsWith('@');
     // Deferred receiver type: `@CALLEE:funcName` was set when the variable
     // came from `const x = funcName()`. Resolve funcName's return type now
     // (cross-file symbol info is available at this stage) and substitute it.
@@ -173,8 +198,50 @@ const receiverTier: Tier = (call, ctx) => {
     if (inheritedTarget) {
         return { kind: 'edge', target: inheritedTarget, confidence: 0.85, statsKey: 'receiver' };
     }
+    // The receiver's type is known but this repo doesn't declare it: the method
+    // is external (JDK `String.trim`, `URLDecoder.decode`, …). Falling through
+    // would let the name cascade pin it on any same-named repo method.
+    if (typeFromSource && ctx.declaredTypes && !isRepoType(call.receiverType, ctx)) {
+        return { kind: 'drop', statsKey: 'externalReceiver' };
+    }
     return null;
 };
+
+/**
+ * Whether `typeName` is a type this repository owns: declared by a class /
+ * interface / enum here, present in the (possibly baseline-seeded) symbol
+ * table, or imported from a file of this repo (covers type aliases). Generic
+ * arguments and array brackets are ignored, and a qualified `Outer.Inner`
+ * is checked by its last segment. Computed from the parse itself — no
+ * per-language list of builtin types.
+ */
+/** Conventional type-variable names: a single capital (`T`, `K2`) or the T-prefixed form (`TItem`, `TValue`). */
+const TYPE_VARIABLE = /^[A-Z]\d*$|^T[A-Z][A-Za-z0-9]*$/;
+
+function isRepoType(typeName: string, ctx: ResolverContext): boolean {
+    const bare = typeName
+        .replace(/<.*$/s, '')
+        .replace(/(\[\])+$/, '')
+        .trim();
+    const simple = bare.slice(bare.lastIndexOf('.') + 1);
+    if (!simple || TYPE_VARIABLE.test(simple)) {
+        // Nothing to judge by, or a type variable (`T`, `K2`): it may be bounded
+        // by a repo type (`<T extends Repo>`), so it proves nothing — don't drop.
+        return true;
+    }
+    if (
+        ctx.declaredTypes?.has(simple) ||
+        ctx.localTypes?.get(ctx.fp)?.has(simple) ||
+        ctx.symbolTable.lookupGlobal(simple).length > 0
+    ) {
+        return true;
+    }
+    const importedFrom = ctx.importMap.lookup(ctx.fp, simple) ?? ctx.importMap.lookup(ctx.fp, bare);
+    // A resolved import points at a repo source file; an unresolved one keeps
+    // the module specifier (`java.net.URLDecoder`, `react`), which has no
+    // source-language extension.
+    return importedFrom !== null && getLanguage(extname(importedFrom)) !== null;
+}
 
 /**
  * Resolve a deferred `@CALLEE:funcName` receiver type to a concrete type by
@@ -447,6 +514,8 @@ export function resolveAllCalls(
     returnTypes?: Map<string, string>,
     classHierarchy?: Map<string, string[]>,
     valueBindings?: Map<string, Map<string, string>>,
+    declaredTypes?: ReadonlySet<string>,
+    localTypes?: ReadonlyMap<string, ReadonlySet<string>>,
 ): ResolveAllResult {
     const hierarchy = classHierarchy ?? new Map<string, string[]>();
     const returnTypeMap = returnTypes ?? new Map<string, string>();
@@ -460,6 +529,7 @@ export function resolveAllCalls(
         noise: 0,
         ambiguousNoise: 0,
         receiver: 0,
+        externalReceiver: 0,
     };
 
     // `totalIndexedFiles` is stable across the entire resolve batch — compute
@@ -473,6 +543,8 @@ export function resolveAllCalls(
         const call = rawCalls[i];
         const ctx: ResolverContext = {
             fp: call.source,
+            declaredTypes,
+            localTypes,
             diMap: diMaps.get(call.source),
             symbolTable,
             importMap,
@@ -531,6 +603,8 @@ export function resolveAllCalls(
             // Mutate the call to carry the inferred receiverType and re-run
             // tiers. The receiver tier matches `::Type.method` qualified names.
             call.receiverType = stripped;
+            // No `declaredTypes`: this receiverType came from a return type via
+            // `stripGenerics`, so it can't prove the call external.
             const ctx: ResolverContext = {
                 fp: call.source,
                 diMap: diMaps.get(call.source),
@@ -791,7 +865,11 @@ function getDir(file: string): string {
  * Both share the `src/` prefix (depth 1), but `services/user.ts` is a
  * direct sibling of the caller and is preferred.
  */
-export function pickClosestCandidate(candidates: string[], callerFile: string): string {
+export function pickClosestCandidate(unordered: string[], callerFile: string): string {
+    // Ties are broken by qualified name, not by the order symbols entered the
+    // table: `update` seeds the table in a different order than `parse`, so an
+    // insertion-order tie-break made the two resolve the same call differently.
+    const candidates = [...unordered].sort();
     const callerDir = getDir(callerFile);
 
     // Tier A: prefer a sibling in the exact same directory
@@ -871,6 +949,24 @@ export function resolveCall(
     return { target: result.target, confidence: result.confidence };
 }
 
+export interface ResolveGraphOptions {
+    /**
+     * The RawGraph plus symbol table declare every type of the repo (`parse`,
+     * and `update` with its baseline-seeded symbol table). Enables dropping calls
+     * whose receiver type isn't one of them. `analyze` and `diff` resolve only
+     * the files they re-parse, so they leave it off and keep those calls.
+     */
+    repoComplete?: boolean;
+    /**
+     * Resolver context from files outside `rawGraph` — the baseline of a slice
+     * re-parse (`update`). A call in the slice can depend on an untouched file's
+     * return type (`const o = factory(); o.m()`) or class hierarchy (a method
+     * inherited from a base class declared elsewhere); without these, `update`
+     * resolved such calls differently from `parse`. Slice entries win.
+     */
+    baseline?: { returnTypes?: ReadonlyMap<string, string>; classHierarchy?: ReadonlyMap<string, string[]> };
+}
+
 /**
  * Resolve every call in a `RawGraph`, deriving the receiver-tier inputs from the
  * graph itself.
@@ -891,10 +987,11 @@ export function resolveCallsForGraph(
     rawGraph: RawGraph,
     symbolTable: SymbolTable,
     importMap: ImportMap,
+    options: ResolveGraphOptions = {},
 ): ResolveAllResult {
     // Qualified name → return type, so the chain pass can propagate
     // `Foo.method() → ReturnType` to the outer call in `x.method().chained()`.
-    const returnTypes = new Map<string, string>();
+    const returnTypes = new Map<string, string>(options.baseline?.returnTypes);
     for (const f of rawGraph.functions) {
         if (f.returnType) {
             returnTypes.set(f.qualified, f.returnType);
@@ -903,7 +1000,11 @@ export function resolveCallsForGraph(
 
     // Subclass → [parents], from `extends`/`implements`. The receiver tier walks
     // this when a method isn't on the immediate type but is on an ancestor.
-    const classHierarchy = new Map<string, string[]>();
+    const classHierarchy = new Map<string, string[]>(options.baseline?.classHierarchy);
+    const sliceClasses = new Set(rawGraph.classes.map((c) => c.name));
+    for (const name of sliceClasses) {
+        classHierarchy.delete(name); // the slice's own declaration replaces the baseline's
+    }
     for (const c of rawGraph.classes) {
         const parents: string[] = [];
         if (c.extends) {
@@ -918,6 +1019,18 @@ export function resolveCallsForGraph(
         }
     }
 
+    // Types this parse declares, for the receiver tier's external-type check.
+    // Enums aren't in the symbol table on a fresh parse, so list them here too.
+    // Only built when the inputs cover the whole repo: in a slice, a type
+    // missing here may simply live in a file that wasn't re-parsed.
+    let declaredTypes: Set<string> | undefined;
+    if (options.repoComplete) {
+        declaredTypes = new Set<string>();
+        for (const t of [...rawGraph.classes, ...rawGraph.interfaces, ...rawGraph.enums]) {
+            declaredTypes.add(t.name);
+        }
+    }
+
     return resolveAllCalls(
         rawGraph.rawCalls,
         rawGraph.diMaps,
@@ -926,5 +1039,7 @@ export function resolveCallsForGraph(
         returnTypes,
         classHierarchy,
         rawGraph.valueBindings,
+        declaredTypes,
+        rawGraph.localTypes,
     );
 }

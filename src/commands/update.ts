@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { relative, resolve } from 'path';
 import { performance } from 'perf_hooks';
 import { buildGraphData } from '../graph/builder';
+import { dropLowConfidenceCalls } from '../graph/confidence-filter';
 import { writeGraphJSON } from '../graph/json-writer';
 import { loadGraph } from '../graph/loader';
 import type { GraphEdge, GraphNode, ImportEdge, ParseOutput, TierDistribution } from '../graph/types';
@@ -11,12 +12,13 @@ import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
-import { createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
+import { addRawSymbols, createSymbolTable, seedSymbolTableFromBaseline } from '../resolver/symbol-table';
 import { SCHEMA_VERSION } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 
 const DEFAULT_GRAPH_PATH = '.kodus-graph/graph.json';
+const TYPE_NODE_KINDS = new Set(['Class', 'Interface', 'Enum']);
 
 interface UpdateCommandOptions {
     repoDir: string;
@@ -40,7 +42,9 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     process.stderr.write(`[1/5] Loaded previous graph (${oldGraph.nodes.length} nodes)\n`);
 
     // Build file hash index from old graph
-    const oldHashes = new Map<string, string>();
+    // Graphs from 2.2 on record every parsed file's hash (symbol-less ones
+    // included); older ones only have it on nodes.
+    const oldHashes = new Map<string, string>(Object.entries(oldGraph.metadata.file_hashes ?? {}));
     for (const node of oldGraph.nodes) {
         if (node.file_hash && !oldHashes.has(node.file_path)) {
             oldHashes.set(node.file_path, node.file_hash);
@@ -113,9 +117,30 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    const toReparse = [...added, ...modified];
+    // Unchanged files whose edges touch a changed, added or deleted file are
+    // re-parsed too. Their edges were resolved against the old symbols: a
+    // renamed or deleted target leaves them pointing at nothing, and a newly
+    // defined one (a call that already existed) never gets its edge. Covers
+    // callers (CALLS/INHERITS/USES_TYPE into the file), importers (IMPORTS),
+    // and symbols whose TESTED_BY points at a changed test file.
+    const touched = new Set([...added, ...modified, ...deleted]);
+    const dependents = new Set<string>();
+    if (touched.size > 0) {
+        for (const e of oldGraph.edges) {
+            if (touched.has(e.file_path) || !currentFiles.has(e.file_path)) {
+                continue;
+            }
+            const targetFile = e.target_qualified.split('::')[0];
+            const sourceFile = e.source_qualified.split('::')[0];
+            if (touched.has(targetFile) || touched.has(sourceFile)) {
+                dependents.add(e.file_path);
+            }
+        }
+    }
+    const reresolved = unchanged.filter((f) => dependents.has(f));
+    const toReparse = [...added, ...modified, ...reresolved];
     process.stderr.write(
-        `[2/5] Files: ${added.length} added, ${modified.length} modified, ${deleted.length} deleted, ${unchanged.length} unchanged\n`,
+        `[2/5] Files: ${added.length} added, ${modified.length} modified, ${deleted.length} deleted, ${unchanged.length} unchanged (${reresolved.length} re-resolved as dependents)\n`,
     );
 
     if (toReparse.length === 0 && deleted.length === 0) {
@@ -147,15 +172,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const importMap = createImportMap();
     const importEdges: ImportEdge[] = [];
 
-    for (const f of rawGraph.functions) {
-        symbolTable.add(f.file, f.name, f.qualified);
-    }
-    for (const c of rawGraph.classes) {
-        symbolTable.add(c.file, c.name, c.qualified);
-    }
-    for (const i of rawGraph.interfaces) {
-        symbolTable.add(i.file, i.name, i.qualified);
-    }
+    addRawSymbols(symbolTable, rawGraph);
 
     // The slice is a handful of files; the resolver's ambiguity checks are
     // population statistics over the whole repo. Seed the rest from the previous
@@ -172,7 +189,15 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     // Follow re-exports so barrel imports resolve to the defining file, matching
     // `parse`. Without this an `update` graph and a `parse` graph of the same
     // repo disagree on every call made through a barrel.
-    const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);
+    // Barrels outside the slice come from the previous graph's record, so an
+    // import through them resolves to the defining file exactly as in `parse`.
+    const sliceOrDeleted = new Set([...toReparse, ...deleted]);
+    const keptReExports = (oldGraph.metadata.re_exports ?? []).filter((r) => !sliceOrDeleted.has(r.file));
+    const reExports = [
+        ...keptReExports,
+        ...rawGraph.reExports.map((r) => ({ module: r.module, file: r.file, line: r.line })),
+    ];
+    const barrelMap = buildReExportMap(reExports, repoDir, tsconfigAliases);
 
     for (const imp of rawGraph.imports) {
         const langKey = imp.lang;
@@ -202,7 +227,31 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    const { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
+    // Return types and class hierarchy of the untouched files, from the previous
+    // graph, so calls in the slice resolve as they would in a full `parse`.
+    const baselineReturnTypes = new Map<string, string>();
+    const nodeName = new Map<string, string>();
+    for (const n of oldGraph.nodes) {
+        nodeName.set(n.qualified_name, n.name);
+        if (!sliceOrDeleted.has(n.file_path) && n.return_type) {
+            baselineReturnTypes.set(n.qualified_name, n.return_type);
+        }
+    }
+    const baselineHierarchy = new Map<string, string[]>();
+    for (const e of oldGraph.edges) {
+        if ((e.kind !== 'INHERITS' && e.kind !== 'IMPLEMENTS') || sliceOrDeleted.has(e.file_path)) {
+            continue;
+        }
+        const child = nodeName.get(e.source_qualified);
+        const parent = nodeName.get(e.target_qualified);
+        if (child && parent) {
+            baselineHierarchy.set(child, [...(baselineHierarchy.get(child) ?? []), parent]);
+        }
+    }
+    const { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap, {
+        repoComplete: true,
+        baseline: { returnTypes: baselineReturnTypes, classHierarchy: baselineHierarchy },
+    });
 
     const fileHashes = new Map<string, string>();
     for (const f of absToReparse) {
@@ -210,11 +259,25 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             fileHashes.set(relative(repoDir, f), computeFileHash(f));
         } catch {}
     }
+    const mergedFileHashes: Record<string, string> = {};
+    for (const [file, hash] of oldHashes) {
+        if (!sliceOrDeleted.has(file)) {
+            mergedFileHashes[file] = hash;
+        }
+    }
+    for (const [file, hash] of fileHashes) {
+        mergedFileHashes[file] = hash;
+    }
 
     // Baseline files live outside the slice, so `rawGraph` holds none of their
     // symbols and the builder's external-target guard would drop every CALLS
     // edge the baseline seeding just made resolvable. Declare them known.
     const baselineFiles = new Set(oldGraph.nodes.map((n) => n.file_path));
+    const baselineTypes = new Set(
+        oldGraph.nodes
+            .filter((n) => !sliceOrDeleted.has(n.file_path) && TYPE_NODE_KINDS.has(n.kind))
+            .map((n) => n.qualified_name),
+    );
     const newGraphData = buildGraphData(
         rawGraph,
         callEdges,
@@ -224,6 +287,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         symbolTable,
         importMap,
         baselineFiles,
+        baselineTypes,
     );
     process.stderr.write(`[4/5] Built new graph fragment (${newGraphData.nodes.length} nodes)\n`);
 
@@ -233,7 +297,10 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
     const mergedEdges: GraphEdge[] = oldGraph.edges.filter((e) => !changedOrDeleted.has(e.file_path));
 
     mergedNodes.push(...newGraphData.nodes);
-    mergedEdges.push(...newGraphData.edges);
+    // Same cut the graph was parsed with, or the re-parsed files would bring
+    // back the low-confidence edges `parse --min-confidence` left out.
+    const minConfidence = oldGraph.metadata.min_confidence;
+    mergedEdges.push(...dropLowConfidenceCalls(newGraphData.edges, minConfidence));
 
     process.stderr.write(`[5/5] Merged: ${mergedNodes.length} nodes, ${mergedEdges.length} edges\n`);
 
@@ -258,6 +325,9 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             incremental: true,
             schema_version: SCHEMA_VERSION,
             tier_distribution: tierDistribution,
+            ...(minConfidence ? { min_confidence: minConfidence } : {}),
+            file_hashes: mergedFileHashes,
+            re_exports: reExports,
             discovery,
         },
         nodes: mergedNodes,

@@ -170,6 +170,14 @@ kodus-graph parse --all --repo-dir . --out graph.json --no-gitignore
 
 Inside a git work tree, files are listed through git, so anything `.gitignore` excludes (build output, local worktrees, generated code) stays out of the graph. `--include` / `--exclude` / `--no-gitignore` are recorded in the graph's metadata, and `update` reuses them.
 
+**Large repositories.** Most of a big graph is low-confidence CALLS edges: calls to a method name defined in many places, stored at confidence 0.30 with their list of candidates. `analyze` and `context` ignore them at their default `--min-confidence 0.5`. Leave them out of the file with:
+
+```bash
+kodus-graph parse --all --repo-dir . --out graph.json --min-confidence 0.5
+```
+
+On Apache Dubbo (4k Java files) this shrinks the graph from 152 MB to 80 MB. `update` keeps the same cut. Graphs larger than a single string (~512 MB under Node) are read line by line automatically.
+
 **Output:** JSON with `metadata`, `nodes`, and `edges`. See [example output](examples/parse-output.json).
 
 ### `analyze`

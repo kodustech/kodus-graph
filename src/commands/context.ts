@@ -6,6 +6,7 @@ import { type DiffHunk, parseDiffHunks } from '../analysis/diff-lines';
 import { formatPrompt, type PromptFormatterOptions } from '../analysis/prompt-formatter';
 import { loadRiskConfig, type RiskConfig } from '../analysis/risk-config';
 import { formatXml, type XmlFormatterOptions } from '../analysis/xml-formatter';
+import { readGraphFile } from '../graph/graph-file';
 import { mergeGraphs } from '../graph/merger';
 import { enforceSchemaVersion } from '../graph/schema-version-check';
 import type { GraphData, MainGraphInput } from '../graph/types';
@@ -54,7 +55,7 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
     if (opts.graph) {
         let raw: unknown;
         try {
-            raw = JSON.parse(readFileSync(opts.graph, 'utf-8'));
+            raw = readGraphFile(opts.graph);
         } catch (_err) {
             log.error('failed to read --graph file', { path: opts.graph });
             process.exit(1);
