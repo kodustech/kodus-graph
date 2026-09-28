@@ -137,7 +137,18 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
             }
         }
     }
-    const reresolved = unchanged.filter((f) => dependents.has(f));
+    // A graph written before `re_exports` / `file_hashes` were recorded can't be
+    // updated incrementally: barrels outside the slice are unknown, so imports
+    // through them would resolve to the barrel instead of the defining file.
+    // Re-parse every file once; the output records both, so the next update is
+    // incremental again. No manual full `parse` needed after upgrading.
+    const legacyGraph = oldGraph.metadata.re_exports === undefined || oldGraph.metadata.file_hashes === undefined;
+    if (legacyGraph) {
+        process.stderr.write(
+            '[2/5] Graph was written by an older kodus-graph version: re-parsing every file once to upgrade it\n',
+        );
+    }
+    const reresolved = legacyGraph ? unchanged : unchanged.filter((f) => dependents.has(f));
     const toReparse = [...added, ...modified, ...reresolved];
     process.stderr.write(
         `[2/5] Files: ${added.length} added, ${modified.length} modified, ${deleted.length} deleted, ${unchanged.length} unchanged (${reresolved.length} re-resolved as dependents)\n`,

@@ -167,3 +167,53 @@ describe('pickClosestCandidate', () => {
         expect(pickClosestCandidate([a, b], 'lib/caller.ts')).toBe(pickClosestCandidate([b, a], 'lib/caller.ts'));
     });
 });
+
+describe('update on a graph written before file_hashes / re_exports existed', () => {
+    /** Strip the metadata older versions didn't write. */
+    const makeLegacy = (p: string) => {
+        const g = read(p);
+        delete g.metadata.file_hashes;
+        delete g.metadata.re_exports;
+        writeFileSync(p, JSON.stringify(g));
+    };
+
+    it('upgrades it in place: the first update matches a fresh parse, and so do later ones', () => {
+        const dir = repo();
+        const updated = join(dir, 'graph-updated.json');
+        const fresh = join(dir, 'graph-fresh.json');
+        // A barrel that also declares a symbol has a node, so its hash is known
+        // even in an old graph: it is not re-parsed, and only re_exports held its
+        // re-exports.
+        writeFileSync(
+            join(dir, 'src/util/index.ts'),
+            `export { formatId } from './format';\n\nexport function helper(): string {\n    return 'h';\n}\n`,
+        );
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', updated]);
+        makeLegacy(updated);
+
+        // A barrel's caller changes: resolving it needs the barrel the old graph never recorded.
+        writeFileSync(join(dir, 'src/other.ts'), `${FILES['src/other.ts']}\n// touched\n`);
+        runCli(['update', '--repo-dir', dir, '--graph', updated, '--out', updated]);
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', fresh]);
+        expect(read(updated).edges.map(edgeKey).sort()).toEqual(read(fresh).edges.map(edgeKey).sort());
+        expect(read(updated).metadata.re_exports?.some((r) => r.file === 'src/util/index.ts')).toBe(true);
+        expect(read(updated).metadata.file_hashes?.['src/constants.ts']).toBeDefined();
+
+        writeFileSync(join(dir, 'src/app.ts'), `${FILES['src/app.ts']}\n// touched again\n`);
+        runCli(['update', '--repo-dir', dir, '--graph', updated, '--out', updated]);
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', fresh]);
+        expect(read(updated).edges.map(edgeKey).sort()).toEqual(read(fresh).edges.map(edgeKey).sort());
+    });
+
+    it('upgrades it even when nothing changed', () => {
+        const dir = repo();
+        const out = join(dir, 'graph.json');
+        runCli(['parse', '--all', '--repo-dir', dir, '--out', out]);
+        const before = read(out);
+        makeLegacy(out);
+        runCli(['update', '--repo-dir', dir, '--graph', out, '--out', out]);
+        expect(read(out).metadata.re_exports).toEqual(before.metadata.re_exports);
+        expect(read(out).metadata.file_hashes).toEqual(before.metadata.file_hashes);
+        expect(read(out).edges.map(edgeKey).sort()).toEqual(before.edges.map(edgeKey).sort());
+    });
+});
