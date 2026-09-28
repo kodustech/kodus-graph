@@ -133,6 +133,8 @@ interface ParseOutput {
 | `incremental` | `boolean` | optional | True for `update` output |
 | `tier_distribution` | `TierDistribution` | optional | See below |
 | `min_confidence` | `number` | optional | Set by `parse --min-confidence`: CALLS edges below it were left out. `update` applies the same cut. Added in 2.2 |
+| `file_hashes` | `Record<string, string>` | optional | Content hash of every parsed file, including ones with no node. `update` diffs against it. Added in 2.2 |
+| `re_exports` | `{ module, file, line }[]` | optional | Every re-export statement, so `update` follows barrels outside the files it re-parses. Added in 2.2 |
 | `discovery` | `DiscoveryConfig` | optional | The `include` / `exclude` globs and `respect_gitignore` flag `parse` used; `update` reuses them so it re-discovers the same file set. Added in 2.2 |
 
 ### `DiscoveryConfig`
@@ -468,7 +470,7 @@ The schema version follows semver-style for **graph compatibility** (not the npm
 - **Minor bump (2.0 → 2.1)**: New optional fields. Consumers reading older graphs see `undefined`; consumers reading newer graphs ignore unknown fields.
 - **Patch**: No schema-level change; bug fixes in defaults or extraction.
 
-Current: **2.2**. 2.2 added the optional `ParseMetadata.discovery` block so `update` re-discovers the file set `parse` used, and the optional `ParseMetadata.min_confidence`. 2.1 added the `USES_TYPE` edge kind — a function's signature naming a type this repo declares — so type-only dependencies show up in a blast radius; graphs parsed before 2.1 simply lack those edges. The `tier` field on `GraphEdge` was the 2.0 addition (an optional field; pre-2.0 graphs simply lack it).
+Current: **2.2**. 2.2 added the optional `ParseMetadata.discovery` block so `update` re-discovers the file set `parse` used, and the optional `ParseMetadata.min_confidence`, `file_hashes` and `re_exports`. 2.1 added the `USES_TYPE` edge kind — a function's signature naming a type this repo declares — so type-only dependencies show up in a blast radius; graphs parsed before 2.1 simply lack those edges. The `tier` field on `GraphEdge` was the 2.0 addition (an optional field; pre-2.0 graphs simply lack it).
 
 The version is set in `src/shared/constants.ts:SCHEMA_VERSION` and stamped onto every `parse` / `update` output via `metadata.schema_version`. Loaders (`loadGraph`) call `enforceSchemaVersion` which:
 

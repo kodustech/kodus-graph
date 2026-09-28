@@ -865,7 +865,11 @@ function getDir(file: string): string {
  * Both share the `src/` prefix (depth 1), but `services/user.ts` is a
  * direct sibling of the caller and is preferred.
  */
-export function pickClosestCandidate(candidates: string[], callerFile: string): string {
+export function pickClosestCandidate(unordered: string[], callerFile: string): string {
+    // Ties are broken by qualified name, not by the order symbols entered the
+    // table: `update` seeds the table in a different order than `parse`, so an
+    // insertion-order tie-break made the two resolve the same call differently.
+    const candidates = [...unordered].sort();
     const callerDir = getDir(callerFile);
 
     // Tier A: prefer a sibling in the exact same directory
@@ -953,6 +957,14 @@ export interface ResolveGraphOptions {
      * the files they re-parse, so they leave it off and keep those calls.
      */
     repoComplete?: boolean;
+    /**
+     * Resolver context from files outside `rawGraph` — the baseline of a slice
+     * re-parse (`update`). A call in the slice can depend on an untouched file's
+     * return type (`const o = factory(); o.m()`) or class hierarchy (a method
+     * inherited from a base class declared elsewhere); without these, `update`
+     * resolved such calls differently from `parse`. Slice entries win.
+     */
+    baseline?: { returnTypes?: ReadonlyMap<string, string>; classHierarchy?: ReadonlyMap<string, string[]> };
 }
 
 /**
@@ -979,7 +991,7 @@ export function resolveCallsForGraph(
 ): ResolveAllResult {
     // Qualified name → return type, so the chain pass can propagate
     // `Foo.method() → ReturnType` to the outer call in `x.method().chained()`.
-    const returnTypes = new Map<string, string>();
+    const returnTypes = new Map<string, string>(options.baseline?.returnTypes);
     for (const f of rawGraph.functions) {
         if (f.returnType) {
             returnTypes.set(f.qualified, f.returnType);
@@ -988,7 +1000,11 @@ export function resolveCallsForGraph(
 
     // Subclass → [parents], from `extends`/`implements`. The receiver tier walks
     // this when a method isn't on the immediate type but is on an ancestor.
-    const classHierarchy = new Map<string, string[]>();
+    const classHierarchy = new Map<string, string[]>(options.baseline?.classHierarchy);
+    const sliceClasses = new Set(rawGraph.classes.map((c) => c.name));
+    for (const name of sliceClasses) {
+        classHierarchy.delete(name); // the slice's own declaration replaces the baseline's
+    }
     for (const c of rawGraph.classes) {
         const parents: string[] = [];
         if (c.extends) {
