@@ -203,7 +203,7 @@ export async function executeUpdate(opts: UpdateCommandOptions): Promise<void> {
         }
     }
 
-    const { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
+    const { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap, { repoComplete: true });
 
     const fileHashes = new Map<string, string>();
     for (const f of absToReparse) {

@@ -146,7 +146,7 @@ export async function executeParse(opts: ParseOptions): Promise<void> {
     );
 
     // Phase 4: Resolve calls
-    let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap);
+    let { callEdges, stats } = resolveCallsForGraph(rawGraph, symbolTable, importMap, { repoComplete: true });
     process.stderr.write(
         `[4/5] Resolved ${callEdges.length} calls (receiver:${stats.receiver} DI:${stats.di} same:${stats.same} import:${stats.import} unique:${stats.unique} ambiguous:${stats.ambiguous} noise:${stats.noise} ambigNoise:${stats.ambiguousNoise} external:${stats.externalReceiver})\n`,
     );

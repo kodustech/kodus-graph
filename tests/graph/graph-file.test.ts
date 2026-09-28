@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
+import * as fs from 'fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -80,5 +81,28 @@ describe('readGraphFile', () => {
         writeFileSync(p, '{"metadata":{},"nodes":[\n{"kind":\n');
         expect(() => readGraphFile(p)).toThrow();
         expect(() => readGraphFile(p, { stream: true })).toThrow();
+    });
+
+    it('streams a file above the string limit without first reading it whole', () => {
+        // Reading it whole allocates the file's full size, then throws: on the
+        // hosts that hit the limit that allocation alone can run out of memory.
+        const p = tmp('big.json');
+        const nodes = [node('a'), node('b')];
+        writeGraphJSON(p, metadata, nodes, [edge]);
+        const read = spyOn(fs, 'readFileSync');
+        try {
+            expect(readGraphFile(p, { maxStringBytes: 10 })).toEqual({ metadata, nodes, edges: [edge] });
+            expect(read).not.toHaveBeenCalled();
+        } finally {
+            read.mockRestore();
+        }
+    });
+
+    it('still tries the whole-file parse above the limit when the layout is not the writer one', () => {
+        // Byte size overstates string length for multi-byte text, so the file may fit.
+        const value = { metadata, nodes: [node('a')], edges: [edge] };
+        const pretty = tmp('pretty-big.json');
+        writeFileSync(pretty, JSON.stringify(value, null, 2));
+        expect(readGraphFile(pretty, { maxStringBytes: 10 })).toEqual(value);
     });
 });

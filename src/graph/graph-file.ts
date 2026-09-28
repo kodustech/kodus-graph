@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync } from 'fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'fs';
 
 /**
  * Read a graph JSON file, even one too large to hold as a single string.
@@ -21,10 +21,24 @@ import { closeSync, existsSync, openSync, readFileSync, readSync } from 'fs';
  *   ]}
  *
  * JSON strings never contain a raw newline, so a line is always a whole record.
- * `opts.stream` forces the line-by-line path (tests).
+ * A file larger than the string limit goes straight to that path: reading it
+ * whole first would allocate its full size only to throw.
+ * `opts.stream` forces the line-by-line path; `opts.maxStringBytes` lowers the
+ * limit (tests).
  */
-export function readGraphFile(path: string, opts: { stream?: boolean; chunkBytes?: number } = {}): unknown {
+export function readGraphFile(
+    path: string,
+    opts: { stream?: boolean; chunkBytes?: number; maxStringBytes?: number } = {},
+): unknown {
     const chunkBytes = opts.chunkBytes ?? CHUNK_BYTES;
+    if (!opts.stream && fileSize(path) > (opts.maxStringBytes ?? MAX_STRING_BYTES)) {
+        const streamed = readWriterLayout(path, chunkBytes);
+        if (streamed) {
+            return streamed;
+        }
+        // Not our layout. Multi-byte text makes the string shorter than the
+        // byte count, so the whole-file parse below may still fit.
+    }
     if (opts.stream) {
         const streamed = readWriterLayout(path, chunkBytes);
         if (!streamed) {
@@ -50,6 +64,16 @@ const HEADER = '{"metadata":';
 const NODES_OPEN = ',"nodes":[';
 const EDGES_OPEN = '],"edges":[';
 const CHUNK_BYTES = 16 * 1024 * 1024;
+/** Node's maximum string length (V8 `String::kMaxLength`, 0x1fffffe8 UTF-16 units). */
+const MAX_STRING_BYTES = 0x1fffffe8;
+
+function fileSize(path: string): number {
+    try {
+        return statSync(path).size;
+    } catch {
+        return 0; // missing / unreadable: let readFileSync report it
+    }
+}
 
 function readWriterLayout(
     path: string,

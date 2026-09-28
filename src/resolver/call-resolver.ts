@@ -71,6 +71,12 @@ interface ResolverContext {
      * `resolveAllCalls` callers that don't pass it keep the old behaviour).
      */
     declaredTypes?: ReadonlySet<string>;
+    /**
+     * Per-file type-like names that aren't nodes (type aliases, namespaces).
+     * Only the caller's own file matters: a type from another file reaches the
+     * caller through an import, which {@link isRepoType} already checks.
+     */
+    localTypes?: ReadonlyMap<string, ReadonlySet<string>>;
     diMap: Map<string, string> | undefined;
     symbolTable: SymbolTable;
     importMap: ImportMap;
@@ -209,8 +215,8 @@ const receiverTier: Tier = (call, ctx) => {
  * is checked by its last segment. Computed from the parse itself — no
  * per-language list of builtin types.
  */
-/** Conventional type-variable names (`T`, `K`, `V`, `T1`): a single capital, optional digits. */
-const TYPE_VARIABLE = /^[A-Z]\d*$/;
+/** Conventional type-variable names: a single capital (`T`, `K2`) or the T-prefixed form (`TItem`, `TValue`). */
+const TYPE_VARIABLE = /^[A-Z]\d*$|^T[A-Z][A-Za-z0-9]*$/;
 
 function isRepoType(typeName: string, ctx: ResolverContext): boolean {
     const bare = typeName
@@ -223,7 +229,11 @@ function isRepoType(typeName: string, ctx: ResolverContext): boolean {
         // by a repo type (`<T extends Repo>`), so it proves nothing — don't drop.
         return true;
     }
-    if (ctx.declaredTypes?.has(simple) || ctx.symbolTable.lookupGlobal(simple).length > 0) {
+    if (
+        ctx.declaredTypes?.has(simple) ||
+        ctx.localTypes?.get(ctx.fp)?.has(simple) ||
+        ctx.symbolTable.lookupGlobal(simple).length > 0
+    ) {
         return true;
     }
     const importedFrom = ctx.importMap.lookup(ctx.fp, simple) ?? ctx.importMap.lookup(ctx.fp, bare);
@@ -505,6 +515,7 @@ export function resolveAllCalls(
     classHierarchy?: Map<string, string[]>,
     valueBindings?: Map<string, Map<string, string>>,
     declaredTypes?: ReadonlySet<string>,
+    localTypes?: ReadonlyMap<string, ReadonlySet<string>>,
 ): ResolveAllResult {
     const hierarchy = classHierarchy ?? new Map<string, string[]>();
     const returnTypeMap = returnTypes ?? new Map<string, string>();
@@ -533,6 +544,7 @@ export function resolveAllCalls(
         const ctx: ResolverContext = {
             fp: call.source,
             declaredTypes,
+            localTypes,
             diMap: diMaps.get(call.source),
             symbolTable,
             importMap,
@@ -933,6 +945,16 @@ export function resolveCall(
     return { target: result.target, confidence: result.confidence };
 }
 
+export interface ResolveGraphOptions {
+    /**
+     * The RawGraph plus symbol table declare every type of the repo (`parse`,
+     * and `update` with its baseline-seeded symbol table). Enables dropping calls
+     * whose receiver type isn't one of them. `analyze` and `diff` resolve only
+     * the files they re-parse, so they leave it off and keep those calls.
+     */
+    repoComplete?: boolean;
+}
+
 /**
  * Resolve every call in a `RawGraph`, deriving the receiver-tier inputs from the
  * graph itself.
@@ -953,6 +975,7 @@ export function resolveCallsForGraph(
     rawGraph: RawGraph,
     symbolTable: SymbolTable,
     importMap: ImportMap,
+    options: ResolveGraphOptions = {},
 ): ResolveAllResult {
     // Qualified name → return type, so the chain pass can propagate
     // `Foo.method() → ReturnType` to the outer call in `x.method().chained()`.
@@ -982,9 +1005,14 @@ export function resolveCallsForGraph(
 
     // Types this parse declares, for the receiver tier's external-type check.
     // Enums aren't in the symbol table on a fresh parse, so list them here too.
-    const declaredTypes = new Set<string>();
-    for (const t of [...rawGraph.classes, ...rawGraph.interfaces, ...rawGraph.enums]) {
-        declaredTypes.add(t.name);
+    // Only built when the inputs cover the whole repo: in a slice, a type
+    // missing here may simply live in a file that wasn't re-parsed.
+    let declaredTypes: Set<string> | undefined;
+    if (options.repoComplete) {
+        declaredTypes = new Set<string>();
+        for (const t of [...rawGraph.classes, ...rawGraph.interfaces, ...rawGraph.enums]) {
+            declaredTypes.add(t.name);
+        }
     }
 
     return resolveAllCalls(
@@ -996,5 +1024,6 @@ export function resolveCallsForGraph(
         classHierarchy,
         rawGraph.valueBindings,
         declaredTypes,
+        rawGraph.localTypes,
     );
 }

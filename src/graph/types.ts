@@ -476,6 +476,12 @@ export interface RawGraph {
      * marker (`@CALLEE:foo`).
      */
     valueBindings: Map<string, Map<string, string>>;
+    /**
+     * Per-file type-like names that don't become nodes: type aliases and
+     * namespaces (`file -> names`). The resolver uses them so a receiver typed
+     * with a same-file alias isn't read as an external type.
+     */
+    localTypes?: Map<string, Set<string>>;
 }
 
 export interface ParseBatchResult extends RawGraph {

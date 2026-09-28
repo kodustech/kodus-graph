@@ -342,6 +342,21 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
         }
     }
 
+    // ── Type aliases and namespaces (no node; the resolver needs their names) ──
+    const typeNames: string[] = [];
+    if (isTS) {
+        const kinds = [TS_KINDS.typeAliasDeclaration, TS_KINDS.internalModule, TS_KINDS.module];
+        for (const kind of kinds) {
+            for (const node of rootNode.findAll({ rule: { kind } })) {
+                const name = node.field(TS_FIELDS.name)?.text();
+                // `declare module 'pkg'` names a module specifier, not a type.
+                if (name && !/^['"`]/.test(name)) {
+                    typeNames.push(...name.split('.'));
+                }
+            }
+        }
+    }
+
     // ── Imports ──
     for (const node of rootNode.findAll({ rule: { kind: TS_KINDS.importStatement } })) {
         const sourceNode = node.children().find((c: SgNode) => c.kind() === TS_KINDS.string);
@@ -451,7 +466,7 @@ function extractTS(rootNode: SgNode, fp: string, isTS: boolean): ExtractionResul
     const fileBindings = collectBindings(rootNode);
     const valueBindings = Array.from(fileBindings.entries()).map(([name, type]) => ({ name, type }));
 
-    return { classes, functions, imports, reExports, interfaces, enums, diEntries, valueBindings };
+    return { classes, functions, imports, reExports, interfaces, enums, diEntries, valueBindings, typeNames };
 }
 
 // ---------------------------------------------------------------------------

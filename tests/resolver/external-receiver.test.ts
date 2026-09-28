@@ -3,7 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import type { GraphEdge, ParseOutput } from '../../src/graph/types';
+import type { GraphEdge, ParseOutput, RawGraph } from '../../src/graph/types';
+import { resolveCallsForGraph } from '../../src/resolver/call-resolver';
+import { createImportMap } from '../../src/resolver/import-map';
+import { createSymbolTable } from '../../src/resolver/symbol-table';
 import { runCli } from '../helpers/run-cli';
 
 /**
@@ -136,5 +139,89 @@ export function reset(): void {
         });
         const edges = callsFrom(dir, 'src/user.ts');
         expect(targets(edges)).toContain('clearForTests');
+    });
+});
+
+describe('receiver tier: in-repo types it must not read as external', () => {
+    const tsRepo = {
+        'src/impl.ts': `export class Impl {
+    handle(): void {}
+}
+
+export class Repo {
+    save(): void {}
+}
+`,
+        'src/use.ts': `import { Impl, Repo } from './impl';
+
+type Handler = Impl;
+
+namespace Api {
+    export function load(): void {}
+}
+
+export function viaAlias(h: Handler): void {
+    h.handle();
+}
+
+export function viaTypeVar<TItem extends Repo>(item: TItem): void {
+    item.save();
+}
+
+export function viaNamespace(): void {
+    Api.load();
+}
+`,
+    };
+
+    const calleesOf = (edges: GraphEdge[], fn: string) =>
+        targets(edges.filter((e) => e.source_qualified === `src/use.ts::${fn}`));
+
+    it('keeps a call on a same-file type alias', () => {
+        expect(calleesOf(callsFrom(repo(tsRepo), 'src/use.ts'), 'viaAlias')).toEqual(['Impl.handle']);
+    });
+
+    it('keeps a call on a same-file namespace', () => {
+        expect(calleesOf(callsFrom(repo(tsRepo), 'src/use.ts'), 'viaNamespace')).toEqual(['load']);
+    });
+
+    it('keeps a call on a T-prefixed type variable (TItem)', () => {
+        expect(calleesOf(callsFrom(repo(tsRepo), 'src/use.ts'), 'viaTypeVar')).toEqual(['Repo.save']);
+    });
+});
+
+describe('receiver tier: slices that do not see every declaration', () => {
+    // `analyze` and `diff` resolve only the files they re-parse. `Child` lives in
+    // a file outside the slice, so its absence proves nothing about the repo.
+    const rawGraph = (): RawGraph => ({
+        functions: [],
+        classes: [],
+        interfaces: [],
+        enums: [],
+        tests: [],
+        imports: [],
+        reExports: [],
+        rawCalls: [{ source: 'src/Caller.java', callName: 'run', line: 5, receiverType: 'Child' }],
+        diMaps: new Map(),
+        valueBindings: new Map(),
+    });
+    const symbols = () => {
+        const table = createSymbolTable();
+        table.add('src/Base.java', 'run', 'src/Base.java::Base.run');
+        return table;
+    };
+
+    it('does not drop the call when the declarations are a slice', () => {
+        const { callEdges, stats } = resolveCallsForGraph(rawGraph(), symbols(), createImportMap());
+        expect(stats.externalReceiver).toBe(0);
+        expect(callEdges.map((e) => e.target)).toEqual(['src/Base.java::Base.run']);
+    });
+
+    it('drops it when the caller says the declarations cover the repo', () => {
+        const { callEdges, stats } = resolveCallsForGraph(rawGraph(), symbols(), createImportMap(), {
+            repoComplete: true,
+        });
+        expect(stats.externalReceiver).toBe(1);
+        expect(callEdges).toEqual([]);
     });
 });
