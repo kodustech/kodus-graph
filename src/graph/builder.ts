@@ -20,6 +20,13 @@ export function buildGraphData(
      * outside the slice.
      */
     additionalKnownFiles?: ReadonlySet<string>,
+    /**
+     * Qualified names of repo types (Class / Interface / Enum) declared outside
+     * `raw` — the baseline of a slice re-parse. Without them a function in the
+     * slice whose signature names a type from an untouched file loses its
+     * USES_TYPE edge, since `raw` only declares the slice's own types.
+     */
+    additionalTypes?: ReadonlySet<string>,
 ): GraphData {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
@@ -255,7 +262,7 @@ export function buildGraphData(
     }
 
     // Derived edges
-    const derived = deriveEdges(raw, importEdges, symbolTable, importMap, callEdges);
+    const derived = deriveEdges(raw, importEdges, symbolTable, importMap, callEdges, additionalTypes);
 
     // Release raw graph arrays — no longer needed after deriveEdges
     (raw as any).functions = [];

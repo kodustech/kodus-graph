@@ -15,7 +15,7 @@ import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
 import { buildReExportMap } from '../resolver/re-export-resolver';
-import { createSymbolTable } from '../resolver/symbol-table';
+import { addRawSymbols, createSymbolTable } from '../resolver/symbol-table';
 import { DEFAULT_BLAST_MAX_DEPTH } from '../shared/constants';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
@@ -81,15 +81,7 @@ export async function executeAnalyze(opts: AnalyzeOptions): Promise<void> {
     const importMap = createImportMap();
     const importEdges: ImportEdge[] = [];
 
-    for (const f of rawGraph.functions) {
-        symbolTable.add(f.file, f.name, f.qualified);
-    }
-    for (const c of rawGraph.classes) {
-        symbolTable.add(c.file, c.name, c.qualified);
-    }
-    for (const i of rawGraph.interfaces) {
-        symbolTable.add(i.file, i.name, i.qualified);
-    }
+    addRawSymbols(symbolTable, rawGraph);
 
     // Pre-resolve re-exports so barrel imports follow through to actual definitions
     const barrelMap = buildReExportMap(rawGraph.reExports, repoDir, tsconfigAliases);

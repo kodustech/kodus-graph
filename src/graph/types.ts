@@ -121,6 +121,18 @@ export interface ParseMetadata {
      */
     min_confidence?: number;
     /**
+     * Content hash of every parsed file, including ones that yield no node
+     * (constants, configs, barrels). `update` diffs against this; deriving it
+     * from nodes made every symbol-less file look new on every run.
+     */
+    file_hashes?: Record<string, string>;
+    /**
+     * Every re-export statement (`export { x } from './y'`) in the graph, so
+     * `update` follows barrels outside the files it re-parses the way `parse`
+     * does, instead of stopping at the barrel.
+     */
+    re_exports?: RawReExport[];
+    /**
      * How `parse` chose which files to read. Persisted so `update` re-discovers
      * the same set instead of silently widening it (e.g. re-adding files the
      * original `--exclude` dropped). Absent on graphs written before 2.2.
