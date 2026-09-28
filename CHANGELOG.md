@@ -93,11 +93,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` and `context`; pass `--min-confidence 0` to see every edge.
 
 - The first `update` of a graph parsed before this release drops nodes from
-  git-ignored files (it now discovers files the way `parse` does). **Run a full
-  `parse` once after upgrading**: graphs written before this release lack
-  `metadata.file_hashes` and `metadata.re_exports`, which `update` needs to
-  match a fresh parse. Use `parse --no-gitignore` if you want ignored paths
-  kept.
+  git-ignored files (it now discovers files the way `parse` does). Use
+  `parse --no-gitignore` if you want ignored paths kept.
+- No manual step to upgrade a graph: the first `update` of a graph written
+  before this release (no `metadata.file_hashes` / `metadata.re_exports`)
+  re-parses every file once and records both, so it matches a fresh parse;
+  later updates are incremental again.
 
 ## [0.3.0] — 2026-07-20
 

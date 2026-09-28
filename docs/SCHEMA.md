@@ -134,7 +134,7 @@ interface ParseOutput {
 | `tier_distribution` | `TierDistribution` | optional | See below |
 | `min_confidence` | `number` | optional | Set by `parse --min-confidence`: CALLS edges below it were left out. `update` applies the same cut. Added in 2.2 |
 | `file_hashes` | `Record<string, string>` | optional | Content hash of every parsed file, including ones with no node. `update` diffs against it. Added in 2.2 |
-| `re_exports` | `{ module, file, line }[]` | optional | Every re-export statement, so `update` follows barrels outside the files it re-parses. Added in 2.2 |
+| `re_exports` | `{ module, file, line }[]` | optional | Every re-export statement, so `update` follows barrels outside the files it re-parses. Added in 2.2; `update` re-parses every file once when it (or `file_hashes`) is missing |
 | `discovery` | `DiscoveryConfig` | optional | The `include` / `exclude` globs and `respect_gitignore` flag `parse` used; `update` reuses them so it re-discovers the same file set. Added in 2.2 |
 
 ### `DiscoveryConfig`
