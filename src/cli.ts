@@ -29,6 +29,17 @@ function parseConfidence(value: string): number {
     return n;
 }
 
+/** Parser for a count flag: a non-negative integer, or the command fails. */
+function parseCount(flag: string): (value: string) => number {
+    return (value) => {
+        const n = Number(value);
+        if (value.trim() === '' || !Number.isSafeInteger(n) || n < 0) {
+            throw new InvalidArgumentError(`${flag} must be a non-negative integer.`);
+        }
+        return n;
+    };
+}
+
 import pkg from '../package.json';
 import { DEFAULT_BLAST_MAX_DEPTH } from './shared/constants';
 import { log } from './shared/logger';
@@ -45,9 +56,11 @@ program
     .option('--include <glob...>', 'Include only files matching glob (repeatable)')
     .option('--exclude <glob...>', 'Exclude files matching glob (repeatable)')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
-    .option('--max-memory <mb>', 'Maximum memory usage in MB (default: 768)', (v) => parseInt(v, 10))
-    .option('--max-files <n>', 'Refuse to walk more than this many files (fails loud unless --allow-partial)', (v) =>
-        parseInt(v, 10),
+    .option('--max-memory <mb>', 'Maximum memory usage in MB (default: 768)', parseCount('--max-memory'))
+    .option(
+        '--max-files <n>',
+        'Refuse to walk more than this many files (fails loud unless --allow-partial)',
+        parseCount('--max-files'),
     )
     .option('--allow-partial', 'When --max-files is exceeded, build a truncated graph and warn instead of failing')
     .option('--no-gitignore', 'Also parse paths git ignores (by default .gitignore is honoured inside a git work tree)')
@@ -85,7 +98,7 @@ program
     .requiredOption('--files <paths...>', 'Changed files to analyze')
     .option('--repo-dir <path>', 'Repository root directory', '.')
     .option('--graph <path>', 'Path to main graph JSON')
-    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option('--max-depth <n>', 'Blast radius BFS depth', parseCount('--max-depth'), DEFAULT_BLAST_MAX_DEPTH)
     .option(
         '--blast-direction <mode>',
         "'reverse' (what breaks / risk) or 'bidirectional' (full coupling neighbourhood — what else to review)",
@@ -94,7 +107,8 @@ program
     .option(
         '--hub-threshold <n>',
         'Hub damping: nodes with fan-out above this are reached but not expanded (0 = off)',
-        '0',
+        parseCount('--hub-threshold'),
+        0,
     )
     .option('--skip-tests', 'Skip test detection (no TESTED_BY edges or test gaps)')
     .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
@@ -113,9 +127,9 @@ program
             out: opts.out,
             skipTests: opts.skipTests ?? false,
             riskConfig: opts.riskConfig,
-            maxDepth: Number.parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
             blastDirection,
-            hubThreshold: Number.parseInt(opts.hubThreshold, 10) || 0,
+            hubThreshold: opts.hubThreshold,
         });
     });
 
@@ -128,7 +142,7 @@ program
     .option('--diff <path>', 'Path to unified diff file (filters changed functions in fallback mode)')
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', parseConfidence, 0.5)
-    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option('--max-depth <n>', 'Blast radius BFS depth', parseCount('--max-depth'), DEFAULT_BLAST_MAX_DEPTH)
     .option(
         '--coupling-direction <mode>',
         "'bidirectional' (default) adds a REVIEW-TOGETHER neighbourhood (siblings + " +
@@ -138,20 +152,25 @@ program
     .option(
         '--hub-threshold <n>',
         'Hub damping for the coupling neighbourhood: nodes with fan-out above this are reached but not expanded (0 = off)',
-        '15',
+        parseCount('--hub-threshold'),
+        15,
     )
     .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
-    .option('--max-functions <n>', 'Max changed functions in prompt / XML output (default: 30 prompt, 15 XML)', (v) =>
-        parseInt(v, 10),
+    .option(
+        '--max-functions <n>',
+        'Max changed functions in prompt / XML output (default: 30 prompt, 15 XML)',
+        parseCount('--max-functions'),
     )
-    .option('--max-callees <n>', 'Max direct callees per changed function in XML output (default: 5)', (v) =>
-        parseInt(v, 10),
+    .option(
+        '--max-callees <n>',
+        'Max direct callees per changed function in XML output (default: 5)',
+        parseCount('--max-callees'),
     )
     .option(
         '--max-prompt-chars <n>',
         'Max total prompt chars — truncates less important sections first (default: 20000)',
-        (v) => parseInt(v, 10),
+        parseCount('--max-prompt-chars'),
     )
     .option('--risk-config <path>', 'Path to JSON file overriding risk-score weights and caps')
     .action(async (opts) => {
@@ -175,9 +194,9 @@ program
             diff: opts.diff,
             out: opts.out,
             minConfidence: opts.minConfidence,
-            maxDepth: Number.parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
             couplingDirection: opts.couplingDirection,
-            hubThreshold: Number.parseInt(opts.hubThreshold, 10),
+            hubThreshold: opts.hubThreshold,
             format: opts.format,
             skipTests: opts.skipTests ?? false,
             maxFunctions: opts.maxFunctions,
@@ -238,21 +257,21 @@ program
     .description('Detect module clusters and coupling between them')
     .requiredOption('--graph <path>', 'Path to graph JSON')
     .requiredOption('--out <path>', 'Output JSON file path')
-    .option('--min-size <n>', 'Minimum nodes per community', '2')
-    .option('--depth <n>', 'Directory grouping depth (directory mode)', '2')
+    .option('--min-size <n>', 'Minimum nodes per community', parseCount('--min-size'), 2)
+    .option('--depth <n>', 'Directory grouping depth (directory mode)', parseCount('--depth'), 2)
     .option(
         '--topological',
         'Cluster by call-graph topology (Louvain modularity) with hubs + bridges, instead of directory',
     )
-    .option('--top <n>', 'Hubs/bridges to report in topological mode', '10')
+    .option('--top <n>', 'Hubs/bridges to report in topological mode', parseCount('--top'), 10)
     .action((opts) => {
         executeCommunities({
             graph: opts.graph,
             out: opts.out,
-            minSize: parseInt(opts.minSize, 10),
-            depth: parseInt(opts.depth, 10),
+            minSize: opts.minSize,
+            depth: opts.depth,
             topological: Boolean(opts.topological),
-            topN: parseInt(opts.top, 10),
+            topN: opts.top,
         });
     });
 
@@ -265,7 +284,7 @@ program
     .option('--b <qualified...>', "PR B's changed symbols (qualified names)")
     .option('--a-files <paths...>', "PR A's changed files (expanded to their symbols if --a is omitted)")
     .option('--b-files <paths...>', "PR B's changed files (expanded to their symbols if --b is omitted)")
-    .option('--max-depth <n>', 'Blast radius BFS depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option('--max-depth <n>', 'Blast radius BFS depth', parseCount('--max-depth'), DEFAULT_BLAST_MAX_DEPTH)
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence', parseConfidence, 0.5)
     .action((opts) => {
         if (!opts.a && !opts.aFiles) {
@@ -283,7 +302,7 @@ program
             b: opts.b,
             aFiles: opts.aFiles,
             bFiles: opts.bFiles,
-            maxDepth: Number.parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
             minConfidence: opts.minConfidence,
         });
     });
@@ -295,8 +314,8 @@ program
     .requiredOption('--out <path>', 'Output JSON file path')
     .option('--changed <qualified...>', 'Changed symbols (qualified names)')
     .option('--files <paths...>', 'Changed files (expanded to their symbols if --changed is omitted)')
-    .option('--top <n>', 'Hub/bridge pool size considered notable', '20')
-    .option('--min-size <n>', 'Minimum community size to report as a subsystem', '2')
+    .option('--top <n>', 'Hub/bridge pool size considered notable', parseCount('--top'), 20)
+    .option('--min-size <n>', 'Minimum community size to report as a subsystem', parseCount('--min-size'), 2)
     .action((opts) => {
         if (!opts.changed && !opts.files) {
             log.error('one of --changed or --files is required');
@@ -307,8 +326,8 @@ program
             out: opts.out,
             changed: opts.changed,
             files: opts.files,
-            topN: parseInt(opts.top, 10),
-            minSize: parseInt(opts.minSize, 10),
+            topN: opts.top,
+            minSize: opts.minSize,
         });
     });
 
@@ -318,14 +337,14 @@ program
     .requiredOption('--graph <path>', 'Path to graph JSON')
     .requiredOption('--out <path>', 'Output JSON file path')
     .requiredOption('--symbol <qualified>', 'Qualified name of the symbol')
-    .option('--limit <n>', 'Max neighbours per list, most-connected first', '15')
+    .option('--limit <n>', 'Max neighbours per list, most-connected first', parseCount('--limit'), 15)
     .option('--min-confidence <n>', 'Minimum CALLS edge confidence for callers/callees', parseConfidence, 0.5)
     .action((opts) => {
         executeContextOf({
             graph: opts.graph,
             out: opts.out,
             symbol: opts.symbol,
-            limit: parseInt(opts.limit, 10),
+            limit: opts.limit,
             minConfidence: opts.minConfidence,
         });
     });
@@ -338,7 +357,7 @@ program
     .requiredOption('--from <qualified>', 'Origin symbol (qualified name)')
     .requiredOption('--to <qualified>', 'Destination symbol (qualified name)')
     .option('--kinds <kind...>', 'Edge kinds that count as a hop (default: CALLS)')
-    .option('--max-depth <n>', 'Give up after this many hops', '10')
+    .option('--max-depth <n>', 'Give up after this many hops', parseCount('--max-depth'), 10)
     .action((opts) => {
         executePath({
             graph: opts.graph,
@@ -346,7 +365,7 @@ program
             from: opts.from,
             to: opts.to,
             kinds: opts.kinds,
-            maxDepth: Number.parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
         });
     });
 
@@ -355,14 +374,14 @@ program
     .description('Rank symbols by structural importance (degree) for relevance-ordered retrieval')
     .requiredOption('--graph <path>', 'Path to graph JSON')
     .requiredOption('--out <path>', 'Output JSON file path')
-    .option('--top <n>', 'How many symbols to return', '20')
+    .option('--top <n>', 'How many symbols to return', parseCount('--top'), 20)
     .option('--file <path>', 'Restrict to symbols declared in this file')
     .option('--kind <type>', 'Restrict to a node kind (Function, Class, Interface, ...)')
     .action((opts) => {
         executeRank({
             graph: opts.graph,
             out: opts.out,
-            top: parseInt(opts.top, 10),
+            top: opts.top,
             file: opts.file,
             kind: opts.kind,
         });
@@ -387,13 +406,13 @@ program
     .description('Detect entry points and trace execution paths')
     .requiredOption('--graph <path>', 'Path to graph JSON')
     .requiredOption('--out <path>', 'Output JSON file path')
-    .option('--max-depth <n>', 'Max BFS trace depth', '10')
+    .option('--max-depth <n>', 'Max BFS trace depth', parseCount('--max-depth'), 10)
     .option('--type <kind>', 'Filter: test, http, all', 'all')
     .action((opts) => {
         executeFlows({
             graph: opts.graph,
             out: opts.out,
-            maxDepth: parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
             type: opts.type as 'test' | 'http' | 'all',
         });
     });
@@ -407,7 +426,7 @@ program
     .option('--file <pattern>', 'Filter by file path (glob)')
     .option('--callers-of <qualified>', 'Find callers of this node')
     .option('--callees-of <qualified>', 'Find callees of this node')
-    .option('--limit <n>', 'Max results', '50')
+    .option('--limit <n>', 'Max results', parseCount('--limit'), 50)
     .option('--out <path>', 'Output file (default: stdout)')
     .action((opts) => {
         const modes = [opts.query, opts.callersOf, opts.calleesOf].filter(Boolean).length;
@@ -426,7 +445,7 @@ program
             file: opts.file,
             callersOf: opts.callersOf,
             calleesOf: opts.calleesOf,
-            limit: parseInt(opts.limit, 10),
+            limit: opts.limit,
             out: opts.out,
         });
     });
@@ -444,7 +463,7 @@ program
     .option('--exported-only', 'Only show exported symbols')
     .option('--graph <path>', 'Resolved graph JSON — enrich symbols with CALLS fan-in/fan-out')
     .option('--blast', "With --graph, also compute each symbol's blast-radius size")
-    .option('--max-depth <n>', 'Blast-radius traversal depth', String(DEFAULT_BLAST_MAX_DEPTH))
+    .option('--max-depth <n>', 'Blast-radius traversal depth', parseCount('--max-depth'), DEFAULT_BLAST_MAX_DEPTH)
     .option('--include <patterns...>', 'Glob(s) to include')
     .option('--exclude <patterns...>', 'Glob(s) to exclude')
     .option('--no-gitignore', 'Also outline paths git ignores')
@@ -470,7 +489,7 @@ program
             exportedOnly: opts.exportedOnly,
             graph: opts.graph,
             blast: opts.blast,
-            maxDepth: parseInt(opts.maxDepth, 10),
+            maxDepth: opts.maxDepth,
             include: opts.include,
             exclude: opts.exclude,
             respectGitignore: opts.gitignore,
