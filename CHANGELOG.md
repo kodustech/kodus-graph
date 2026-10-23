@@ -5,7 +5,7 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.3] - 2026-10-14
+## [0.3.3] — 2026-10-23
 
 ### Added
 
@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph and dropping any named file git ignores.
 
 ### Changed
+
+- `@ast-grep/napi` 0.45.3 → 0.51.0 (with zod, biome and dev tooling). Parsing
+  the kodus-ai monorepo before and after gives the same graph.
 
 - `context-of` now ignores CALLS edges below 0.5 for callers/callees, like
   `analyze` and `context`; pass `--min-confidence 0` to see every edge.
