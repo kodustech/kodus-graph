@@ -35,7 +35,7 @@ describe('tier_distribution in ParseMetadata', () => {
         }
     });
 
-    it('CALLS edges carry a `tier` field and tier counts equal CALLS-edge tiers', async () => {
+    it('resolver CALLS edges carry a `tier` and tier counts equal CALLS-edge tiers', async () => {
         const tmp = mkdtempSync(join(tmpdir(), 'kodus-graph-tier-edges-'));
         try {
             const outPath = join(tmp, 'graph.json');
@@ -43,9 +43,14 @@ describe('tier_distribution in ParseMetadata', () => {
             const output = JSON.parse(readFileSync(outPath, 'utf-8'));
             const callsEdges = output.edges.filter((e: { kind: string }) => e.kind === 'CALLS');
             expect(callsEdges.length).toBeGreaterThan(0);
+            // Resolver-produced CALLS edges carry a tier; derived construction
+            // edges (the parallel `new X()` → constructor edge) intentionally do
+            // not — like INHERITS/USES_TYPE they are not resolver decisions and
+            // are excluded from tier_distribution (see mergeTierDistribution).
+            const tieredEdges = callsEdges.filter((e: { tier?: string }) => e.tier);
+            expect(tieredEdges.length).toBeGreaterThan(0);
             const tierCounts: Record<string, number> = {};
-            for (const e of callsEdges) {
-                expect(e.tier).toBeDefined();
+            for (const e of tieredEdges) {
                 tierCounts[e.tier] = (tierCounts[e.tier] ?? 0) + 1;
             }
             const td = output.metadata.tier_distribution;
@@ -78,13 +83,15 @@ describe('tier_distribution in ParseMetadata', () => {
             const merged = JSON.parse(readFileSync(graphPath, 'utf-8'));
 
             expect(merged.metadata.incremental).toBe(true);
-            const mergedEdges = merged.edges as { kind: string; file_path: string }[];
-            const mergedCallsEdges = mergedEdges.filter((e) => e.kind === 'CALLS').length;
+            const mergedEdges = merged.edges as { kind: string; file_path: string; tier?: string }[];
+            // Only tiered CALLS edges feed tier_distribution — derived
+            // construction edges (untiered) are excluded, matching mergeTierDistribution.
+            const mergedCallsEdges = mergedEdges.filter((e) => e.kind === 'CALLS' && e.tier).length;
             const sliceCallsEdges = mergedEdges.filter(
-                (e) => e.kind === 'CALLS' && e.file_path === 'src/auth.ts',
+                (e) => e.kind === 'CALLS' && e.tier && e.file_path === 'src/auth.ts',
             ).length;
 
-            // Sum of edge-tier counts in the merged tier_distribution must equal merged CALLS-edge count
+            // Sum of edge-tier counts in the merged tier_distribution must equal merged tiered CALLS-edge count
             // (proves we counted ALL edges, not just the slice).
             const mtd = merged.metadata.tier_distribution;
             const sumEdgeTiers = mtd.receiver + mtd.di + mtd.same + mtd.import + mtd.unique + mtd.ambiguous;

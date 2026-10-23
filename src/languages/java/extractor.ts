@@ -1,5 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
+import { constructorTypeName } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -547,6 +548,18 @@ export const javaExtractors: LanguageExtractors = {
                 // For other `x.method()` member calls, `callName` alone is
                 // enough — the receiver-type inference pass cross-references
                 // by file/line/column to surface `receiverType`.
+            } else {
+                // Unqualified call `method()` — implicit `this` in Java. Resolve
+                // against the enclosing class so an inherited method binds to the
+                // base that declares it (class tier → hierarchy walk, ~0.85)
+                // instead of collapsing to the name cascade (unique, 0.50). This
+                // is the idiomatic Java call form (no `this.` prefix); without
+                // this, `printFeatureDisabled()` from a subclass resolved at 0.60
+                // unique on real Keycloak code even with the base class parsed.
+                // Safe for static-imported methods: the class tier finds nothing
+                // in the hierarchy and falls through to the cascade unchanged.
+                const classNode = findEnclosingClass(mi);
+                resolveInClass = classNode?.field(JAVA_FIELDS.name)?.text();
             }
 
             // Column = end of method name (≈ col of `(`). Matches receiver-
@@ -577,6 +590,18 @@ export const javaExtractors: LanguageExtractors = {
                 ...(diClass ? { diClass } : {}),
                 ...(chainedFromLine !== undefined ? { chainedFromLine, chainedFromColumn } : {}),
             });
+        }
+
+        // Constructor calls: `new Foo(...)`. Java's constructor node is named
+        // after the class, so `isConstruction` routes it through the constructor
+        // tier (resolve to the class node) instead of the ambiguous cascade.
+        for (const oce of root.findAll({ rule: { kind: JAVA_KINDS.objectCreationExpression } })) {
+            const name = constructorTypeName(oce.field(JAVA_FIELDS.type)?.text());
+            if (!name) {
+                continue;
+            }
+            const r = (oce.field(JAVA_FIELDS.type) ?? oce).range().end;
+            calls.push({ source: fp, callName: name, line: r.line, column: r.column, isConstruction: true });
         }
     },
 };

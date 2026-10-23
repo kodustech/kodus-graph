@@ -674,6 +674,10 @@ export const dartExtractors: LanguageExtractors = {
             } else if (prev.kind() === DART_KINDS.identifier) {
                 // `bare(args)` — the identifier is the callee.
                 callName = prev.text();
+            } else if (prev.kind() === DART_KINDS.typeIdentifier) {
+                // `Foo(args)` where the grammar tagged `Foo` as a type — an
+                // implicit-`new` constructor call (Dart drops `new`).
+                callName = prev.text();
             } else {
                 // Chained `.a().b()` — the inner call was already captured via
                 // its own access-selector. Skip the outer `(...)` here.
@@ -700,6 +704,13 @@ export const dartExtractors: LanguageExtractors = {
             // Line/column point at the argument selector (`(args)`) rather
             // than the method name — that matches what the receiver-type
             // inference pass keys on below.
+            // Dart drops `new`, so a bare PascalCase call (`Foo(...)`, no
+            // receiver) is a constructor invocation — types are PascalCase,
+            // functions camelCase. Tag it so the constructor tier resolves to
+            // the class node rather than colliding with the same-named
+            // constructor at the ambiguous tier.
+            const isConstruction = receiverKind === 'none' && !resolveInClass && /^[A-Z][A-Za-z0-9_$]*$/.test(callName);
+
             const r = callSel.range().start;
             calls.push({
                 source: fp,
@@ -707,6 +718,7 @@ export const dartExtractors: LanguageExtractors = {
                 line: r.line,
                 column: r.column,
                 ...(resolveInClass ? { resolveInClass } : {}),
+                ...(isConstruction ? { isConstruction: true } : {}),
             });
         }
     },

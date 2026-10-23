@@ -5,6 +5,8 @@ import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
+import { unresolvedImportCheck } from './import-resolution';
+import { groupInterchangeableImpls, renderImplClasses, splitMethod } from './signature-collapse';
 
 export interface PromptFormatterOptions {
     /** Max functions to include in CHANGED section (default: 30). */
@@ -181,7 +183,8 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
                 const shown = fn.callers.slice(0, MAX_CALLERS);
                 for (const c of shown) {
                     const conf = c.confidence < 0.85 ? ` ~${Math.round(c.confidence * 100)}%` : '';
-                    lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}`);
+                    const prov = c.provenance === 'heuristic' ? ' (heuristic: event)' : '';
+                    lines.push(`    ← ${c.name} [${c.file_path}:${c.line}]${conf}${prov}`);
                     // Surface non-picked candidates so the LLM can see what the
                     // resolver passed over at the ambiguous (0.30) tier.
                     if (c.confidence <= 0.3 && c.alternatives && c.alternatives.length > 0) {
@@ -203,7 +206,9 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
             // Callees (→ compact chain)
             if (fn.callees.length > 0) {
                 const MAX_CALLEES = 8;
-                const names = fn.callees.slice(0, MAX_CALLEES).map((c) => c.name);
+                const names = fn.callees
+                    .slice(0, MAX_CALLEES)
+                    .map((c) => (c.provenance === 'heuristic' ? `${c.name} (event?)` : c.name));
                 let calleeLine = `    → ${names.join(', ')}`;
                 if (fn.callees.length > MAX_CALLEES) {
                     calleeLine += `, ... +${fn.callees.length - MAX_CALLEES}`;
@@ -354,11 +359,98 @@ export function formatPrompt(output: ContextV2Output, opts?: PromptFormatterOpti
         lines.push('');
     }
 
-    // ── Char-level truncation: drop sections from bottom (BLAST RADIUS → IMPORTS) if over limit ──
+    // ── Review-together (coupling neighbourhood) — bidirectional+hub. Only the
+    // symbols NOT already surfaced as changed or in the reverse blast radius, so
+    // this section adds the sibling/dependency cluster rather than repeating
+    // "what breaks". Answers "what else should I open alongside this change". ──
+    if (analysis.coupling_neighbourhood) {
+        const alreadyShown = new Set<string>(analysis.changed_functions.map((f) => f.qualified_name));
+        for (const entries of Object.values(analysis.blast_radius.by_depth)) {
+            for (const e of entries) {
+                alreadyShown.add(e.qualified_name);
+            }
+        }
+
+        // Dedup coupling entries by symbol, keeping the highest-confidence hit.
+        const novel = new Map<string, { conf: number; edge: 'CALLS' | 'IMPORTS' | 'USES_TYPE' | 'INHERITS' }>();
+        for (const entries of Object.values(analysis.coupling_neighbourhood.by_depth)) {
+            for (const e of entries) {
+                if (alreadyShown.has(e.qualified_name)) {
+                    continue;
+                }
+                const prev = novel.get(e.qualified_name);
+                if (!prev || e.accumulated_confidence > prev.conf) {
+                    novel.set(e.qualified_name, { conf: e.accumulated_confidence, edge: e.edge_kind });
+                }
+            }
+        }
+
+        if (novel.size > 0) {
+            const MAX_COUPLED = 12;
+            const ranked = [...novel.entries()].sort((a, b) => b[1].conf - a[1].conf);
+
+            // Signature-collapse: fold interchangeable sibling-method impls into a
+            // single "method ×N (ClassA, ClassB, …)" entry so a polymorphic change
+            // doesn't repeat one line per subclass. Grouping is by shared base
+            // class (INHERITS), never by name alone — unrelated same-name symbols
+            // stay separate.
+            const { groups, grouped } = groupInterchangeableImpls(
+                ranked.map(([qn]) => qn),
+                output.graph.edges,
+            );
+            const groupByKey = new Map(groups.map((g) => [g.key, g]));
+            const memberToKey = new Map<string, string>();
+            for (const g of groups) {
+                for (const m of g.members) {
+                    memberToKey.set(m, g.key);
+                }
+            }
+
+            const rendered: string[] = [];
+            const emittedGroups = new Set<string>();
+            const consumed = new Set<string>(); // source QNs represented so far
+            for (const [qn, meta] of ranked) {
+                if (rendered.length >= MAX_COUPLED) {
+                    break;
+                }
+                const via = `via ${BLAST_EDGE_LABEL[meta.edge]}`;
+                if (grouped.has(qn)) {
+                    const key = memberToKey.get(qn)!;
+                    if (emittedGroups.has(key)) {
+                        continue; // a higher-ranked sibling already represented this group
+                    }
+                    emittedGroups.add(key);
+                    const g = groupByKey.get(key)!;
+                    for (const m of g.members) {
+                        consumed.add(m); // the whole group is now represented
+                    }
+                    rendered.push(
+                        `${g.method} ×${g.members.length} (${renderImplClasses(g)}) (${Math.round(meta.conf * 100)}%, ${via})`,
+                    );
+                } else {
+                    consumed.add(qn);
+                    rendered.push(`${shortName(qn)} (${Math.round(meta.conf * 100)}%, ${via})`);
+                }
+            }
+
+            const remaining = ranked.length - consumed.size;
+
+            lines.push('REVIEW TOGETHER (coupled, not necessarily broken):');
+            let line = `  ${rendered.join(', ')}`;
+            if (remaining > 0) {
+                line += ` ... +${remaining}`;
+            }
+            lines.push(line);
+            lines.push('');
+        }
+    }
+
+    // ── Char-level truncation: drop sections from bottom if over limit ──
+    // REVIEW TOGETHER is supplementary (coupling, not breakage) so it goes first;
+    // then BLAST RADIUS, then IMPORTS. Changed functions are never dropped here.
     let result = lines.join('\n');
     if (result.length > maxPromptChars) {
-        // Try removing BLAST RADIUS first, then IMPORTS
-        for (const section of ['BLAST RADIUS:', 'IMPORTS:']) {
+        for (const section of ['REVIEW TOGETHER (coupled, not necessarily broken):', 'BLAST RADIUS:', 'IMPORTS:']) {
             const idx = result.indexOf(`\n${section}\n`);
             if (idx !== -1) {
                 // Find the end of this section (next section start or end of string)
@@ -391,17 +483,15 @@ function shortName(qualifiedName: string): string {
 
 /**
  * Build class-qualified signature for methods.
- * "file::Class::method" + "method(params) -> ret" → "Class.method(params) -> ret"
+ * "file::Class.method" + "method(params) -> ret" → "Class.method(params) -> ret"
  * For top-level functions ("file::func"), returns signature as-is.
- * Language-agnostic: works for any language since qualified_name always uses "::" separator.
  */
 function classQualifiedSignature(qualifiedName: string, signature: string): string {
-    const parts = qualifiedName.split('::');
-    if (parts.length < 3) {
-        return signature; // top-level function, no class
+    const split = splitMethod(qualifiedName);
+    if (!split || signature.startsWith(`${split.className}.`)) {
+        return signature;
     }
-    const className = parts[parts.length - 2];
-    return `${className}.${signature}`;
+    return `${split.className}.${signature}`;
 }
 
 /**
@@ -436,14 +526,12 @@ function buildSiblingMap(
     const changedQNs = new Set(analysis.changed_functions.map((f) => f.qualified_name));
 
     for (const fn of analysis.changed_functions) {
-        // Extract class name from qualified_name (e.g. "file::Class::method" → "file::Class")
-        const parts = fn.qualified_name.split('::');
-        if (parts.length < 3) {
-            continue; // need at least file::class::method
+        const split = splitMethod(fn.qualified_name);
+        if (!split) {
+            continue; // a free function has no class
         }
-
-        const methodName = parts[parts.length - 1];
-        const className = parts.slice(0, -1).join('::');
+        const methodName = split.method;
+        const className = split.classQN;
 
         // Find what this class extends (from INHERITS edges)
         const parentEdge = output.graph.edges.find((e) => e.kind === 'INHERITS' && e.source_qualified === className);
@@ -460,9 +548,11 @@ function buildSiblingMap(
             }
 
             // Look for same method name in sibling class
-            const siblingMethodQN = `${siblingClass}::${methodName}`;
+            const siblingMethodQN = [`${siblingClass}.${methodName}`, `${siblingClass}::${methodName}`].find((qn) =>
+                nodeByQN.has(qn),
+            );
             // Don't list if the sibling is also in changed functions (it's already shown)
-            if (changedQNs.has(siblingMethodQN)) {
+            if (!siblingMethodQN || changedQNs.has(siblingMethodQN)) {
                 continue;
             }
 
@@ -506,8 +596,7 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
             .map((e) => `${e.source_qualified}→${e.target_qualified}`),
     );
 
-    // Set of all node qualified names — to detect unresolved targets
-    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
+    const isUnresolved = unresolvedImportCheck(output.graph.nodes);
 
     // Group by source file
     const byFile = new Map<string, typeof importEdges>();
@@ -538,21 +627,7 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
                 tags.push('NEW');
             }
 
-            // Check if target exists as a node in the graph
-            // For IMPORTS, target_qualified is usually "file::Symbol".
-            // If neither the exact target nor any node starting with the target exists, it's unresolved.
-            let targetExists = allNodes.has(edge.target_qualified);
-            if (!targetExists) {
-                const prefix = `${edge.target_qualified}::`;
-                for (const qn of allNodes) {
-                    if (qn.startsWith(prefix)) {
-                        targetExists = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!targetExists) {
+            if (isUnresolved(edge.target_qualified)) {
                 tags.push('⚠ UNRESOLVED');
             }
 

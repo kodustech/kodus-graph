@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, extractCalls, extractEventSites } from '../../shared/extract-calls';
 import { log } from '../../shared/logger';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
@@ -229,10 +229,46 @@ function createRubyCallConfig(): CallExtractionConfig {
     };
 }
 
+/**
+ * Ruby pub/sub method names. `instrument`/`subscribe` cover
+ * ActiveSupport::Notifications (string-named events); the rest cover generic
+ * emitter gems. Symbol-based buses (Wisper `broadcast(:evt)`) don't match — the
+ * arg is a symbol, not a string literal — and are intentionally out of scope.
+ */
+const RB_EMIT_METHODS: ReadonlySet<string> = new Set([
+    'emit',
+    'publish',
+    'dispatch',
+    'broadcast',
+    'instrument',
+    'trigger',
+]);
+const RB_LISTEN_METHODS: ReadonlySet<string> = new Set(['on', 'once', 'subscribe']);
+
+/** Value of a Ruby string literal, or undefined when interpolated (`#{…}`) or not a string. */
+function rbStringValue(node: SgNode): string | undefined {
+    if (String(node.kind()) !== 'string') {
+        return undefined;
+    }
+    const text = node.text();
+    if (text.includes('#{')) {
+        return undefined; // interpolation
+    }
+    const m = text.match(/^(['"])([\s\S]*)\1$/);
+    return m ? m[2] : undefined;
+}
+
 function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): void {
     // Noise is NOT filtered at extraction. The resolver applies it after the
     // receiver-type tier so user-domain calls survive (see call-resolver.ts).
     const config = createRubyCallConfig();
+
+    extractEventSites(
+        rootNode,
+        fp,
+        { emitMethods: RB_EMIT_METHODS, listenMethods: RB_LISTEN_METHODS, stringValue: rbStringValue },
+        calls,
+    );
 
     // Track lines already captured by the pattern-based extraction to avoid duplicates
     const seenLines = new Set<string>();
@@ -252,14 +288,30 @@ function extractCallsRuby(rootNode: SgNode, fp: string, calls: RawCallSite[]): v
             continue;
         }
         const line = node.range().start.line;
+        const receiver = node.field(RUBY_FIELDS.receiver);
+
+        // Construction: `Foo.new(...)` where `Foo` is a constant. Ruby's `new`
+        // is a class method that runs `initialize`; emit a construction call to
+        // the class so the constructor tier binds it and the builder threads the
+        // edge to `initialize`. Without this, `new` is dropped as noise and the
+        // instantiator never reaches the constructor body.
+        const recvText = receiver?.text();
+        if (callName === 'new' && recvText && /^[A-Z][A-Za-z0-9_]*$/.test(recvText)) {
+            if (!seenLines.has(`${recvText}:${line}`)) {
+                seenLines.add(`${recvText}:${line}`);
+                seenLines.add(`new:${line}`);
+                calls.push({ source: fp, callName: recvText, line, isConstruction: true });
+            }
+            continue;
+        }
+
         if (seenLines.has(`${callName}:${line}`)) {
             continue;
         }
         seenLines.add(`${callName}:${line}`);
 
         let resolveInClass: string | undefined;
-        const receiver = node.field(RUBY_FIELDS.receiver);
-        if (receiver?.text() === 'self') {
+        if (recvText === 'self') {
             const classNode = config.findEnclosingClass(node);
             resolveInClass = classNode?.field(RUBY_FIELDS.name)?.text();
         }

@@ -37,6 +37,12 @@ object Singleton {
 class Service(val repo: Repo) : Base(), Repo {
     @Inject lateinit var logger: Logger
 
+    val seed: String = make()
+
+    init {
+        repo.find()
+    }
+
     suspend fun run(x: Int, cb: (Int) -> Unit): String {
         val a = Foo()
         val b: Bar = make()

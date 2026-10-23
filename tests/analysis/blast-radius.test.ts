@@ -1097,3 +1097,105 @@ describe('computeBlastRadius', () => {
         expect(result.total_functions).toBe(3);
     });
 });
+
+describe('computeBlastRadius — direction & hub damping', () => {
+    // run() -> svc() -> helper()   (three files, a straight call chain)
+    const chain: GraphData = {
+        nodes: ['run', 'svc', 'helper'].map((n) => ({
+            kind: 'Function',
+            name: n,
+            qualified_name: `src/${n}.ts::${n}`,
+            file_path: `src/${n}.ts`,
+            line_start: 1,
+            line_end: 10,
+            language: 'typescript',
+            is_test: false,
+        })),
+        edges: [
+            {
+                kind: 'CALLS',
+                source_qualified: 'src/run.ts::run',
+                target_qualified: 'src/svc.ts::svc',
+                file_path: 'src/run.ts',
+                line: 2,
+                confidence: 0.9,
+            },
+            {
+                kind: 'CALLS',
+                source_qualified: 'src/svc.ts::svc',
+                target_qualified: 'src/helper.ts::helper',
+                file_path: 'src/svc.ts',
+                line: 2,
+                confidence: 0.9,
+            },
+        ],
+    } as GraphData;
+
+    const reached = (r: ReturnType<typeof computeBlastRadius>) =>
+        new Set(
+            Object.values(r.by_depth)
+                .flat()
+                .map((e) => e.qualified_name),
+        );
+
+    it('reverse (default) reaches callers only, not dependencies', () => {
+        const r = reached(computeBlastRadius(chain, ['src/svc.ts::svc'], 2));
+        expect(r.has('src/run.ts::run')).toBe(true); // caller — impacted
+        expect(r.has('src/helper.ts::helper')).toBe(false); // dependency — not in reverse
+    });
+
+    it('bidirectional also reaches dependencies (the coupling neighbourhood)', () => {
+        const r = reached(
+            computeBlastRadius(chain, ['src/svc.ts::svc'], 2, undefined, undefined, { direction: 'bidirectional' }),
+        );
+        expect(r.has('src/run.ts::run')).toBe(true); // caller
+        expect(r.has('src/helper.ts::helper')).toBe(true); // dependency, now reached
+    });
+
+    it('hub damping reaches a hub but does not expand through it', () => {
+        // seed -> hub -> {leaf0..leaf9}. Hub has fan-out 10.
+        const nodes = [
+            { name: 'seed' },
+            { name: 'hub' },
+            ...Array.from({ length: 10 }, (_, i) => ({ name: `leaf${i}` })),
+        ].map((n) => ({
+            kind: 'Function' as const,
+            name: n.name,
+            qualified_name: `src/${n.name}.ts::${n.name}`,
+            file_path: `src/${n.name}.ts`,
+            line_start: 1,
+            line_end: 10,
+            language: 'typescript',
+            is_test: false,
+        }));
+        const edges: any[] = [
+            {
+                kind: 'CALLS',
+                source_qualified: 'src/hub.ts::hub',
+                target_qualified: 'src/seed.ts::seed',
+                file_path: 'src/hub.ts',
+                line: 1,
+                confidence: 0.9,
+            },
+            ...Array.from({ length: 10 }, (_, i) => ({
+                kind: 'CALLS',
+                source_qualified: `src/leaf${i}.ts::leaf${i}`,
+                target_qualified: 'src/hub.ts::hub',
+                file_path: `src/leaf${i}.ts`,
+                line: 1,
+                confidence: 0.9,
+            })),
+        ];
+        const g = { nodes, edges } as GraphData;
+
+        const noDamp = reached(computeBlastRadius(g, ['src/seed.ts::seed'], 3));
+        expect(noDamp.has('src/hub.ts::hub')).toBe(true);
+        expect(noDamp.has('src/leaf0.ts::leaf0')).toBe(true); // reached through the hub
+
+        const damped = reached(
+            computeBlastRadius(g, ['src/seed.ts::seed'], 3, undefined, undefined, { hubThreshold: 5 }),
+        );
+        expect(damped.has('src/hub.ts::hub')).toBe(true); // hub still reached
+        expect(damped.has('src/leaf0.ts::leaf0')).toBe(false); // but not expanded through
+    });
+});

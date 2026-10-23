@@ -1,6 +1,6 @@
 import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
-import { type CallExtractionConfig, extractCalls } from '../../shared/extract-calls';
+import { type CallExtractionConfig, extractCalls, extractEventSites } from '../../shared/extract-calls';
 import { computeContentHash } from '../../shared/file-hash';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
@@ -33,6 +33,38 @@ import { TS_FIELDS, TS_KINDS } from './kinds';
 const EXPORT_RULES = { exportKeywords: [TS_KINDS.exportStatement, TS_KINDS.exportKeyword] } as const;
 const DECORATOR_KINDS = ['decorator'] as const;
 const THROW_KINDS = ['throw_statement'] as const;
+
+/**
+ * Pub/sub method names whose FIRST argument is a literal event channel. Emit
+ * side fires an event; listen side registers a handler. Kept deliberately tight
+ * (the well-known Node/NestJS/DOM surface) so a domain method that happens to be
+ * named `publish` with a non-string first arg is skipped — we only record a site
+ * when the first argument is actually a string literal. RxJS `subscribe` is
+ * intentionally absent: it takes an observer, not a channel name.
+ */
+const EVENT_EMIT_METHODS: ReadonlySet<string> = new Set(['emit', 'emitAsync', 'dispatch', 'publish']);
+const EVENT_LISTEN_METHODS: ReadonlySet<string> = new Set(['on', 'once', 'addEventListener']);
+
+/**
+ * Return the value of a string/template literal node, or undefined when the node
+ * isn't a plain literal (identifier, template with interpolation, etc). Strips
+ * the surrounding quotes/backticks. A template string with a substitution is
+ * rejected — we only match constant channel names.
+ */
+function stringLiteralValue(node: SgNode): string | undefined {
+    const kind = String(node.kind());
+    const text = node.text();
+    if (kind === 'string') {
+        return text.length >= 2 ? text.slice(1, -1) : undefined;
+    }
+    if (kind === 'template_string') {
+        if (text.includes('${')) {
+            return undefined; // interpolated — not a constant channel
+        }
+        return text.length >= 2 ? text.slice(1, -1) : undefined;
+    }
+    return undefined;
+}
 
 // Branch kinds for TS/JS cyclomatic complexity.
 // Notes on double-counting avoidance:
@@ -525,6 +557,37 @@ function extractCallsTS(rootNode: SgNode, fp: string, calls: RawCallSite[]): voi
             diField: field,
         });
     }
+
+    // Constructor calls: `new Foo(...)`. The grammar wraps these in a
+    // `new_expression`, which the generic `$CALLEE($$$ARGS)` pattern below does
+    // NOT match — so without this pass an instantiation produces no CALLS edge
+    // and the instantiator never lands in the constructor body's blast radius.
+    // We emit a plain name call to the class; the resolver binds it to the
+    // class node and the builder threads a parallel edge to the constructor.
+    for (const ne of rootNode.findAll({ rule: { kind: TS_KINDS.newExpression } })) {
+        const name = typeFromNewExpression(ne);
+        if (!name) {
+            continue;
+        }
+        const cons = ne.field(TS_FIELDS.constructor);
+        const r = (cons ?? ne).range().end;
+        calls.push({
+            source: fp,
+            callName: name,
+            line: r.line,
+            column: r.column,
+        });
+    }
+
+    // Event pub/sub sites — `bus.emit('user.created', …)` / `bus.on('user.created', …)`.
+    // Shared cross-language pass; TS supplies its method sets and a reader that
+    // also unwraps single-quote/backtick template literals (rejecting `${…}`).
+    extractEventSites(
+        rootNode,
+        fp,
+        { emitMethods: EVENT_EMIT_METHODS, listenMethods: EVENT_LISTEN_METHODS, stringValue: stringLiteralValue },
+        calls,
+    );
 
     // Direct calls + self/super detection via shared function
     extractCalls(rootNode, fp, TS_CALL_CONFIG, calls);

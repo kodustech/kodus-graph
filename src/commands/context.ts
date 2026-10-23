@@ -24,9 +24,14 @@ interface ContextOptions {
     out: string;
     minConfidence: number;
     maxDepth: number;
+    /** 'bidirectional' (default) computes the coupling neighbourhood; 'reverse' skips it. */
+    couplingDirection?: 'reverse' | 'bidirectional';
+    /** Hub-damping threshold for the coupling neighbourhood (default 15). */
+    hubThreshold?: number;
     format: 'json' | 'prompt' | 'xml';
     skipTests?: boolean;
     maxFunctions?: number;
+    maxCallees?: number;
     maxPromptChars?: number;
     /** Custom risk score weights/caps. Pass a file path (CLI) or an in-memory object (library). */
     riskConfig?: RiskConfig | string;
@@ -174,12 +179,15 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             skipTests: opts.skipTests,
             diffHunks,
             riskConfig: riskConfigResolved,
+            couplingDirection: opts.couplingDirection ?? 'bidirectional',
+            hubThreshold: opts.hubThreshold,
         });
 
         log.info('context: analysis done', {
             changedFunctions: output.analysis.changed_functions.length,
             diff: output.analysis.structural_diff.summary,
             blastRadius: output.analysis.blast_radius.total_functions,
+            coupling: output.analysis.coupling_neighbourhood?.total_functions ?? 0,
             risk: `${output.analysis.risk.level} (${output.analysis.risk.score})`,
             testGaps: output.analysis.test_gaps.length,
             affectedFlows: output.analysis.affected_flows.length,
@@ -199,6 +207,9 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             const fmtOpts: XmlFormatterOptions = {};
             if (opts.maxFunctions != null) {
                 fmtOpts.maxFunctions = opts.maxFunctions;
+            }
+            if (opts.maxCallees != null) {
+                fmtOpts.maxCalleesPerFunction = opts.maxCallees;
             }
             writeOutput(opts.out, formatXml(output, fmtOpts));
         } else {

@@ -13,5 +13,6 @@ dist/
 .mcp.json
 aura_brain
 .claude/
+.worktrees/
 # Single package manager: Bun. yarn.lock is intentionally not used.
 yarn.lock

@@ -1,5 +1,6 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { RawCallSite } from '../../graph/types';
+import { constructorTypeName } from '../../shared/extract-calls';
 import { registerCapabilities } from '../capabilities';
 import { computeCyclomatic } from '../complexity';
 import { registerDIHeuristics, registerExtractor, registerReceiverTypes } from '../engine';
@@ -443,6 +444,22 @@ export function extractCallsFromPHP(root: SgNode, fp: string, calls: RawCallSite
             column: r.column,
             ...(resolveInClass ? { resolveInClass } : {}),
         });
+    }
+
+    // ── object_creation_expression: new Foo() ──────────────────────────
+    // Emit a plain name call to the class so the resolver binds it to the
+    // class node and the builder threads a parallel edge to the constructor.
+    for (const node of root.findAll({ rule: { kind: PHP_KINDS.objectCreationExpression } })) {
+        const typeNode = node.children().find((c) => {
+            const k = c.kind();
+            return k === PHP_KINDS.name || k === PHP_KINDS.qualifiedName;
+        });
+        const name = constructorTypeName(typeNode?.text());
+        if (!name) {
+            continue;
+        }
+        const r = (typeNode ?? node).range().end;
+        calls.push({ source: fp, callName: name, line: r.line, column: r.column });
     }
 }
 

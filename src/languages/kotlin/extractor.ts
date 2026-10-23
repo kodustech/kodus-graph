@@ -365,6 +365,44 @@ export const kotlinExtractors: LanguageExtractors = {
                 is_exported: isExported(name, node, kotlinExportRules),
                 decorators: extractDecorators(node, [KOTLIN_KINDS.annotation]),
             });
+
+            // Synthesize a Constructor node for the primary constructor when the
+            // class body runs initialization calls — property initializers
+            // (`val x = helper()`) or `init { … }` blocks. Those calls execute at
+            // construction time but sit outside any function node, so without a
+            // constructor to own them the builder drops them (no enclosing
+            // function) and the instantiator never reaches them in the blast
+            // radius. Spanning the class range lets those body-level calls
+            // attribute here while real methods (higher line_start) still win.
+            const classBody = node.children().find((c) => c.kind() === KOTLIN_KINDS.classBody);
+            const initHost = classBody
+                ?.children()
+                .find(
+                    (c) =>
+                        (c.kind() === KOTLIN_KINDS.anonymousInitializer ||
+                            c.kind() === KOTLIN_KINDS.propertyDeclaration) &&
+                        c.findAll({ rule: { kind: KOTLIN_KINDS.callExpression } }).length > 0,
+                );
+            if (initHost) {
+                result.functions.push({
+                    name: '<init>',
+                    line_start: range.line_start,
+                    line_end: range.line_end,
+                    params: '()',
+                    returnType: '',
+                    kind: 'Constructor',
+                    ast_kind: String(node.kind()),
+                    className: name,
+                    modifiers: '',
+                    content_hash: computeContentHash(`${name}.<init>`),
+                    isTest: false,
+                    is_exported: isExported(name, node, kotlinExportRules),
+                    is_async: false,
+                    decorators: [],
+                    throws: [],
+                    complexity: 1,
+                });
+            }
         }
 
         // ── Classes (object_declaration) ────────────────────────────────

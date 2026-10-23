@@ -32,6 +32,191 @@ function makeFn(overrides: Partial<EnrichedFunction> & { qualified_name: string;
 }
 
 describe('formatXml', () => {
+    it('renders direct dependencies and gives capped caller slots to production code before tests', () => {
+        const graphData: GraphData = {
+            nodes: [
+                {
+                    kind: 'Function',
+                    name: 'changed',
+                    qualified_name: 'src/changed.ts::changed',
+                    file_path: 'src/changed.ts',
+                    line_start: 10,
+                    line_end: 20,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'productionHigh',
+                    qualified_name: 'src/production-high.ts::productionHigh',
+                    file_path: 'src/production-high.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'productionLow',
+                    qualified_name: 'src/production-low.ts::productionLow',
+                    file_path: 'src/production-low.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+                {
+                    kind: 'Test',
+                    name: 'changedTest',
+                    qualified_name: 'tests/changed.test.ts::changedTest',
+                    file_path: 'tests/changed.test.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: true,
+                },
+                {
+                    kind: 'Function',
+                    name: 'dependencyHigh',
+                    qualified_name: 'src/dependency-high.ts::dependencyHigh',
+                    file_path: 'src/dependency-high.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    params: '()',
+                    return_type: 'Result',
+                    is_test: false,
+                },
+                {
+                    kind: 'Function',
+                    name: 'dependencyLow',
+                    qualified_name: 'src/dependency-low.ts::dependencyLow',
+                    file_path: 'src/dependency-low.ts',
+                    line_start: 1,
+                    line_end: 5,
+                    language: 'typescript',
+                    is_test: false,
+                },
+            ],
+            edges: [
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'tests/changed.test.ts::changedTest',
+                    target_qualified: 'src/changed.ts::changed',
+                    file_path: 'tests/changed.test.ts',
+                    line: 3,
+                    confidence: 0.95,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/production-low.ts::productionLow',
+                    target_qualified: 'src/changed.ts::changed',
+                    file_path: 'src/production-low.ts',
+                    line: 3,
+                    confidence: 0.6,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/production-high.ts::productionHigh',
+                    target_qualified: 'src/changed.ts::changed',
+                    file_path: 'src/production-high.ts',
+                    line: 3,
+                    confidence: 0.9,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/changed.ts::changed',
+                    target_qualified: 'src/dependency-low.ts::dependencyLow',
+                    file_path: 'src/changed.ts',
+                    line: 14,
+                    confidence: 0.6,
+                },
+                {
+                    kind: 'CALLS',
+                    source_qualified: 'src/changed.ts::changed',
+                    target_qualified: 'src/dependency-high.ts::dependencyHigh',
+                    file_path: 'src/changed.ts',
+                    line: 12,
+                    confidence: 0.9,
+                    tier: 'receiver',
+                },
+            ],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: {
+                nodes: graphData.nodes.filter((node) => node.qualified_name !== 'src/changed.ts::changed'),
+                edges: [],
+            },
+            changedFiles: ['src/changed.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output, { maxCallersPerFunction: 2, maxCalleesPerFunction: 1 });
+
+        expect(xml).toContain('<Callees count="2">');
+        expect(xml).toContain(
+            '<Callee name="dependencyHigh" file="src/dependency-high.ts" signature="dependencyHigh -&gt; Result" confidence="0.90" tier="receiver" />',
+        );
+        expect(xml).not.toContain('name="dependencyLow"');
+        expect(xml).toContain('<!-- +1 callees -->');
+
+        expect(xml).toContain('name="productionHigh"');
+        expect(xml).toContain('name="productionLow"');
+        expect(xml).not.toContain('name="changedTest"');
+        expect(xml.indexOf('name="productionHigh"')).toBeLessThan(xml.indexOf('name="productionLow"'));
+    });
+
+    it('ranks helpers declared in a test file with the tests, not with production callers', () => {
+        // A helper such as `run()` in a spec file is a Function node with
+        // is_test=false; only the test cases themselves are Test nodes.
+        const fn = (name: string, file: string, kind: 'Function' | 'Test' = 'Function') => ({
+            kind,
+            name,
+            qualified_name: `${file}::${name}`,
+            file_path: file,
+            line_start: 1,
+            line_end: 5,
+            language: 'typescript',
+            is_test: kind === 'Test',
+        });
+        const call = (source: string, confidence: number) => ({
+            kind: 'CALLS' as const,
+            source_qualified: source,
+            target_qualified: 'src/changed.ts::changed',
+            file_path: source.split('::')[0],
+            line: 3,
+            confidence,
+        });
+        const graphData: GraphData = {
+            nodes: [
+                fn('changed', 'src/changed.ts'),
+                fn('run', 'src/changed.spec.ts'),
+                fn('splits the input', 'src/changed.spec.ts', 'Test'),
+                fn('production', 'src/production.ts'),
+            ],
+            edges: [call('src/changed.spec.ts::run', 0.95), call('src/production.ts::production', 0.6)],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: {
+                nodes: graphData.nodes.filter((node) => node.qualified_name !== 'src/changed.ts::changed'),
+                edges: [],
+            },
+            changedFiles: ['src/changed.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output, { maxCallersPerFunction: 1 });
+
+        expect(xml).toContain('name="production"');
+        expect(xml).not.toContain('name="run"');
+    });
+
     it('renders <Alternatives>/<Alt> children for low-confidence ambiguous callers', () => {
         const graphData: GraphData = {
             nodes: [

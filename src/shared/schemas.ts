@@ -36,6 +36,7 @@ export const graphEdgeSchema = z.object({
     confidence: z.number().optional(),
     alternatives: z.array(z.string()).optional(),
     tier: z.enum(['receiver', 'di', 'same', 'import', 'unique', 'ambiguous']).optional(),
+    provenance: z.literal('heuristic').optional(),
 });
 
 // ── Parse output metadata ──

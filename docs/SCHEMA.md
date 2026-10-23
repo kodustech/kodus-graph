@@ -393,8 +393,16 @@ arrive as the same assertion.
   <Callers count="1" untestedCount="1">
     <Caller name="..." file="tests/auth.test.ts" line="10" confidence="0.95" tier="receiver" />
   </Callers>
+  <Callees count="1">
+    <Callee name="loadSession" file="src/session.ts" signature="loadSession(id: string)" confidence="0.85" tier="same" />
+  </Callees>
 </ChangedFunction>
 ```
+
+`<Callees>` contains only local, resolved direct calls. Its entries are ordered
+by confidence and source location, capped at five per changed function by
+default; `context --format xml --max-callees <n>` changes that budget. A
+truncated list includes an XML comment with the omitted count.
 
 ---
 

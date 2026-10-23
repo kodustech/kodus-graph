@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync, rmSync } from 'fs';
+import { execSync } from 'child_process';
+import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { executeContext } from '../../src/commands/context';
 import { executeParse } from '../../src/commands/parse';
@@ -18,7 +19,6 @@ describe('executeContext', () => {
             all: true,
             out: parsePath,
         });
-
         await executeContext({
             repoDir: fixtureDir,
             files: ['src/auth.ts'],
@@ -129,5 +129,37 @@ describe('executeContext', () => {
 
         rmSync(parsePath, { force: true });
         rmSync(promptPath, { force: true });
+    });
+
+    it('forwards maxCallees to XML formatting', async () => {
+        const xmlPath = '/tmp/kodus-graph-test-context.xml';
+
+        await executeParse({
+            repoDir: fixtureDir,
+            all: true,
+            out: parsePath,
+        });
+        const baseline = JSON.parse(readFileSync(parsePath, 'utf-8'));
+        baseline.sha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+        writeFileSync(parsePath, JSON.stringify(baseline));
+
+        await executeContext({
+            repoDir: fixtureDir,
+            files: ['src/auth.ts'],
+            graph: parsePath,
+            out: xmlPath,
+            minConfidence: 0,
+            maxDepth: 3,
+            format: 'xml',
+            maxCallees: 0,
+        });
+
+        const xml = readFileSync(xmlPath, 'utf-8');
+        expect(xml).toContain('<Callees count="');
+        expect(xml).not.toContain('<Callee name=');
+        expect(xml).toContain('callees -->');
+
+        rmSync(parsePath, { force: true });
+        rmSync(xmlPath, { force: true });
     });
 });

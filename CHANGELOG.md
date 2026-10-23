@@ -5,9 +5,69 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2026-10-14
+
+### Added
+
+- **Direct local dependencies in XML review context.** Each changed function now
+  renders bounded `<Callees>` / `<Callee>` entries with the resolved file,
+  signature, confidence, and resolution tier. This gives review agents the
+  local behavior a change delegates to without expanding to whole files.
+- `context --format xml --max-callees <n>` to set the direct-dependency budget
+  per changed function (default: 5).
+
+- `parse --min-confidence <n>` leaves CALLS edges below `n` out of the graph
+  (default: keep all). `0.5` matches what `analyze` / `context` use; on Apache
+  Dubbo it takes the graph from 152 to 80 MB. Recorded as
+  `metadata.min_confidence` and applied again by `update`. TESTED_BY is derived
+  before the cut, so test coverage is unchanged.
+- `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
+  (`outline --dir` now skips git-ignored files by default, like `parse`).
+- `metadata.discovery` in the graph (schema **2.2**, additive) recording the
+  discovery settings `update` reuses. `gitignore_requested` is the policy
+  (`update` replays it); `respect_gitignore` is the outcome — whether git
+  actually produced the file list, false for a walk fallback (no work tree, or
+  git failing, e.g. "dubious ownership" on a CI mount). A one-off git failure
+  therefore doesn't pin the graph to the walk, and `update` warns whenever the
+  outcome changes between runs, so ignored paths are never added or dropped
+  silently. Walking a git checkout also logs a warning. The public
+  `parseMetadataSchema` validates the new field instead of stripping it.
+  A graph built with `parse --files` records the list, and `update` refreshes
+  exactly those files: it used to re-list the whole repository, widening the
+  graph and dropping any named file git ignores.
+
+### Changed
+
+- `context-of` now ignores CALLS edges below 0.5 for callers/callees, like
+  `analyze` and `context`; pass `--min-confidence 0` to see every edge.
+
+- The first `update` of a graph parsed before this release drops nodes from
+  git-ignored files (it now discovers files the way `parse` does). Use
+  `parse --no-gitignore` if you want ignored paths kept.
+- No manual step to upgrade a graph: the first `update` of a graph written
+  before this release (no `metadata.file_hashes` / `metadata.re_exports`)
+  re-parses every file once and records both, so it matches a fresh parse;
+  later updates are incremental again.
 
 ### Fixed
+
+- **Caller budget prioritization.** When caller slots are capped, production
+  callers are emitted before test callers. Ordering stays deterministic by
+  confidence and source location within each group. Helpers declared in a file
+  that holds test cases (a `run()` in a spec file) rank as test callers too:
+  they are not Test nodes themselves, and used to take slots ahead of
+  production code.
+
+- **Signature collapse never fired.** Sibling implementations were matched as
+  `file::Class::method`, but the parser emits `file::Class.method`, so
+  `REVIEW TOGETHER` / `<ReviewTogether>` never grouped them and the prompt's
+  "similar:" sibling hints never appeared. Both forms are now read.
+- PHP `new App\Foo()` / `new \App\Foo()` produced no construction edge: the
+  namespace separator was kept in the class name.
+- Count flags (`--hub-threshold`, `--max-depth`, `--max-callees`, `--limit`, …)
+  went through `parseInt`, so `--hub-threshold abc` silently turned hub damping
+  off and `1.5` / `-1` were accepted. They now reject anything but a
+  non-negative integer, like `--min-confidence`.
 
 - `update` now produces the same graph as a fresh `parse`. It re-parsed only
   the changed files and kept every other edge, so callers of a renamed or
@@ -65,40 +125,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a function's last line was missed, and one on the line just above it (a
   comment or annotation) marked the function changed.
 
+## [0.3.2] — 2026-07-27
+
+Two fixes diagnosed from a real Keycloak multi-module PR review trace.
+
+### Fixed
+
+- **False "unresolved" imports.** The context formatters flagged an import
+  `unresolved` whenever its target file had no parsed nodes — which, in a
+  changed-files slice with no seeded baseline, is nearly every cross-file import
+  (21 of ~26 false positives on the observed PR). Real repo dependencies read as
+  broken imports, undermining trust in the whole map. An import is now flagged
+  `unresolved` ONLY when its target file WAS parsed yet declares no matching
+  symbol (a genuine dead/barrel import); a target file that wasn't parsed is
+  treated as unknown, not unresolved.
+- **Java unqualified inherited calls.** An idiomatic `printFeatureDisabled()`
+  call (implicit `this`, no prefix) from a subclass resolved at the weak name
+  cascade (`unique`, 0.50) instead of walking the class hierarchy to the base
+  that declares it (`same`, 0.85) — mislabelling a correct edge as low
+  confidence. Unqualified Java calls now carry their enclosing class so the class
+  tier resolves them through inheritance. Safe for statically-imported methods
+  (the class tier misses and falls through to the cascade unchanged).
+
+## [0.3.1] — 2026-07-23
+
+Cross-file recall + review-context work. All additive — existing outputs and the
+tier distribution are unchanged.
+
 ### Added
 
-- `parse --min-confidence <n>` leaves CALLS edges below `n` out of the graph
-  (default: keep all). `0.5` matches what `analyze` / `context` use; on Apache
-  Dubbo it takes the graph from 152 to 80 MB. Recorded as
-  `metadata.min_confidence` and applied again by `update`. TESTED_BY is derived
-  before the cut, so test coverage is unchanged.
-- `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
-  (`outline --dir` now skips git-ignored files by default, like `parse`).
-- `metadata.discovery` in the graph (schema **2.2**, additive) recording the
-  discovery settings `update` reuses. `gitignore_requested` is the policy
-  (`update` replays it); `respect_gitignore` is the outcome — whether git
-  actually produced the file list, false for a walk fallback (no work tree, or
-  git failing, e.g. "dubious ownership" on a CI mount). A one-off git failure
-  therefore doesn't pin the graph to the walk, and `update` warns whenever the
-  outcome changes between runs, so ignored paths are never added or dropped
-  silently. Walking a git checkout also logs a warning. The public
-  `parseMetadataSchema` validates the new field instead of stripping it.
-  A graph built with `parse --files` records the list, and `update` refreshes
-  exactly those files: it used to re-list the whole repository, widening the
-  graph and dropping any named file git ignores.
+- **Coupling neighbourhood** in `context` ("REVIEW TOGETHER") — a second,
+  bidirectional + hub-damped blast radius answering "what else to review with
+  this change" (siblings + dependencies), distinct from the reverse blast radius
+  ("what breaks"). Opt-in in the library (default reverse), default on the CLI
+  via `--coupling-direction` / `--hub-threshold`. The risk score stays reverse
+  and never consumes it.
+- **Signature-collapse** in the context output — interchangeable sibling-method
+  implementations (grouped by shared base via `INHERITS`, never by name alone)
+  render as one `method ×N (ClassA, ClassB, …)` entry.
+- **Heuristic event-coupling edges** (`provenance: 'heuristic'`) — emitter→handler
+  pairs matched by literal channel name, which static resolution structurally
+  can't see (the callee is the generic `emit`/`on`, dropped as noise). TypeScript
+  (`emit`/`@OnEvent`/`.on`), Python (pyee-style), and Ruby
+  (`ActiveSupport::Notifications`). Low confidence, no tier — enters the blast
+  radius as a labelled guess without ever passing for a verified call.
 
-### Changed
+### Fixed
 
-- `context-of` now ignores CALLS edges below 0.5 for callers/callees, like
-  `analyze` and `context`; pass `--min-confidence 0` to see every edge.
-
-- The first `update` of a graph parsed before this release drops nodes from
-  git-ignored files (it now discovers files the way `parse` does). Use
-  `parse --no-gitignore` if you want ignored paths kept.
-- No manual step to upgrade a graph: the first `update` of a graph written
-  before this release (no `metadata.file_hashes` / `metadata.re_exports`)
-  re-parses every file once and records both, so it matches a fresh parse;
-  later updates are incremental again.
+- `context` no longer reports "0 changed" when `--graph` (a baseline built from
+  HEAD, required for accurate cross-file edges) is combined with `--diff`: the
+  diff hunks now SEED changed functions instead of only filtering them, so
+  passing the full graph never zeroes out the changed set.
 
 ## [0.3.0] — 2026-07-20
 

@@ -3,7 +3,9 @@ import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
+import { unresolvedImportCheck } from './import-resolution';
 import { computeFunctionRisk } from './prompt-formatter';
+import { groupInterchangeableImpls, renderImplClasses } from './signature-collapse';
 
 /** Short name from qualified_name (`file::Class::method` → `method`). */
 function shortName(qualifiedName: string): string {
@@ -13,11 +15,13 @@ function shortName(qualifiedName: string): string {
 export interface XmlFormatterOptions {
     maxFunctions?: number;
     maxCallersPerFunction?: number;
+    maxCalleesPerFunction?: number;
     maxCriticalPaths?: number;
 }
 
 const DEFAULT_MAX_FUNCTIONS = 15;
 const DEFAULT_MAX_CALLERS = 5;
+const DEFAULT_MAX_CALLEES = 5;
 const DEFAULT_MAX_CRITICAL_PATHS = 5;
 
 function escapeXml(str: string): string {
@@ -45,9 +49,12 @@ function escapeXml(str: string): string {
  * the edge, which is more actionable than a bare float; the number is kept for
  * anything that wants to threshold on it.
  */
-function resolutionAttrs(ref: { confidence: number; tier?: string }): string {
+function resolutionAttrs(ref: { confidence: number; tier?: string; provenance?: string }): string {
     const tier = ref.tier ? ` tier="${escapeXml(ref.tier)}"` : '';
-    return ` confidence="${ref.confidence.toFixed(2)}"${tier}`;
+    // Heuristic (event-channel) edges carry no tier; mark them so the XML
+    // consumer weighs them as a synthesized guess, not a resolved call.
+    const prov = ref.provenance === 'heuristic' ? ` provenance="heuristic"` : '';
+    return ` confidence="${ref.confidence.toFixed(2)}"${tier}${prov}`;
 }
 
 function classQualifiedName(qualifiedName: string, name: string, parentName?: string): string {
@@ -63,6 +70,44 @@ function classQualifiedName(qualifiedName: string, name: string, parentName?: st
     }
     const className = parts[parts.length - 2];
     return `${className}.${name}`;
+}
+
+function rankCallers(
+    callers: EnrichedFunction['callers'],
+    isTestByQualifiedName: Map<string, boolean>,
+    testFiles: Set<string>,
+): EnrichedFunction['callers'] {
+    const isTest = (c: EnrichedFunction['callers'][number]) =>
+        isTestByQualifiedName.get(c.qualified_name) === true || testFiles.has(c.file_path);
+    return [...callers].sort((a, b) => {
+        const testOrder = Number(isTest(a)) - Number(isTest(b));
+        if (testOrder !== 0) {
+            return testOrder;
+        }
+        const confidenceOrder = b.confidence - a.confidence;
+        if (confidenceOrder !== 0) {
+            return confidenceOrder;
+        }
+        const fileOrder = a.file_path.localeCompare(b.file_path);
+        if (fileOrder !== 0) {
+            return fileOrder;
+        }
+        return a.line - b.line || a.qualified_name.localeCompare(b.qualified_name);
+    });
+}
+
+function rankCallees(callees: EnrichedFunction['callees']): EnrichedFunction['callees'] {
+    return [...callees].sort((a, b) => {
+        const confidenceOrder = b.confidence - a.confidence;
+        if (confidenceOrder !== 0) {
+            return confidenceOrder;
+        }
+        const fileOrder = a.file_path.localeCompare(b.file_path);
+        if (fileOrder !== 0) {
+            return fileOrder;
+        }
+        return a.qualified_name.localeCompare(b.qualified_name);
+    });
 }
 
 // ── ReviewFocus generation ──
@@ -361,6 +406,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const { analysis } = output;
     const maxFunctions = opts?.maxFunctions ?? DEFAULT_MAX_FUNCTIONS;
     const maxCallers = opts?.maxCallersPerFunction ?? DEFAULT_MAX_CALLERS;
+    const maxCallees = opts?.maxCalleesPerFunction ?? DEFAULT_MAX_CALLEES;
     const maxPaths = opts?.maxCriticalPaths ?? DEFAULT_MAX_CRITICAL_PATHS;
 
     const changedUntested = analysis.changed_functions.filter((f) => !f.has_test_coverage).length;
@@ -382,6 +428,10 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const testedFileSet = new Set(
         testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
     );
+    const isTestByQualifiedName = new Map(output.graph.nodes.map((node) => [node.qualified_name, node.is_test]));
+    // Helpers declared next to the test cases (`run()` in a spec file) are not
+    // Test nodes; the file holding test cases is what marks them as test code.
+    const testFiles = new Set(output.graph.nodes.filter((node) => node.is_test).map((node) => node.file_path));
 
     // Sort by risk, take top N
     const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
@@ -516,7 +566,8 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             const untestedCallerCount = fn.callers.filter(
                 (c) => !testedFunctionSet.has(c.qualified_name) && !testedFileSet.has(c.file_path),
             ).length;
-            const shownCallers = fn.callers.slice(0, maxCallers);
+            const rankedCallers = rankCallers(fn.callers, isTestByQualifiedName, testFiles);
+            const shownCallers = rankedCallers.slice(0, maxCallers);
 
             lines.push(`    <Callers count="${fn.callers.length}" untestedCount="${untestedCallerCount}">`);
             for (const c of shownCallers) {
@@ -544,10 +595,27 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             }
             if (fn.callers.length > maxCallers) {
                 const remaining = fn.callers.length - maxCallers;
-                const uniqueFiles = new Set(fn.callers.slice(maxCallers).map((c) => c.file_path)).size;
+                const uniqueFiles = new Set(rankedCallers.slice(maxCallers).map((c) => c.file_path)).size;
                 lines.push(`      <!-- +${remaining} callers in ${uniqueFiles} files -->`);
             }
             lines.push('    </Callers>');
+        }
+
+        // Callees
+        if (fn.callees.length > 0) {
+            const rankedCallees = rankCallees(fn.callees);
+            const shownCallees = rankedCallees.slice(0, maxCallees);
+
+            lines.push(`    <Callees count="${fn.callees.length}">`);
+            for (const callee of shownCallees) {
+                lines.push(
+                    `      <Callee name="${escapeXml(callee.name)}" file="${escapeXml(callee.file_path)}" signature="${escapeXml(callee.signature)}"${resolutionAttrs(callee)} />`,
+                );
+            }
+            if (fn.callees.length > maxCallees) {
+                lines.push(`      <!-- +${fn.callees.length - maxCallees} callees -->`);
+            }
+            lines.push('    </Callees>');
         }
 
         lines.push('  </ChangedFunction>');
@@ -601,6 +669,85 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
         lines.push('  </Hierarchy>');
     }
 
+    // ── ReviewTogether (mirrors the prompt format's REVIEW TOGETHER section):
+    //    the bidirectional+hub coupling neighbourhood, minus what's already shown
+    //    as changed or in the reverse blast radius. Coupled, not necessarily
+    //    broken — "what else to open alongside this change".
+    if (analysis.coupling_neighbourhood) {
+        const alreadyShown = new Set<string>(analysis.changed_functions.map((f) => f.qualified_name));
+        for (const entries of Object.values(analysis.blast_radius.by_depth)) {
+            for (const e of entries) {
+                alreadyShown.add(e.qualified_name);
+            }
+        }
+        const novel = new Map<string, { conf: number; edge: string }>();
+        for (const entries of Object.values(analysis.coupling_neighbourhood.by_depth)) {
+            for (const e of entries) {
+                if (alreadyShown.has(e.qualified_name)) {
+                    continue;
+                }
+                const prev = novel.get(e.qualified_name);
+                if (!prev || e.accumulated_confidence > prev.conf) {
+                    novel.set(e.qualified_name, { conf: e.accumulated_confidence, edge: e.edge_kind });
+                }
+            }
+        }
+        if (novel.size > 0) {
+            const MAX_COUPLED = 12;
+            const ranked = [...novel.entries()].sort((a, b) => b[1].conf - a[1].conf);
+
+            // Signature-collapse interchangeable sibling-method impls (grouped by
+            // shared base class via INHERITS) into one <Coupled impls="…"> entry.
+            const { groups, grouped } = groupInterchangeableImpls(
+                ranked.map(([qn]) => qn),
+                output.graph.edges,
+            );
+            const groupByKey = new Map(groups.map((g) => [g.key, g]));
+            const memberToKey = new Map<string, string>();
+            for (const g of groups) {
+                for (const m of g.members) {
+                    memberToKey.set(m, g.key);
+                }
+            }
+
+            lines.push('');
+            lines.push(`  <ReviewTogether count="${novel.size}">`);
+            const emittedGroups = new Set<string>();
+            const consumed = new Set<string>();
+            let renderedCount = 0;
+            for (const [qn, meta] of ranked) {
+                if (renderedCount >= MAX_COUPLED) {
+                    break;
+                }
+                if (grouped.has(qn)) {
+                    const key = memberToKey.get(qn)!;
+                    if (emittedGroups.has(key)) {
+                        continue;
+                    }
+                    emittedGroups.add(key);
+                    const g = groupByKey.get(key)!;
+                    for (const m of g.members) {
+                        consumed.add(m);
+                    }
+                    lines.push(
+                        `    <Coupled name="${escapeXml(g.method)}" impls="${escapeXml(renderImplClasses(g))}" count="${g.members.length}" confidence="${meta.conf.toFixed(2)}" via="${meta.edge}" />`,
+                    );
+                } else {
+                    consumed.add(qn);
+                    lines.push(
+                        `    <Coupled name="${escapeXml(shortName(qn))}" confidence="${meta.conf.toFixed(2)}" via="${meta.edge}" />`,
+                    );
+                }
+                renderedCount++;
+            }
+            const remaining = ranked.length - consumed.size;
+            if (remaining > 0) {
+                lines.push(`    <!-- +${remaining} more -->`);
+            }
+            lines.push('  </ReviewTogether>');
+        }
+    }
+
     lines.push('</CallGraph>');
 
     return lines.join('\n');
@@ -634,7 +781,7 @@ function buildImportsEntries(output: ContextV2Output): ImportEntry[] {
             .filter((e) => e.kind === 'IMPORTS')
             .map((e) => `${e.source_qualified}→${e.target_qualified}`),
     );
-    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
+    const isUnresolved = unresolvedImportCheck(output.graph.nodes);
 
     const seen = new Set<string>();
     const entries: ImportEntry[] = [];
@@ -645,23 +792,11 @@ function buildImportsEntries(output: ContextV2Output): ImportEntry[] {
         }
         seen.add(dedupKey);
 
-        let targetExists = allNodes.has(edge.target_qualified);
-        if (!targetExists) {
-            const prefix = `${edge.target_qualified}::`;
-            for (const qn of allNodes) {
-                if (qn.startsWith(prefix)) {
-                    targetExists = true;
-                    break;
-                }
-            }
-        }
-
-        const key = `${edge.source_qualified}→${edge.target_qualified}`;
         entries.push({
             source: edge.file_path,
             target: edge.target_qualified,
-            isNew: newImportKeys.has(key),
-            unresolved: !targetExists,
+            isNew: newImportKeys.has(`${edge.source_qualified}→${edge.target_qualified}`),
+            unresolved: isUnresolved(edge.target_qualified),
         });
     }
     return entries;

@@ -105,6 +105,7 @@ export function enrichChangedFunctions(
                         line: edge.line,
                         confidence: edge.confidence ?? 1.0,
                         ...(edge.tier ? { tier: edge.tier } : {}),
+                        ...(edge.provenance ? { provenance: edge.provenance } : {}),
                         ...(edge.alternatives && edge.alternatives.length > 0
                             ? { alternatives: edge.alternatives }
                             : {}),
@@ -149,6 +150,7 @@ export function enrichChangedFunctions(
                     signature: `${name}${params}${ret}`,
                     confidence: edge.confidence ?? 1.0,
                     ...(edge.tier ? { tier: edge.tier } : {}),
+                    ...(edge.provenance ? { provenance: edge.provenance } : {}),
                 });
             }
 

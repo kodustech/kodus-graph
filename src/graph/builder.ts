@@ -198,6 +198,30 @@ export function buildGraphData(
         list.sort((a, b) => b.line_start - a.line_start);
     }
 
+    // Class → its constructor node(s). A `new X()` call resolves to the CLASS
+    // node (`file::X`), but the constructor's *body* calls hang off a separate
+    // constructor node (`file::X.X.constructor`). Without joining them, a
+    // reverse blast-radius walk from something the constructor calls stops at
+    // the constructor and never reaches the instantiator. We add a parallel
+    // CALLS edge from the caller to the constructor so instantiators are
+    // threaded into the constructor body's impact set. The class edge is kept
+    // (it still records the instantiation/type dependency). Languages with
+    // overloaded constructors get one entry per overload — `new X(args)` can't
+    // be disambiguated to a single overload here, so we connect to all.
+    const classConstructors = new Map<string, string[]>();
+    for (const node of nodes) {
+        if (!node.parent_name || !isConstructorNode(node)) {
+            continue;
+        }
+        const classQn = `${node.file_path}::${node.parent_name}`;
+        const list = classConstructors.get(classQn);
+        if (list) {
+            list.push(node.qualified_name);
+        } else {
+            classConstructors.set(classQn, [node.qualified_name]);
+        }
+    }
+
     // CALLS edges — resolve caller function from call line number
     for (const ce of callEdges) {
         // Skip calls to external packages (target file not in repo)
@@ -245,6 +269,135 @@ export function buildGraphData(
             ...(ce.tier ? { tier: ce.tier } : {}),
             ...(ce.alternatives && ce.alternatives.length > 0 ? { alternatives: ce.alternatives } : {}),
         });
+
+        // Instantiation: the call resolved to a class node that owns a
+        // constructor. Thread the caller into the constructor body's impact
+        // set with a parallel CALLS edge (see classConstructors above).
+        const constructors = classConstructors.get(ce.target);
+        if (constructors) {
+            for (const ctorQn of constructors) {
+                if (ctorQn === sourceQualified) {
+                    continue; // a constructor instantiating its own class — skip self-edge
+                }
+                // No `tier`: this is a derived edge, not a resolver decision.
+                // tier_distribution counts only tiered CALLS edges (see
+                // mergeTierDistribution), so leaving it off keeps the parse and
+                // update tier accounting consistent.
+                edges.push({
+                    kind: 'CALLS',
+                    source_qualified: sourceQualified,
+                    target_qualified: ctorQn,
+                    file_path: sourceFile,
+                    line: ce.line,
+                    confidence: ce.confidence,
+                });
+            }
+        }
+    }
+
+    // Event coupling (heuristic) — pair emit sites to listeners by exact channel
+    // name. The callee (`emit`/`on`) is generic noise the static resolver drops,
+    // and the real coupling lives in the literal channel string, which no
+    // name-based tier can see. We synthesize a CALLS edge emitter→handler tagged
+    // `provenance:'heuristic'` at a low confidence and NO tier, so it enters the
+    // blast radius as a labelled guess (recall up) without ever passing for a
+    // statically-verified call (precision preserved). Two listener sources:
+    //   (a) `@OnEvent('ch')` decorators on a method → the method IS the handler;
+    //   (b) `.on('ch', …)` call sites → the enclosing function is the handler.
+    const HEURISTIC_EVENT_CONFIDENCE = 0.5;
+    const enclosingFn = (file: string, line: number): string | undefined => {
+        for (const fn of functionsByFile.get(file) ?? []) {
+            if (line >= fn.line_start && line <= fn.line_end) {
+                return fn.qualified_name;
+            }
+        }
+        return undefined;
+    };
+
+    // channel → emitter function qualified name → emit-site line (for the edge,
+    // so a reviewer clicking the caller lands on the `.emit(...)` call).
+    const emittersByChannel = new Map<string, Map<string, number>>();
+    // channel → handler qualified names
+    const handlersByChannel = new Map<string, Set<string>>();
+    const addHandler = (channel: string, qn: string) => {
+        const set = handlersByChannel.get(channel);
+        if (set) {
+            set.add(qn);
+        } else {
+            handlersByChannel.set(channel, new Set([qn]));
+        }
+    };
+
+    for (const rc of raw.rawCalls) {
+        if (!rc.channel || !rc.eventRole) {
+            continue;
+        }
+        const fn = enclosingFn(rc.source, rc.line);
+        if (!fn) {
+            continue;
+        }
+        if (rc.eventRole === 'emit') {
+            const byFn = emittersByChannel.get(rc.channel);
+            if (byFn) {
+                if (!byFn.has(fn)) {
+                    byFn.set(fn, rc.line);
+                }
+            } else {
+                emittersByChannel.set(rc.channel, new Map([[fn, rc.line]]));
+            }
+        } else {
+            addHandler(rc.channel, fn);
+        }
+    }
+
+    // Listener handlers declared via decorator: `@OnEvent('ch')` (NestJS),
+    // `@OnEvent(['a','b'])`, `@EventPattern('ch')`, `@MessagePattern('ch')`.
+    // The decorated method is the real handler — cleaner than an enclosing fn.
+    const DECORATOR_CHANNEL_RE = /@(?:OnEvent|EventPattern|MessagePattern)\(\s*(.+?)\s*\)/s;
+    const CHANNEL_LITERAL_RE = /['"`]([^'"`]+)['"`]/g;
+    for (const node of nodes) {
+        if (!node.decorators || node.decorators.length === 0) {
+            continue;
+        }
+        for (const dec of node.decorators) {
+            const m = DECORATOR_CHANNEL_RE.exec(dec);
+            if (!m) {
+                continue;
+            }
+            for (const lit of m[1].matchAll(CHANNEL_LITERAL_RE)) {
+                addHandler(lit[1], node.qualified_name);
+            }
+        }
+    }
+
+    // Synthesize emitter→handler edges for channels present on BOTH sides.
+    const seenEventEdge = new Set<string>();
+    for (const [channel, emitters] of emittersByChannel) {
+        const handlers = handlersByChannel.get(channel);
+        if (!handlers) {
+            continue;
+        }
+        for (const [src, emitLine] of emitters) {
+            for (const tgt of handlers) {
+                if (src === tgt) {
+                    continue;
+                }
+                const key = `${src} ${tgt}`;
+                if (seenEventEdge.has(key)) {
+                    continue;
+                }
+                seenEventEdge.add(key);
+                edges.push({
+                    kind: 'CALLS',
+                    source_qualified: src,
+                    target_qualified: tgt,
+                    file_path: src.split('::')[0],
+                    line: emitLine,
+                    confidence: HEURISTIC_EVENT_CONFIDENCE,
+                    provenance: 'heuristic',
+                });
+            }
+        }
     }
 
     // IMPORTS edges — only emit resolved imports (skip external/unresolved packages)
@@ -351,4 +504,22 @@ export function buildGraphData(
  */
 function detectLang(file: string): string {
     return languageOfFile(file) ?? 'unknown';
+}
+
+/**
+ * Reserved constructor method names for languages that model the constructor
+ * as an ordinary method (kind 'Method') rather than a dedicated 'Constructor'
+ * node. All are language-reserved, so matching them can't collide with a
+ * user-defined method. Compared against the final `.`-segment of the node name
+ * so TS's `Class.constructor` also matches.
+ */
+const CONSTRUCTOR_METHOD_NAMES = new Set(['constructor', '__construct', '__init__', 'initialize']);
+
+/** True when a node represents a class constructor (any supported language). */
+function isConstructorNode(node: GraphNode): boolean {
+    if (node.kind === 'Constructor') {
+        return true;
+    }
+    const last = node.name.split('.').pop() ?? node.name;
+    return CONSTRUCTOR_METHOD_NAMES.has(last);
 }
