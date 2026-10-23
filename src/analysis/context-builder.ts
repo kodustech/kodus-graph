@@ -173,7 +173,7 @@ export function buildContextV2(opts: BuildContextV2Options): ContextV2Output {
         log.info('context: diff-hunk filter applied', {
             before,
             after: trulyChangedQN.size,
-            seeded: trulyChangedQN.size - before > 0 ? trulyChangedQN.size - before : 0,
+            seeded: Math.max(0, trulyChangedQN.size - before),
         });
     }
 
