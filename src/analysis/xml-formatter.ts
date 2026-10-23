@@ -14,11 +14,13 @@ function shortName(qualifiedName: string): string {
 export interface XmlFormatterOptions {
     maxFunctions?: number;
     maxCallersPerFunction?: number;
+    maxCalleesPerFunction?: number;
     maxCriticalPaths?: number;
 }
 
 const DEFAULT_MAX_FUNCTIONS = 15;
 const DEFAULT_MAX_CALLERS = 5;
+const DEFAULT_MAX_CALLEES = 5;
 const DEFAULT_MAX_CRITICAL_PATHS = 5;
 
 function escapeXml(str: string): string {
@@ -67,6 +69,43 @@ function classQualifiedName(qualifiedName: string, name: string, parentName?: st
     }
     const className = parts[parts.length - 2];
     return `${className}.${name}`;
+}
+
+function rankCallers(
+    callers: EnrichedFunction['callers'],
+    isTestByQualifiedName: Map<string, boolean>,
+): EnrichedFunction['callers'] {
+    return [...callers].sort((a, b) => {
+        const testOrder =
+            Number(isTestByQualifiedName.get(a.qualified_name) === true) -
+            Number(isTestByQualifiedName.get(b.qualified_name) === true);
+        if (testOrder !== 0) {
+            return testOrder;
+        }
+        const confidenceOrder = b.confidence - a.confidence;
+        if (confidenceOrder !== 0) {
+            return confidenceOrder;
+        }
+        const fileOrder = a.file_path.localeCompare(b.file_path);
+        if (fileOrder !== 0) {
+            return fileOrder;
+        }
+        return a.line - b.line || a.qualified_name.localeCompare(b.qualified_name);
+    });
+}
+
+function rankCallees(callees: EnrichedFunction['callees']): EnrichedFunction['callees'] {
+    return [...callees].sort((a, b) => {
+        const confidenceOrder = b.confidence - a.confidence;
+        if (confidenceOrder !== 0) {
+            return confidenceOrder;
+        }
+        const fileOrder = a.file_path.localeCompare(b.file_path);
+        if (fileOrder !== 0) {
+            return fileOrder;
+        }
+        return a.qualified_name.localeCompare(b.qualified_name);
+    });
 }
 
 // ── ReviewFocus generation ──
@@ -365,6 +404,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const { analysis } = output;
     const maxFunctions = opts?.maxFunctions ?? DEFAULT_MAX_FUNCTIONS;
     const maxCallers = opts?.maxCallersPerFunction ?? DEFAULT_MAX_CALLERS;
+    const maxCallees = opts?.maxCalleesPerFunction ?? DEFAULT_MAX_CALLEES;
     const maxPaths = opts?.maxCriticalPaths ?? DEFAULT_MAX_CRITICAL_PATHS;
 
     const changedUntested = analysis.changed_functions.filter((f) => !f.has_test_coverage).length;
@@ -386,6 +426,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
     const testedFileSet = new Set(
         testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
     );
+    const isTestByQualifiedName = new Map(output.graph.nodes.map((node) => [node.qualified_name, node.is_test]));
 
     // Sort by risk, take top N
     const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
@@ -520,7 +561,8 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             const untestedCallerCount = fn.callers.filter(
                 (c) => !testedFunctionSet.has(c.qualified_name) && !testedFileSet.has(c.file_path),
             ).length;
-            const shownCallers = fn.callers.slice(0, maxCallers);
+            const rankedCallers = rankCallers(fn.callers, isTestByQualifiedName);
+            const shownCallers = rankedCallers.slice(0, maxCallers);
 
             lines.push(`    <Callers count="${fn.callers.length}" untestedCount="${untestedCallerCount}">`);
             for (const c of shownCallers) {
@@ -548,10 +590,27 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             }
             if (fn.callers.length > maxCallers) {
                 const remaining = fn.callers.length - maxCallers;
-                const uniqueFiles = new Set(fn.callers.slice(maxCallers).map((c) => c.file_path)).size;
+                const uniqueFiles = new Set(rankedCallers.slice(maxCallers).map((c) => c.file_path)).size;
                 lines.push(`      <!-- +${remaining} callers in ${uniqueFiles} files -->`);
             }
             lines.push('    </Callers>');
+        }
+
+        // Callees
+        if (fn.callees.length > 0) {
+            const rankedCallees = rankCallees(fn.callees);
+            const shownCallees = rankedCallees.slice(0, maxCallees);
+
+            lines.push(`    <Callees count="${fn.callees.length}">`);
+            for (const callee of shownCallees) {
+                lines.push(
+                    `      <Callee name="${escapeXml(callee.name)}" file="${escapeXml(callee.file_path)}" signature="${escapeXml(callee.signature)}"${resolutionAttrs(callee)} />`,
+                );
+            }
+            if (fn.callees.length > maxCallees) {
+                lines.push(`      <!-- +${fn.callees.length - maxCallees} callees -->`);
+            }
+            lines.push('    </Callees>');
         }
 
         lines.push('  </ChangedFunction>');

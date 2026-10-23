@@ -728,6 +728,7 @@ This gives the AI agent full understanding of:
 | `--min-confidence 0.5` | Default | Filters out ambiguous calls (0.30 confidence) from blast radius |
 | `--max-depth 3` | Default | 3 levels of callers is usually enough; deeper adds noise |
 | `--max-functions 30` | Prompt format | Limits LLM context size |
+| `--max-callees 5` | XML format | Limits direct local dependencies per changed function |
 | `--max-prompt-chars 20000` | Prompt format | Prevents token overflow |
 | `--format prompt` | For LLMs | Generates human-readable text instead of JSON |
 

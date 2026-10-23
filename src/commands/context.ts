@@ -30,6 +30,7 @@ interface ContextOptions {
     format: 'json' | 'prompt' | 'xml';
     skipTests?: boolean;
     maxFunctions?: number;
+    maxCallees?: number;
     maxPromptChars?: number;
     /** Custom risk score weights/caps. Pass a file path (CLI) or an in-memory object (library). */
     riskConfig?: RiskConfig | string;
@@ -205,6 +206,9 @@ export async function executeContext(opts: ContextOptions): Promise<void> {
             const fmtOpts: XmlFormatterOptions = {};
             if (opts.maxFunctions != null) {
                 fmtOpts.maxFunctions = opts.maxFunctions;
+            }
+            if (opts.maxCallees != null) {
+                fmtOpts.maxCalleesPerFunction = opts.maxCallees;
             }
             writeOutput(opts.out, formatXml(output, fmtOpts));
         } else {
