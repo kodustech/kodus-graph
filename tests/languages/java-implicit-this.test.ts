@@ -49,7 +49,6 @@ public abstract class AbstractCmd {
 public class SubCmd extends AbstractCmd {
     public void run() {
         printDisabled();
-        this.printDisabled();
     }
 }`,
         });
@@ -57,8 +56,9 @@ public class SubCmd extends AbstractCmd {
             const calls = edges.filter(
                 (e) => e.kind === 'CALLS' && e.target_qualified.endsWith('AbstractCmd.printDisabled'),
             );
-            // Both the implicit-this and explicit-this call resolve to the base method.
-            expect(calls.length).toBeGreaterThanOrEqual(1);
+            // Only the implicit-this call is in the source: an explicit `this.` call
+            // would produce the same edge and pass this test on its own.
+            expect(calls).toHaveLength(1);
             for (const c of calls) {
                 expect(c.source_qualified).toContain('SubCmd.run');
                 // The whole point: NOT the weak unique tier.
