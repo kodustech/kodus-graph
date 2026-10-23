@@ -53,7 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Caller budget prioritization.** When caller slots are capped, production
   callers are emitted before test callers. Ordering stays deterministic by
-  confidence and source location within each group.
+  confidence and source location within each group. Helpers declared in a file
+  that holds test cases (a `run()` in a spec file) rank as test callers too:
+  they are not Test nodes themselves, and used to take slots ahead of
+  production code.
 
 - `update` now produces the same graph as a fresh `parse`. It re-parsed only
   the changed files and kept every other edge, so callers of a renamed or

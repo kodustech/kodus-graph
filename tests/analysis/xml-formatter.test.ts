@@ -169,6 +169,54 @@ describe('formatXml', () => {
         expect(xml.indexOf('name="productionHigh"')).toBeLessThan(xml.indexOf('name="productionLow"'));
     });
 
+    it('ranks helpers declared in a test file with the tests, not with production callers', () => {
+        // A helper such as `run()` in a spec file is a Function node with
+        // is_test=false; only the test cases themselves are Test nodes.
+        const fn = (name: string, file: string, kind: 'Function' | 'Test' = 'Function') => ({
+            kind,
+            name,
+            qualified_name: `${file}::${name}`,
+            file_path: file,
+            line_start: 1,
+            line_end: 5,
+            language: 'typescript',
+            is_test: kind === 'Test',
+        });
+        const call = (source: string, confidence: number) => ({
+            kind: 'CALLS' as const,
+            source_qualified: source,
+            target_qualified: 'src/changed.ts::changed',
+            file_path: source.split('::')[0],
+            line: 3,
+            confidence,
+        });
+        const graphData: GraphData = {
+            nodes: [
+                fn('changed', 'src/changed.ts'),
+                fn('run', 'src/changed.spec.ts'),
+                fn('splits the input', 'src/changed.spec.ts', 'Test'),
+                fn('production', 'src/production.ts'),
+            ],
+            edges: [call('src/changed.spec.ts::run', 0.95), call('src/production.ts::production', 0.6)],
+        };
+
+        const output = buildContextV2({
+            mergedGraph: graphData,
+            oldGraph: {
+                nodes: graphData.nodes.filter((node) => node.qualified_name !== 'src/changed.ts::changed'),
+                edges: [],
+            },
+            changedFiles: ['src/changed.ts'],
+            minConfidence: 0.5,
+            maxDepth: 3,
+        });
+
+        const xml = formatXml(output, { maxCallersPerFunction: 1 });
+
+        expect(xml).toContain('name="production"');
+        expect(xml).not.toContain('name="run"');
+    });
+
     it('renders <Alternatives>/<Alt> children for low-confidence ambiguous callers', () => {
         const graphData: GraphData = {
             nodes: [

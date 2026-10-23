@@ -74,11 +74,12 @@ function classQualifiedName(qualifiedName: string, name: string, parentName?: st
 function rankCallers(
     callers: EnrichedFunction['callers'],
     isTestByQualifiedName: Map<string, boolean>,
+    testFiles: Set<string>,
 ): EnrichedFunction['callers'] {
+    const isTest = (c: EnrichedFunction['callers'][number]) =>
+        isTestByQualifiedName.get(c.qualified_name) === true || testFiles.has(c.file_path);
     return [...callers].sort((a, b) => {
-        const testOrder =
-            Number(isTestByQualifiedName.get(a.qualified_name) === true) -
-            Number(isTestByQualifiedName.get(b.qualified_name) === true);
+        const testOrder = Number(isTest(a)) - Number(isTest(b));
         if (testOrder !== 0) {
             return testOrder;
         }
@@ -427,6 +428,9 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
         testedByEdges.filter((e) => !e.source_qualified.includes('::')).map((e) => e.source_qualified),
     );
     const isTestByQualifiedName = new Map(output.graph.nodes.map((node) => [node.qualified_name, node.is_test]));
+    // Helpers declared next to the test cases (`run()` in a spec file) are not
+    // Test nodes; the file holding test cases is what marks them as test code.
+    const testFiles = new Set(output.graph.nodes.filter((node) => node.is_test).map((node) => node.file_path));
 
     // Sort by risk, take top N
     const sorted = [...analysis.changed_functions].sort((a, b) => computeFunctionRisk(b) - computeFunctionRisk(a));
@@ -561,7 +565,7 @@ export function formatXml(output: ContextV2Output, opts?: XmlFormatterOptions): 
             const untestedCallerCount = fn.callers.filter(
                 (c) => !testedFunctionSet.has(c.qualified_name) && !testedFileSet.has(c.file_path),
             ).length;
-            const rankedCallers = rankCallers(fn.callers, isTestByQualifiedName);
+            const rankedCallers = rankCallers(fn.callers, isTestByQualifiedName, testFiles);
             const shownCallers = rankedCallers.slice(0, maxCallers);
 
             lines.push(`    <Callers count="${fn.callers.length}" untestedCount="${untestedCallerCount}">`);
