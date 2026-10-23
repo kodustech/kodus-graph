@@ -5,7 +5,8 @@ import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
-import { groupInterchangeableImpls, renderImplClasses } from './signature-collapse';
+import { unresolvedImportCheck } from './import-resolution';
+import { groupInterchangeableImpls, renderImplClasses, splitMethod } from './signature-collapse';
 
 export interface PromptFormatterOptions {
     /** Max functions to include in CHANGED section (default: 30). */
@@ -482,17 +483,15 @@ function shortName(qualifiedName: string): string {
 
 /**
  * Build class-qualified signature for methods.
- * "file::Class::method" + "method(params) -> ret" → "Class.method(params) -> ret"
+ * "file::Class.method" + "method(params) -> ret" → "Class.method(params) -> ret"
  * For top-level functions ("file::func"), returns signature as-is.
- * Language-agnostic: works for any language since qualified_name always uses "::" separator.
  */
 function classQualifiedSignature(qualifiedName: string, signature: string): string {
-    const parts = qualifiedName.split('::');
-    if (parts.length < 3) {
-        return signature; // top-level function, no class
+    const split = splitMethod(qualifiedName);
+    if (!split || signature.startsWith(`${split.className}.`)) {
+        return signature;
     }
-    const className = parts[parts.length - 2];
-    return `${className}.${signature}`;
+    return `${split.className}.${signature}`;
 }
 
 /**
@@ -527,14 +526,12 @@ function buildSiblingMap(
     const changedQNs = new Set(analysis.changed_functions.map((f) => f.qualified_name));
 
     for (const fn of analysis.changed_functions) {
-        // Extract class name from qualified_name (e.g. "file::Class::method" → "file::Class")
-        const parts = fn.qualified_name.split('::');
-        if (parts.length < 3) {
-            continue; // need at least file::class::method
+        const split = splitMethod(fn.qualified_name);
+        if (!split) {
+            continue; // a free function has no class
         }
-
-        const methodName = parts[parts.length - 1];
-        const className = parts.slice(0, -1).join('::');
+        const methodName = split.method;
+        const className = split.classQN;
 
         // Find what this class extends (from INHERITS edges)
         const parentEdge = output.graph.edges.find((e) => e.kind === 'INHERITS' && e.source_qualified === className);
@@ -551,9 +548,11 @@ function buildSiblingMap(
             }
 
             // Look for same method name in sibling class
-            const siblingMethodQN = `${siblingClass}::${methodName}`;
+            const siblingMethodQN = [`${siblingClass}.${methodName}`, `${siblingClass}::${methodName}`].find((qn) =>
+                nodeByQN.has(qn),
+            );
             // Don't list if the sibling is also in changed functions (it's already shown)
-            if (changedQNs.has(siblingMethodQN)) {
+            if (!siblingMethodQN || changedQNs.has(siblingMethodQN)) {
                 continue;
             }
 
@@ -597,14 +596,7 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
             .map((e) => `${e.source_qualified}→${e.target_qualified}`),
     );
 
-    // Set of all node qualified names — to detect unresolved targets
-    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
-    // Files we actually parsed (≥1 node). An import target whose file wasn't
-    // parsed (cross-slice, or no baseline seeded) is a real repo dependency we
-    // just can't see the symbols of — NOT unresolved. Only flag unresolved when
-    // the target file WAS parsed yet declares no matching symbol. Without this a
-    // no-baseline slice floods the section with false "UNRESOLVED" (trust-killing).
-    const parsedFiles = new Set(output.graph.nodes.map((n) => n.file_path));
+    const isUnresolved = unresolvedImportCheck(output.graph.nodes);
 
     // Group by source file
     const byFile = new Map<string, typeof importEdges>();
@@ -635,26 +627,8 @@ function buildImportsSection(output: ContextV2Output, analysis: ContextV2Output[
                 tags.push('NEW');
             }
 
-            // Unresolved only when we PARSED the target file yet found no
-            // matching symbol (genuine dead/barrel import). A target file that
-            // wasn't parsed (cross-slice, no baseline) is unknown — never flag it.
-            const targetFile = edge.target_qualified.includes('::')
-                ? edge.target_qualified.split('::')[0]
-                : edge.target_qualified;
-            if (parsedFiles.has(targetFile)) {
-                let targetExists = allNodes.has(edge.target_qualified);
-                if (!targetExists) {
-                    const prefix = `${edge.target_qualified}::`;
-                    for (const qn of allNodes) {
-                        if (qn.startsWith(prefix)) {
-                            targetExists = true;
-                            break;
-                        }
-                    }
-                }
-                if (!targetExists) {
-                    tags.push('⚠ UNRESOLVED');
-                }
+            if (isUnresolved(edge.target_qualified)) {
+                tags.push('⚠ UNRESOLVED');
             }
 
             const tagStr = tags.length > 0 ? ` (${tags.join(', ')})` : '';

@@ -58,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they are not Test nodes themselves, and used to take slots ahead of
   production code.
 
+- **Signature collapse never fired.** Sibling implementations were matched as
+  `file::Class::method`, but the parser emits `file::Class.method`, so
+  `REVIEW TOGETHER` / `<ReviewTogether>` never grouped them and the prompt's
+  "similar:" sibling hints never appeared. Both forms are now read.
+- PHP `new App\Foo()` / `new \App\Foo()` produced no construction edge: the
+  namespace separator was kept in the class name.
+- Count flags (`--hub-threshold`, `--max-depth`, `--max-callees`, `--limit`, …)
+  went through `parseInt`, so `--hub-threshold abc` silently turned hub damping
+  off and `1.5` / `-1` were accepted. They now reject anything but a
+  non-negative integer, like `--min-confidence`.
+
 - `update` now produces the same graph as a fresh `parse`. It re-parsed only
   the changed files and kept every other edge, so callers of a renamed or
   deleted symbol kept pointing at nothing and a call to a newly defined

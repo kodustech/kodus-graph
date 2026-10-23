@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { groupInterchangeableImpls, renderImplClasses } from '../../src/analysis/signature-collapse';
-import type { GraphEdge } from '../../src/graph/types';
+import { executeParse } from '../../src/commands/parse';
+import type { GraphData, GraphEdge } from '../../src/graph/types';
+
+// Import to trigger language registration.
+import '../../src/parser/languages';
 
 /** INHERITS edge: source (child) extends target (base). */
 function inherits(child: string, base: string): GraphEdge {
@@ -14,6 +21,35 @@ function inherits(child: string, base: string): GraphEdge {
 }
 
 describe('groupInterchangeableImpls', () => {
+    it('collapses the method names the parser actually emits (file::Class.method)', async () => {
+        const tmp = mkdtempSync(join(tmpdir(), 'kodus-graph-collapse-'));
+        try {
+            writeFileSync(
+                join(tmp, 'paginators.ts'),
+                [
+                    'export class BasePaginator { getResult() { return 0; } }',
+                    'export class PaginatorA extends BasePaginator { getResult() { return 1; } }',
+                    'export class PaginatorB extends BasePaginator { getResult() { return 2; } }',
+                ].join('\n'),
+            );
+            const outPath = join(tmp, 'graph.json');
+            await executeParse({ repoDir: tmp, all: true, out: outPath });
+            const graph: GraphData = JSON.parse(readFileSync(outPath, 'utf-8'));
+            const qns = graph.nodes
+                .filter((n) => n.kind === 'Method' && /Paginator[AB]/.test(n.qualified_name))
+                .map((n) => n.qualified_name);
+            expect(qns).toHaveLength(2);
+
+            const { groups } = groupInterchangeableImpls(qns, graph.edges);
+
+            expect(groups).toHaveLength(1);
+            expect(groups[0].method).toBe('getResult');
+            expect(renderImplClasses(groups[0])).toBe('PaginatorA, PaginatorB');
+        } finally {
+            rmSync(tmp, { recursive: true, force: true });
+        }
+    });
+
     it('collapses same-named methods across siblings of a shared base', () => {
         const edges = [
             inherits('src/a.ts::PaginatorA', 'src/base.ts::BasePaginator'),

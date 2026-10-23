@@ -3,6 +3,7 @@ import { MAX_ALTERNATIVES_RENDERED } from './constants';
 import type { ContextV2Output } from './context-builder';
 import { renderParamsDiff, renderReturnTypeDiff } from './contract-diff-render';
 import type { ContractDiff } from './diff';
+import { unresolvedImportCheck } from './import-resolution';
 import { computeFunctionRisk } from './prompt-formatter';
 import { groupInterchangeableImpls, renderImplClasses } from './signature-collapse';
 
@@ -780,16 +781,7 @@ function buildImportsEntries(output: ContextV2Output): ImportEntry[] {
             .filter((e) => e.kind === 'IMPORTS')
             .map((e) => `${e.source_qualified}→${e.target_qualified}`),
     );
-    const allNodes = new Set(output.graph.nodes.map((n) => n.qualified_name));
-    // Files we actually parsed (have ≥1 node). An import whose TARGET file was
-    // not parsed — outside the changed-file slice, or the DB baseline wasn't
-    // seeded — is a real repo dependency we simply can't see the symbols of, NOT
-    // a broken/unresolved import. Flag `unresolved` ONLY when we parsed the
-    // target file yet found no matching symbol (a genuine barrel-follow / dead
-    // import). Without this gate a slice with no baseline marks nearly every
-    // cross-file import unresolved — trust-killing noise (observed on a real
-    // Keycloak multi-module PR: 21 false "unresolved" out of ~26 imports).
-    const parsedFiles = new Set(output.graph.nodes.map((n) => n.file_path));
+    const isUnresolved = unresolvedImportCheck(output.graph.nodes);
 
     const seen = new Set<string>();
     const entries: ImportEntry[] = [];
@@ -804,30 +796,8 @@ function buildImportsEntries(output: ContextV2Output): ImportEntry[] {
             source: edge.file_path,
             target: edge.target_qualified,
             isNew: newImportKeys.has(`${edge.source_qualified}→${edge.target_qualified}`),
-            unresolved: isImportUnresolved(edge.target_qualified, parsedFiles, allNodes),
+            unresolved: isUnresolved(edge.target_qualified),
         });
     }
     return entries;
-}
-
-/**
- * An import is `unresolved` only when its target file WAS parsed but declares no
- * matching symbol. A target whose file wasn't parsed (cross-slice, no baseline)
- * is "unknown", not unresolved — we don't claim what we didn't look at.
- */
-function isImportUnresolved(targetQualified: string, parsedFiles: Set<string>, allNodes: Set<string>): boolean {
-    const targetFile = targetQualified.includes('::') ? targetQualified.split('::')[0] : targetQualified;
-    if (!parsedFiles.has(targetFile)) {
-        return false; // file not in this graph — unknown, don't flag
-    }
-    if (allNodes.has(targetQualified)) {
-        return false;
-    }
-    const prefix = `${targetQualified}::`;
-    for (const qn of allNodes) {
-        if (qn.startsWith(prefix)) {
-            return false;
-        }
-    }
-    return true;
 }

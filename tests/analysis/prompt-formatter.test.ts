@@ -270,7 +270,8 @@ describe('formatPrompt', () => {
         expect(text).not.toContain('CHANGED:');
     });
 
-    it('should show similar sibling methods when inheritance exists', () => {
+    // The parser emits `file::Class.method`; `file::Class::method` is the older form.
+    it.each(['.', '::'])('should show similar sibling methods when inheritance exists (method QN "%s")', (sep) => {
         // Sibling class is in a DIFFERENT file (not changed) — this is the real scenario:
         // OptimizedPaginator.getItemKey changed, DateTimePaginator.getItemKey exists in base graph
         const graphWithSiblings: GraphData = {
@@ -300,7 +301,7 @@ describe('formatPrompt', () => {
                 {
                     kind: 'Method',
                     name: 'OptimizedPaginator.getItemKey',
-                    qualified_name: 'src/optimized.ts::OptimizedPaginator::getItemKey',
+                    qualified_name: `src/optimized.ts::OptimizedPaginator${sep}getItemKey`,
                     file_path: 'src/optimized.ts',
                     line_start: 30,
                     line_end: 40,
@@ -323,7 +324,7 @@ describe('formatPrompt', () => {
                 {
                     kind: 'Method',
                     name: 'DateTimePaginator.getItemKey',
-                    qualified_name: 'src/datetime.ts::DateTimePaginator::getItemKey',
+                    qualified_name: `src/datetime.ts::DateTimePaginator${sep}getItemKey`,
                     file_path: 'src/datetime.ts',
                     line_start: 30,
                     line_end: 40,

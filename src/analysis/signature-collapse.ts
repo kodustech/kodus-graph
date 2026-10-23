@@ -12,15 +12,29 @@ export interface SiblingImplGroup {
     key: string;
     /** Short method name shared by every member. */
     method: string;
-    /** Member method qualified names (`file::Class::method`), in input order. */
+    /** Member method qualified names (`file::Class.method`), in input order. */
     members: string[];
     /** Short class names of the members, in the same order as `members`. */
     classNames: string[];
 }
 
-/** Short name from a qualified name (`file::Class::method` → `method`). */
-function lastSegment(qualifiedName: string): string {
-    return qualifiedName.split('::').pop() || qualifiedName;
+/**
+ * Split a method QN into its declaring class QN, class short name and method.
+ * The parser emits `file::Class.method` (src/languages/engine.ts); the older
+ * `file::Class::method` form is accepted too. Returns null for a free function.
+ */
+export function splitMethod(qn: string): { classQN: string; className: string; method: string } | null {
+    const parts = qn.split('::');
+    const last = parts[parts.length - 1];
+    const dot = last.lastIndexOf('.');
+    if (dot > 0) {
+        const className = last.slice(0, dot);
+        return { classQN: [...parts.slice(0, -1), className].join('::'), className, method: last.slice(dot + 1) };
+    }
+    if (parts.length >= 3) {
+        return { classQN: parts.slice(0, -1).join('::'), className: parts[parts.length - 2], method: last };
+    }
+    return null;
 }
 
 /**
@@ -56,24 +70,24 @@ export function groupInterchangeableImpls(
 
     // Assign each method QN to exactly one group key (first parent + method).
     const byKey = new Map<string, string[]>();
+    const methodByKey = new Map<string, string>();
     for (const qn of qns) {
-        const parts = qn.split('::');
-        if (parts.length < 3) {
-            continue; // need file::Class::method
+        const split = splitMethod(qn);
+        if (!split) {
+            continue; // a free function has no class to share a base through
         }
-        const method = parts[parts.length - 1];
-        const className = parts.slice(0, -1).join('::');
-        const ps = parents.get(className);
+        const ps = parents.get(split.classQN);
         if (!ps || ps.length === 0) {
             continue;
         }
-        const key = `${ps[0]}::${method}`;
+        const key = `${ps[0]}::${split.method}`;
         const list = byKey.get(key);
         if (list) {
             list.push(qn);
         } else {
             byKey.set(key, [qn]);
         }
+        methodByKey.set(key, split.method);
     }
 
     const groups: SiblingImplGroup[] = [];
@@ -85,13 +99,9 @@ export function groupInterchangeableImpls(
         }
         groups.push({
             key,
-            method: lastSegment(key),
+            method: methodByKey.get(key) ?? key,
             members,
-            // Class short-name = second-to-last segment of `file::Class::method`.
-            classNames: members.map((m) => {
-                const parts = m.split('::');
-                return parts[parts.length - 2] ?? lastSegment(m);
-            }),
+            classNames: members.map((m) => splitMethod(m)?.className ?? m),
         });
         for (const m of members) {
             grouped.add(m);
