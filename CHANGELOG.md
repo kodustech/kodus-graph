@@ -5,7 +5,23 @@ All notable changes to kodus-graph are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2026-10-23
+
+### Added
+
+- **Direct local dependencies in XML review context.** Each changed function now
+  renders bounded `<Callees>` / `<Callee>` entries with the resolved file,
+  signature, confidence, and resolution tier. This gives review agents the
+  local behavior a change delegates to without expanding to whole files.
+- `context --format xml --max-callees <n>` to set the direct-dependency budget
+  per changed function (default: 5).
+
+### Fixed
+
+- **Caller budget prioritization.** When caller slots are capped, production
+  callers are emitted before test callers. Ordering stays deterministic by
+  confidence and source location within each group.
+
 
 ### Fixed
 

@@ -119,6 +119,9 @@ program
     .option('--format <type>', 'Output format: json, prompt, or xml', 'json')
     .option('--skip-tests', 'Skip test detection (no Test nodes, TESTED_BY edges, or test gaps)')
     .option('--max-functions <n>', 'Max changed functions in prompt output (default: 30)', (v) => parseInt(v, 10))
+    .option('--max-callees <n>', 'Max direct callees per changed function in XML output (default: 5)', (v) =>
+        parseInt(v, 10),
+    )
     .option(
         '--max-prompt-chars <n>',
         'Max total prompt chars — truncates less important sections first (default: 20000)',
@@ -146,6 +149,7 @@ program
             format: opts.format,
             skipTests: opts.skipTests ?? false,
             maxFunctions: opts.maxFunctions,
+            maxCallees: opts.maxCallees,
             maxPromptChars: opts.maxPromptChars,
             riskConfig: opts.riskConfig,
         });
