@@ -158,6 +158,25 @@ describe('constructor instantiation edges', () => {
         expect(c).toContainEqual(['svc.php::run', 'svc.php::Ledger.__construct']);
     });
 
+    it.each(['App\\Ledger', '\\App\\Ledger'])(
+        'PHP `new %s()` with a namespace still threads to `__construct`',
+        async (name) => {
+            const edges = await edgesFor(
+                'svc.php',
+                [
+                    '<?php',
+                    'namespace App;',
+                    'class Ledger {',
+                    '    public function __construct($p) { }',
+                    '}',
+                    `function run() { return new ${name}("/x"); }`,
+                    '',
+                ].join('\n'),
+            );
+            expect(calls(edges)).toContainEqual(['svc.php::run', 'svc.php::Ledger.__construct']);
+        },
+    );
+
     it('keeps the class edge alongside the constructor edge (no regression to instantiation/type deps)', async () => {
         const edges = await edgesFor(
             'svc.ts',
