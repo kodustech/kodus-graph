@@ -1,4 +1,5 @@
-import { closeSync, openSync, writeSync } from 'fs';
+import { closeSync, mkdirSync, openSync, writeSync } from 'fs';
+import { dirname } from 'path';
 import type { GraphEdge, GraphNode, ParseMetadata } from './types';
 
 /**
@@ -10,9 +11,14 @@ import type { GraphEdge, GraphNode, ParseMetadata } from './types';
  *
  * When `out === '-'`, writes to stdout instead of a file. This is useful
  * for Unix pipes (e.g. `kodus-graph parse --out - | jq '.nodes'`).
+ * Otherwise the parent directory is created if missing, so the documented
+ * `--out .kodus-graph/graph.json` works on a fresh checkout.
  */
 export function writeGraphJSON(out: string, metadata: ParseMetadata, nodes: GraphNode[], edges: GraphEdge[]): void {
     const useStdout = out === '-';
+    if (!useStdout) {
+        mkdirSync(dirname(out), { recursive: true });
+    }
     const fd = useStdout ? null : openSync(out, 'w');
 
     const write = (s: string): void => {

@@ -21,6 +21,8 @@ export interface OutlineOptions {
     exportedOnly?: boolean;
     include?: string[];
     exclude?: string[];
+    /** Skip git-ignored paths inside a work tree (default true). */
+    respectGitignore?: boolean;
     /**
      * Path to an existing graph JSON. When set, each symbol is enriched with
      * its CALLS fan-in / fan-out — the cross-file impact view that a purely
@@ -297,7 +299,9 @@ function buildImpactMap(
  */
 export async function executeOutline(opts: OutlineOptions): Promise<void> {
     const repoRoot = opts.dir ?? opts.repoDir;
-    const files = discoverFiles(repoRoot, opts.files, opts.include, opts.exclude);
+    const files = discoverFiles(repoRoot, opts.files, opts.include, opts.exclude, {
+        respectGitignore: opts.respectGitignore,
+    });
     if (files.length === 0) {
         log.warn('No source files found to outline', { repoRoot, files: opts.files });
         writeOutput(opts.out, opts.format === 'json' ? '[]' : '');

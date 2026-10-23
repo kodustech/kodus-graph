@@ -4,6 +4,11 @@
  *
  * Format: "major.minor" — bump major on breaking changes, minor on additive.
  *
+ * 2.2 — Adds optional `ParseMetadata.discovery` (include/exclude globs and
+ *       whether `.gitignore` was honoured) so `update` re-discovers the same
+ *       file set `parse` used. Additive — older graphs lack it and `update`
+ *       falls back to the defaults.
+ *
  * 2.1 — Adds the `USES_TYPE` edge kind: a function's signature naming a type
  *       this repo declares. Additive — consumers that switch on `EdgeKind`
  *       should ignore unknown kinds rather than reject the graph. Graphs parsed
@@ -17,7 +22,7 @@
  *       noise registry. Interface shape unchanged; persisted graphs keyed on
  *       old values must be re-parsed to consult capabilities by language.
  */
-export const SCHEMA_VERSION = '2.1';
+export const SCHEMA_VERSION = '2.2';
 
 /**
  * Default BFS depth for blast-radius traversal.

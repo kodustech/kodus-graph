@@ -16,11 +16,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `context --format xml --max-callees <n>` to set the direct-dependency budget
   per changed function (default: 5).
 
+- `parse --min-confidence <n>` leaves CALLS edges below `n` out of the graph
+  (default: keep all). `0.5` matches what `analyze` / `context` use; on Apache
+  Dubbo it takes the graph from 152 to 80 MB. Recorded as
+  `metadata.min_confidence` and applied again by `update`. TESTED_BY is derived
+  before the cut, so test coverage is unchanged.
+- `parse --no-gitignore` and `outline --no-gitignore` to also read ignored paths
+  (`outline --dir` now skips git-ignored files by default, like `parse`).
+- `metadata.discovery` in the graph (schema **2.2**, additive) recording the
+  discovery settings `update` reuses. `gitignore_requested` is the policy
+  (`update` replays it); `respect_gitignore` is the outcome — whether git
+  actually produced the file list, false for a walk fallback (no work tree, or
+  git failing, e.g. "dubious ownership" on a CI mount). A one-off git failure
+  therefore doesn't pin the graph to the walk, and `update` warns whenever the
+  outcome changes between runs, so ignored paths are never added or dropped
+  silently. Walking a git checkout also logs a warning. The public
+  `parseMetadataSchema` validates the new field instead of stripping it.
+  A graph built with `parse --files` records the list, and `update` refreshes
+  exactly those files: it used to re-list the whole repository, widening the
+  graph and dropping any named file git ignores.
+
+### Changed
+
+- `context-of` now ignores CALLS edges below 0.5 for callers/callees, like
+  `analyze` and `context`; pass `--min-confidence 0` to see every edge.
+
+- The first `update` of a graph parsed before this release drops nodes from
+  git-ignored files (it now discovers files the way `parse` does). Use
+  `parse --no-gitignore` if you want ignored paths kept.
+- No manual step to upgrade a graph: the first `update` of a graph written
+  before this release (no `metadata.file_hashes` / `metadata.re_exports`)
+  re-parses every file once and records both, so it matches a fresh parse;
+  later updates are incremental again.
+
 ### Fixed
 
 - **Caller budget prioritization.** When caller slots are capped, production
   callers are emitted before test callers. Ordering stays deterministic by
   confidence and source location within each group.
+
+- `update` now produces the same graph as a fresh `parse`. It re-parsed only
+  the changed files and kept every other edge, so callers of a renamed or
+  deleted symbol kept pointing at nothing and a call to a newly defined
+  function never got its edge. It now also re-parses the dependents (unchanged
+  files with an edge into a changed, added or deleted file), follows barrels
+  outside the slice (`metadata.re_exports`), stops treating symbol-less files
+  as new on every run (`metadata.file_hashes`), and resolves with the
+  untouched files' types, return types and class hierarchy. Verified
+  edge-for-edge against a fresh parse on the kodus-ai monorepo after editing a
+  file imported by 406 others: identical graph, 6 s instead of 27 s. A no-op
+  `update` returns in ~1.5 s instead of re-parsing every symbol-less file.
+- `parse` never emitted USES_TYPE edges to an enum declared in another file:
+  enums weren't in the symbol table (only `update`'s baseline seed had them).
+- Ties between same-named candidates were broken by symbol-table insertion
+  order, so the same call could resolve differently depending on how the table
+  was filled. They are now broken by qualified name.
+
+- `parse` now honours `.gitignore`. Inside a git work tree the file list comes
+  from `git ls-files --cached --others --exclude-standard` (nested ignore files,
+  `.git/info/exclude`, `core.excludesFile`), with the built-in skip list still
+  applied on top. Ignored directories such as local worktrees or generated code
+  used to be parsed, duplicating every symbol they copied (on this repository:
+  1,120 → 368 files). Outside a work tree the filesystem walk is unchanged.
+- `update` re-discovers files with the same `--include` / `--exclude` the graph
+  was parsed with. It used to ignore them, so the first `update` re-added files
+  the original `parse --exclude` had left out.
+
+- `parse` silently dropped whole files on large repositories, a different set
+  on every run. The batch loop advanced by the batch size chosen *after* the
+  batch ran, so each time the memory monitor grew the batch, the files in
+  between were skipped (a shrink re-read files instead). On a 4.6k-file
+  monorepo, ~50 files per run were missing, so their symbols showed no callers
+  and no tests. The same run also varied in ~0.3% of CALLS edges: files were
+  extracted in parse-completion order, and the resolver breaks ties between
+  same-named candidates by insertion order. Extraction now follows input order,
+  and repeated parses of the same tree produce identical graphs.
+- `parse --out .kodus-graph/graph.json` (the path the docs recommend) failed
+  with `ENOENT` on a fresh checkout: the output directory was never created.
+
+- Calls on a receiver whose type is known but not declared in the repo (Java
+  `String`, `URLDecoder`, `Integer`; TS `Date`, `Array`, `Math`) were pinned
+  on same-named repo methods by the name cascade (`s.trim()` → `StringUtils.trim`,
+  `Date.now()` → a test helper named `now`). They are now recognised as
+  external and produce no edge. On Apache Dubbo this removed 18,225 false CALLS
+  edges (2,343 of them at 0.5/0.6, above the default filter) and shrank the
+  graph from 195 to 152 MB; on the kodus-ai monorepo, 1,839 false edges. Known
+  limitation: a receiver built with `new <variable>()` (a class held in a
+  variable) is also treated as external.
+- Graphs over ~512 MB could not be read under Node (`Cannot create a string
+  longer than 0x1fffffe8 characters`): the writer streams, the readers did not.
+  Reading falls back to a line-by-line parse when the file doesn't fit in a
+  string; smaller files keep the fast whole-file path on Bun and Node.
+- `context` compared 0-indexed node lines with 1-based diff hunks: a change on
+  a function's last line was missed, and one on the line just above it (a
+  comment or annotation) marked the function changed.
 
 ## [0.3.2] — 2026-07-27
 

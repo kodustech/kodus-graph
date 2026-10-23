@@ -169,6 +169,8 @@ export function deriveEdges(
      * function is the only direct evidence that the function is exercised.
      */
     callEdges: readonly RawCallEdge[] = [],
+    /** Repo types declared outside `graph` (slice re-parse baseline), as qualified names. */
+    additionalTypes?: ReadonlySet<string>,
 ): DerivedEdges {
     // INHERITS: class extends another class — resolve to qualified names
     const inherits: DerivedEdge[] = [];
@@ -313,7 +315,7 @@ export function deriveEdges(
     // through the import map first, so `string`, `int` and `Promise` resolve to
     // nothing and vanish; requiring the resolution to be a Class/Interface/Enum
     // drops parameter names that happen to collide with a function's.
-    const typeKinds = new Set<string>();
+    const typeKinds = new Set<string>(additionalTypes);
     for (const c of graph.classes) {
         typeKinds.add(c.qualified);
     }

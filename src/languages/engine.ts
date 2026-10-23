@@ -273,6 +273,18 @@ export function extractAll(root: SgRoot, fp: string, lang: string, seen: Set<str
             vb.set(entry.name, entry.type);
         }
     }
+
+    if (result.typeNames && result.typeNames.length > 0) {
+        graph.localTypes ??= new Map();
+        let names = graph.localTypes.get(fp);
+        if (!names) {
+            names = new Set<string>();
+            graph.localTypes.set(fp, names);
+        }
+        for (const name of result.typeNames) {
+            names.add(name);
+        }
+    }
 }
 
 /**

@@ -7,11 +7,16 @@ interface ContextOfCommandOptions {
     out: string;
     symbol: string;
     limit: number;
+    minConfidence?: number;
 }
 
 export function executeContextOf(opts: ContextOfCommandOptions): void {
     const graph = loadGraph(opts.graph);
-    const result = computeContextOf(graph, { symbol: opts.symbol, limit: opts.limit });
+    const result = computeContextOf(graph, {
+        symbol: opts.symbol,
+        limit: opts.limit,
+        minConfidence: opts.minConfidence,
+    });
 
     writeOutput(opts.out, JSON.stringify(result, null, 2));
     if (!result.found) {

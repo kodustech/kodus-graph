@@ -79,33 +79,48 @@ export async function parseBatch(
     let idleBatches = 0;
     const maxMemBytes = (options?.maxMemoryMB ?? 768) * 1024 * 1024;
 
-    for (let i = 0; i < files.length; i += batchSize) {
+    for (let i = 0; i < files.length; ) {
         const batch = files.slice(i, i + batchSize);
+        // Advance by what this batch actually covers. `batchSize` is resized
+        // below after the batch runs; advancing by the new value skipped files
+        // on a grow and re-read them on a shrink.
+        i += batch.length;
 
-        const promises = batch.map(async (filePath) => {
-            const lang = getLanguage(extname(filePath));
-            if (!lang) {
-                return;
+        // Parse the batch concurrently, but extract in input order. Extraction
+        // fills the symbol table, and the resolver breaks ties between
+        // same-named candidates by insertion order — extracting in completion
+        // order made those edges differ from one run to the next.
+        const parsed = await Promise.all(
+            batch.map(async (filePath): Promise<{ filePath: string; lang: string; root: SgRoot } | null> => {
+                const lang = getLanguage(extname(filePath));
+                if (!lang) {
+                    return null;
+                }
+
+                let source: string;
+                try {
+                    source = readFileSync(filePath, 'utf-8');
+                } catch (err) {
+                    log.warn('Failed to read file', { file: filePath, error: String(err) });
+                    parseErrors++;
+                    return null;
+                }
+
+                try {
+                    return { filePath, lang, root: await parseAsync(lang, source) };
+                } catch (err) {
+                    log.warn('Failed to parse file', { file: filePath, error: String(err) });
+                    parseErrors++;
+                    return null;
+                }
+            }),
+        );
+
+        for (const entry of parsed) {
+            if (!entry) {
+                continue;
             }
-
-            let source: string;
-            try {
-                source = readFileSync(filePath, 'utf-8');
-            } catch (err) {
-                log.warn('Failed to read file', { file: filePath, error: String(err) });
-                parseErrors++;
-                return;
-            }
-
-            let root: SgRoot;
-            try {
-                root = await parseAsync(lang, source);
-            } catch (err) {
-                log.warn('Failed to parse file', { file: filePath, error: String(err) });
-                parseErrors++;
-                return;
-            }
-
+            const { filePath, lang, root } = entry;
             const fp = relative(repoRoot, filePath);
 
             try {
@@ -149,9 +164,7 @@ export async function parseBatch(
                 log.error('Call extraction crashed', { file: fp, error: String(err) });
                 extractErrors++;
             }
-        });
-
-        await Promise.all(promises);
+        }
 
         // Dynamic batch sizing. Only pay the yield + gc cost on `shrink` —
         // when `hold` at the floor under sustained pressure, the yield/gc

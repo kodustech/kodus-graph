@@ -15,7 +15,7 @@ import { getLanguage } from '../parser/languages';
 import { resolveCallsForGraph } from '../resolver/call-resolver';
 import { createImportMap } from '../resolver/import-map';
 import { loadTsconfigAliases, resolveImport } from '../resolver/import-resolver';
-import { createSymbolTable } from '../resolver/symbol-table';
+import { addRawSymbols, createSymbolTable } from '../resolver/symbol-table';
 import { computeFileHash } from '../shared/file-hash';
 import { log } from '../shared/logger';
 import { writeOutput } from '../shared/write-output';
@@ -176,15 +176,7 @@ export async function executeDiff(opts: DiffCommandOptions): Promise<void> {
     const importMap = createImportMap();
     const importEdges: ImportEdge[] = [];
 
-    for (const f of rawGraph.functions) {
-        symbolTable.add(f.file, f.name, f.qualified);
-    }
-    for (const c of rawGraph.classes) {
-        symbolTable.add(c.file, c.name, c.qualified);
-    }
-    for (const i of rawGraph.interfaces) {
-        symbolTable.add(i.file, i.name, i.qualified);
-    }
+    addRawSymbols(symbolTable, rawGraph);
 
     for (const imp of rawGraph.imports) {
         const langKey = imp.lang;

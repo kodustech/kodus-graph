@@ -24,6 +24,9 @@ export const TS_KINDS = {
     abstractClassDeclaration: 'abstract_class_declaration', // TS
     interfaceDeclaration: 'interface_declaration', // TS
     enumDeclaration: 'enum_declaration', // TS
+    typeAliasDeclaration: 'type_alias_declaration', // TS
+    internalModule: 'internal_module', // TS `namespace X {}`
+    module: 'module', // TS `module X {}`
     functionDeclaration: 'function_declaration',
     functionExpression: 'function_expression',
     methodDefinition: 'method_definition',

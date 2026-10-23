@@ -83,3 +83,23 @@ describe('writeGraphJSON', () => {
         rmSync(OUT, { force: true });
     });
 });
+
+describe('writeGraphJSON output directory', () => {
+    it('creates a missing parent directory (the documented .kodus-graph/graph.json)', () => {
+        const dir = '/tmp/kodus-graph-json-writer-mkdir-test';
+        rmSync(dir, { recursive: true, force: true });
+        const out = `${dir}/.kodus-graph/graph.json`;
+        const metadata: ParseMetadata = {
+            repo_dir: '/repo',
+            files_parsed: 0,
+            total_nodes: 0,
+            total_edges: 0,
+            duration_ms: 0,
+            parse_errors: 0,
+            extract_errors: 0,
+        };
+        writeGraphJSON(out, metadata, [], []);
+        expect(JSON.parse(readFileSync(out, 'utf-8')).metadata.repo_dir).toBe('/repo');
+        rmSync(dir, { recursive: true, force: true });
+    });
+});

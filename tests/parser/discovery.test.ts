@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
+import { execFileSync } from 'child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { discoverFiles } from '../../src/parser/discovery';
@@ -143,5 +144,129 @@ describe('discoverFiles --max-files guard', () => {
         });
         expect(files.length).toBe(2);
         rmSync(TMP, { recursive: true, force: true });
+    });
+});
+
+describe('discoverFiles inside a git work tree', () => {
+    const GIT_TMP = '/tmp/kodus-graph-discovery-git-test';
+
+    function git(...args: string[]): void {
+        execFileSync('git', args, { cwd: GIT_TMP, stdio: 'ignore' });
+    }
+
+    function setupGitRepo(): void {
+        rmSync(GIT_TMP, { recursive: true, force: true });
+        mkdirSync(join(GIT_TMP, 'src'), { recursive: true });
+        mkdirSync(join(GIT_TMP, '.worktrees/copy/src'), { recursive: true });
+        mkdirSync(join(GIT_TMP, 'generated'), { recursive: true });
+        mkdirSync(join(GIT_TMP, 'pkg/out-of-tree'), { recursive: true });
+        mkdirSync(join(GIT_TMP, 'dist'), { recursive: true });
+        writeFileSync(join(GIT_TMP, '.gitignore'), '.worktrees/\ngenerated/\n');
+        writeFileSync(join(GIT_TMP, 'pkg/.gitignore'), 'out-of-tree/\n');
+        writeFileSync(join(GIT_TMP, 'src/app.ts'), 'export const app = 1;');
+        writeFileSync(join(GIT_TMP, 'src/gone.ts'), 'export const gone = 1;');
+        writeFileSync(join(GIT_TMP, 'dist/bundle.ts'), 'export const built = 1;');
+        writeFileSync(join(GIT_TMP, '.worktrees/copy/src/app.ts'), 'export const app = 1;');
+        writeFileSync(join(GIT_TMP, 'generated/api.ts'), 'export const api = 1;');
+        writeFileSync(join(GIT_TMP, 'pkg/out-of-tree/x.ts'), 'export const x = 1;');
+        git('init', '-q');
+        git('add', '.');
+        git('add', '-f', 'dist/bundle.ts');
+        git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+        rmSync(join(GIT_TMP, 'src/gone.ts'));
+        writeFileSync(join(GIT_TMP, 'src/untracked.ts'), 'export const u = 1;');
+    }
+
+    it('skips paths ignored by root and nested .gitignore files', () => {
+        setupGitRepo();
+        const rel = discoverFiles(GIT_TMP)
+            .map((f) => f.slice(GIT_TMP.length + 1))
+            .sort();
+        expect(rel).toEqual(['src/app.ts', 'src/untracked.ts']);
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('still skips SKIP_DIRS even when their files are tracked', () => {
+        setupGitRepo();
+        const files = discoverFiles(GIT_TMP);
+        expect(files).not.toContain(join(GIT_TMP, 'dist/bundle.ts'));
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('drops files tracked in the index but deleted from disk', () => {
+        setupGitRepo();
+        const files = discoverFiles(GIT_TMP);
+        expect(files).not.toContain(join(GIT_TMP, 'src/gone.ts'));
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('reads ignored paths when respectGitignore is false, still skipping SKIP_DIRS', () => {
+        setupGitRepo();
+        const rel = discoverFiles(GIT_TMP, undefined, undefined, undefined, { respectGitignore: false })
+            .map((f) => f.slice(GIT_TMP.length + 1))
+            .sort();
+        expect(rel).toEqual([
+            '.worktrees/copy/src/app.ts',
+            'generated/api.ts',
+            'pkg/out-of-tree/x.ts',
+            'src/app.ts',
+            'src/untracked.ts',
+        ]);
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('lists only the subtree when repoDir is a subdirectory of the work tree', () => {
+        setupGitRepo();
+        // pkg/ holds only ignored files: nothing to parse, and no fallback walk.
+        expect(discoverFiles(join(GIT_TMP, 'pkg'))).toEqual([]);
+        const src = discoverFiles(join(GIT_TMP, 'src')).sort();
+        expect(src).toEqual([join(GIT_TMP, 'src/app.ts'), join(GIT_TMP, 'src/untracked.ts')]);
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('walks a repoDir that the enclosing repo ignores (explicitly requested)', () => {
+        setupGitRepo();
+        const files = discoverFiles(join(GIT_TMP, 'generated'));
+        expect(files).toEqual([join(GIT_TMP, 'generated/api.ts')]);
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('reports the strategy actually used', () => {
+        setupGitRepo();
+        const viaGit: { strategy?: 'git' | 'walk' } = {};
+        discoverFiles(GIT_TMP, undefined, undefined, undefined, { report: viaGit });
+        expect(viaGit.strategy).toBe('git');
+        const optedOut: { strategy?: 'git' | 'walk' } = {};
+        discoverFiles(GIT_TMP, undefined, undefined, undefined, { respectGitignore: false, report: optedOut });
+        expect(optedOut.strategy).toBe('walk');
+        rmSync(GIT_TMP, { recursive: true, force: true });
+    });
+
+    it('warns and reports a walk when git cannot list a checkout', () => {
+        setupGitRepo();
+        // A checkout git refuses to read (corrupt repo, "dubious ownership" on a CI mount).
+        writeFileSync(join(GIT_TMP, '.git/HEAD'), 'garbage\n');
+        const writes: string[] = [];
+        const spy = spyOn(process.stderr, 'write').mockImplementation(((chunk: string) => {
+            writes.push(String(chunk));
+            return true;
+        }) as typeof process.stderr.write);
+        try {
+            const report: { strategy?: 'git' | 'walk' } = {};
+            const files = discoverFiles(GIT_TMP, undefined, undefined, undefined, { report });
+            expect(report.strategy).toBe('walk');
+            expect(files).toContain(join(GIT_TMP, 'generated/api.ts'));
+            expect(writes.some((w) => w.includes('git could not list files'))).toBe(true);
+        } finally {
+            spy.mockRestore();
+            rmSync(GIT_TMP, { recursive: true, force: true });
+        }
+    });
+
+    it('applies include/exclude on top of the git listing', () => {
+        setupGitRepo();
+        const files = discoverFiles(GIT_TMP, undefined, undefined, ['src/untracked.ts']);
+        expect(files).toEqual([join(GIT_TMP, 'src/app.ts')]);
+        rmSync(GIT_TMP, { recursive: true, force: true });
     });
 });
